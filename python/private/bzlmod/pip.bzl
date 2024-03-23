@@ -247,6 +247,8 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
                 urls.append(whls[0].url)
                 sha256 = whls[0].sha256
                 filename = whls[0].filename
+
+                requirement_line = requirement_line.partition("--hash")[0].strip()
             elif whls:
                 # TODO @aignas 2024-03-24: this is doing some funky auto-discovery
                 # and ideally we should just setup multiple whl_library repos, but
@@ -310,6 +312,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
 
                 selected = whl_by_platform.get(host_plat) or whl_by_platform.get("any")
                 if selected:
+                    requirement_line = requirement_line.partition("--hash")[0].strip()
                     urls.append(selected.url)
                     sha256 = selected.sha256
                     filename = selected.filename
