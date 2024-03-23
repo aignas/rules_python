@@ -18,6 +18,7 @@ A file that houses private functions used in the `bzlmod` extension with the sam
 The functions here should not depend on the `module_ctx` for easy unit testing.
 """
 
+load("@bazel_features//:features.bzl", "bazel_features")
 load("//python/pip_install:requirements_parser.bzl", parse_requirements = "parse")
 load(":auth.bzl", "get_auth")
 load(":normalize_name.bzl", "normalize_name")
@@ -29,6 +30,66 @@ _BUILD_TEMPLATE = """\
 package(default_visibility = ["//visibility:public"])
 exports_files(["{}"])
 """
+
+def simpleapi_download(ctx, srcs, cache = None):
+    """Download Simple API HTML.
+
+    Args:
+        ctx: The bzlmod module_ctx or repository_ctx.
+        srcs: The sources to download things for.
+        cache: A dictionary that can be used as a cache between calls during a
+            single evaluation of the extension.
+
+    Returns:
+        dict of pkg name to the HTML contents.
+    """
+    download_kwargs = {}
+    if bazel_features.external_deps.download_has_block_param:
+        download_kwargs["block"] = False
+
+    downloads = {}
+    contents = {}
+    for pkg, args in srcs.items():
+        output = ctx.path("{}/{}.html".format("pypi_index", pkg))
+        all_urls = list(args["urls"].keys())
+        cache_key = ""
+        if cache != None:
+            cache_key = ",".join(all_urls)
+            if cache_key in cache:
+                contents[pkg] = cache[cache_key]
+                continue
+
+        downloads[pkg] = struct(
+            out = output,
+            urls = all_urls,
+            cache_key = cache_key,
+            download = ctx.download(
+                url = all_urls,
+                output = output,
+                auth = get_auth(ctx, all_urls),
+                **download_kwargs
+            ),
+        )
+
+    for pkg, download in downloads.items():
+        if download_kwargs.get("block") == False:
+            result = download.download.wait()
+        else:
+            result = download.download
+
+        if not result.success:
+            fail("Failed to download from {}: {}".format(download.urls, result))
+
+        content = ctx.read(download.out)
+        contents[pkg] = struct(
+            html = content,
+            urls = download.urls,
+        )
+
+        if cache != None and download.cache_key:
+            cache[download.cache_key] = contents[pkg]
+
+    return contents
 
 def get_packages_from_requirements(requirements_files):
     """Get Simple API sources from a list of requirements files and merge them.
