@@ -62,6 +62,12 @@ def _generate_group_libraries(repo_prefix, group_name, group_members):
           which make up the group.
     """
 
+    # FIXME @aignas 2024-03-23: How does this work with multi-platform wheels?
+    # The repos that may be created would be named something like
+    # "<prefix>_<foo>_<plat>" and we then would not know where to look.
+    #
+    # However, for packages that are in a group, we could create a small hub
+    # repo, that only has a BUILD.bazel with aliases that select the right target.
     lib_dependencies = [
         "@%s%s//:%s" % (repo_prefix, normalize_name(d), PY_LIBRARY_IMPL_LABEL)
         for d in group_members
