@@ -271,46 +271,49 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
                         "amd64": "x86_64",
                     }[module_ctx.os.arch],
                 )
+                target_platforms = pip_attr.experimental_target_platforms or [host_plat]
 
-                whl_by_platform = {}
+                selected = None
                 for whl in whls:
                     parsed = parse_whl_name(whl.filename)
 
                     if parsed.abi_tag not in [want_abi, "none", "abi3"]:
                         continue
 
-                    if parsed.platform_tag == "any":
-                        whl_by_platform["any"] = whl
-                        continue
+                    if parsed.platform_tag != "any":
+                        # TODO @aignas 2024-03-24: make this configurable via an attr?
+                        if "musllinux" in parsed.platform_tag:
+                            # Currently don't support it
+                            # TODO @aignas 2024-03-24: actually use some libc matching logic within whl_target_platforms
+                            continue
 
-                    # TODO @aignas 2024-03-24: make this configurable via an attr?
-                    if "musllinux" in parsed.platform_tag:
-                        # Currently don't support it
-                        # TODO @aignas 2024-03-24: actually use some libc matching logic within whl_target_platforms
-                        continue
+                        match = False
+                        for supported_platform in [
+                            "{}_{}".format(p.os, p.cpu)
+                            for p in whl_target_platforms(parsed.platform_tag)
+                        ]:
+                            if match or supported_platform not in target_platforms:
+                                break
 
-                    supported_platforms = [
-                        "{}_{}".format(p.os, p.cpu)
-                        for p in whl_target_platforms(parsed.platform_tag)
-                    ]
-                    if host_plat not in supported_platforms:
-                        continue
+                            match = True
 
-                    if host_plat in whl_by_platform:
-                        existing = whl_by_platform[host_plat]
+                        if not match:
+                            continue
+
+                    if selected:
+                        existing = selected
                         p = parse_whl_name(existing.filename)
 
                         # Get the most specialized, replace with sort?
-                        if parsed.abi_tag == "none":
+                        if p.abi_tag == "none":
                             # The new one is more specific
-                            whl_by_platform[host_plat] = whl
-                        elif parsed.abi_tag == "abi3" and p.abi_tag != "none":
+                            selected = whl
+                        elif p.abi_tag == "abi3" and parsed.abi_tag != "none":
                             # The new one is more specific
-                            whl_by_platform[host_plat] = whl
+                            selected = whl
                     else:
-                        whl_by_platform[host_plat] = whl
+                        selected = whl
 
-                selected = whl_by_platform.get(host_plat) or whl_by_platform.get("any")
                 if selected:
                     requirement_line = requirement_line.partition("--hash")[0].strip()
                     urls.append(selected.url)

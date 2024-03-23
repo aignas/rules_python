@@ -1604,7 +1604,7 @@
   "moduleExtensions": {
     "//python/extensions:pip.bzl%pip": {
       "os:linux,arch:amd64": {
-        "bzlTransitiveDigest": "hF0fop10hXUW3dFYngaAtUlzvjmRjF0YeZz55mG+VAY=",
+        "bzlTransitiveDigest": "fYQYvJv6kB41ci6GyTbGPOOCE1Dvd5XYJJIoCFt8r6k=",
         "accumulatedFileDigests": {
           "@@//docs/sphinx:requirements.txt": "14521c249d0c56ecbae49ebd1c4a63760a4ac5decb775b786be8f07bdd3b07a4",
           "@@//tools/publish:requirements.txt": "8ced1e640eab3ee44298590e5ad88cd612f5bf96245af1981709f7a8884a982b",
