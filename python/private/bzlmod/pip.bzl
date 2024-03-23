@@ -37,6 +37,7 @@ load(
 )
 load("//python/private:render_pkg_aliases.bzl", "whl_alias")
 load("//python/private:version_label.bzl", "version_label")
+load("//python/private:whl_target_platforms.bzl", "whl_target_platforms")
 load(":pip_repository.bzl", "pip_repository")
 
 def _parse_version(version):
@@ -246,9 +247,76 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
                 urls.append(whls[0].url)
                 sha256 = whls[0].sha256
                 filename = whls[0].filename
-            else:
+            elif whls:
+                # TODO @aignas 2024-03-24: this is doing some funky auto-discovery
+                # and ideally we should just setup multiple whl_library repos, but
+                # that may be tricky if the user is using
+                # experimental_requirement_cycles functionality.
+                major, _, tail = pip_attr.python_version.partition(".")
+                minor, _, _ = tail.partition(".")
+
+                # TODO @aignas 2024-03-24: make this an attr?
+                want_abi = "cp{}{}".format(major, minor)
+                host_plat = "{}_{}".format(
+                    {
+                        # Values returned by https://bazel.build/rules/lib/repository_os.
+                        "linux": "linux",
+                        "mac os": "osx",
+                        "windows": "windows",
+                    }[module_ctx.os.name],
+                    {
+                        # TODO @aignas 2024-03-24: add more
+                        "amd64": "x86_64",
+                    }[module_ctx.os.arch],
+                )
+
+                whl_by_platform = {}
+                for whl in whls:
+                    parsed = parse_whl_name(whl.filename)
+
+                    if parsed.abi_tag not in [want_abi, "none", "abi3"]:
+                        continue
+
+                    if parsed.platform_tag == "any":
+                        whl_by_platform["any"] = whl
+                        continue
+
+                    # TODO @aignas 2024-03-24: make this configurable via an attr?
+                    if "musllinux" in parsed.platform_tag:
+                        # Currently don't support it
+                        # TODO @aignas 2024-03-24: actually use some libc matching logic within whl_target_platforms
+                        continue
+
+                    supported_platforms = [
+                        "{}_{}".format(p.os, p.cpu)
+                        for p in whl_target_platforms(parsed.platform_tag)
+                    ]
+                    if host_plat not in supported_platforms:
+                        continue
+
+                    if host_plat in whl_by_platform:
+                        existing = whl_by_platform[host_plat]
+                        p = parse_whl_name(existing.filename)
+
+                        # Get the most specialized, replace with sort?
+                        if parsed.abi_tag == "none":
+                            # The new one is more specific
+                            whl_by_platform[host_plat] = whl
+                        elif parsed.abi_tag == "abi3" and p.abi_tag != "none":
+                            # The new one is more specific
+                            whl_by_platform[host_plat] = whl
+                    else:
+                        whl_by_platform[host_plat] = whl
+
+                selected = whl_by_platform.get(host_plat) or whl_by_platform.get("any")
+                if selected:
+                    urls.append(selected.url)
+                    sha256 = selected.sha256
+                    filename = selected.filename
+
+            if not filename:
+                # Could not find a whl from the sources, should we print a warning?
                 pass
-                #print("Would use the following for {}: {}".format(whl_name, whls))
 
         repo_name = "{}_{}".format(pip_name, whl_name)
         whl_library(

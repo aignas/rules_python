@@ -97,6 +97,8 @@ dev_pip.parse(
 # https://github.com/bazelbuild/rules_python/issues/1016.
 
 dev_pip.parse(
+    envsubst = ["PIP_INDEX_URL"],
+    experimental_index_url = "${PIP_INDEX_URL:-https://pypi.org/simple}",
     hub_name = "publish_deps",
     python_version = "3.11",
     requirements_darwin = "//tools/publish:requirements_darwin.txt",
@@ -106,6 +108,7 @@ dev_pip.parse(
 use_repo(
     dev_pip,
     "dev_pip",
+    "publish_deps",
     publish_deps_twine = "publish_deps_311_twine",
 )
 
