@@ -25,15 +25,11 @@ load(
     "whl_library",
 )
 load("//python/pip_install:requirements_parser.bzl", parse_requirements = "parse")
-load("//python/private:envsubst.bzl", "envsubst")
 load("//python/private:normalize_name.bzl", "normalize_name")
 load("//python/private:parse_whl_name.bzl", "parse_whl_name")
 load(
     "//python/private:pypi_index.bzl",
-    "get_packages",
-    "get_packages_from_requirements",
     "get_simpleapi_sources",
-    "simpleapi_download",
 )
 load("//python/private:render_pkg_aliases.bzl", "whl_alias")
 load("//python/private:version_label.bzl", "version_label")
@@ -108,6 +104,12 @@ You cannot use both the additive_build_content and additive_build_content_file a
         )
 
 def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_cache):
+    """Create whl repos for a particular python version.
+
+    Algorithm:
+    1. Select the python_interpreter or the python_interpreter_target
+    1. Parse the requirements lock
+    """
     python_interpreter_target = pip_attr.python_interpreter_target
 
     # if we do not have the python_interpreter set in the attributes
@@ -128,11 +130,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
             ))
         python_interpreter_target = INTERPRETER_LABELS[python_name]
 
-    pip_name = "{}_{}".format(
-        hub_name,
-        version_label(pip_attr.python_version),
-    )
-
     # Parse the requirements file directly in starlark to get the information
     # needed for the whl_libary declarations below.
     requirements_locks = {
@@ -148,27 +145,20 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
     }
     parse_result = parse_requirements(requirements_locks["host"])
 
-    # Replicate a surprising behavior that WORKSPACE builds allowed:
-    # Defining a repo with the same name multiple times, but only the last
-    # definition is respected.
-    # The requirement lines might have duplicate names because lines for extras
-    # are returned as just the base package name. e.g., `foo[bar]` results
-    # in an entry like `("foo", "foo[bar] == 1.0 ...")`.
-    requirements = {
-        normalize_name(entry[0]): entry
-        # The WORKSPACE pip_parse sorted entries, so mimic that ordering.
-        for entry in sorted(parse_result.requirements)
-    }.values()
+    index_urls = {}
+    if pip_attr.experimental_index_url:
+        index_urls = simpleapi_download_all(
+            ctx = module_ctx,
+            index_url = pip_attr.experimental_index_url,
+            env_vars = pip_attr.envsubst,
+            requirements_files = requirements_locks.values(),
+            simpleapi_cache = simpleapi_cache,
+        )
 
-    extra_pip_args = pip_attr.extra_pip_args + parse_result.options
-
-    if hub_name not in whl_map:
-        whl_map[hub_name] = {}
-
-    whl_modifications = {}
-    if pip_attr.whl_modifications != None:
-        for mod, whl_name in pip_attr.whl_modifications.items():
-            whl_modifications[whl_name] = mod
+    whl_modifications = {
+        whl_name: mod
+        for mod, whl_name in (pip_attr.whl_modifications or {}).items()
+    }
 
     if pip_attr.experimental_requirement_cycles:
         requirement_cycles = {
@@ -181,42 +171,33 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
             for group_name, group_whls in requirement_cycles.items()
             for whl_name in group_whls
         }
-
-        group_repo = "%s__groups" % (pip_name,)
-        group_library(
-            name = group_repo,
-            repo_prefix = pip_name + "_",
-            groups = pip_attr.experimental_requirement_cycles,
-        )
     else:
         whl_group_mapping = {}
         requirement_cycles = {}
 
-    # TODO @aignas 2024-03-21: do this outside this function so that we can
-    # decrease the number of times we call the simple API.
-    index_urls = {}
-    if pip_attr.experimental_index_url:
-        index_url = envsubst(
-            pip_attr.experimental_index_url,
-            pip_attr.envsubst,
-            module_ctx.getenv if hasattr(module_ctx, "getenv") else module_ctx.os.environ.get,
-        )
-        sources = get_packages_from_requirements(requirements_locks.values())
-        simpleapi_srcs = {}
-        for pkg, want_shas in sources.simpleapi.items():
-            entry = simpleapi_srcs.setdefault(pkg, {"urls": {}, "want_shas": {}})
+    # TODO @aignas 2024-03-24:
+    # * Pass all of the whls to the group hub repo and do the decision on how to
+    #   construct selects there.
+    # * Pass the whls to the pip hub repo and do the construction per os/cpu of selects
+    #   there? Maybe we only need the python version that we are targeting and if it is
+    #   the default.
 
-            # ensure that we have a trailing slash, because we will otherwise get redirects
-            # which may not work on private indexes with netrc authentication.
-            entry["urls"]["{}/{}/".format(index_url.rstrip("/"), pkg)] = True
-            entry["want_shas"].update(want_shas)
+    pip_name = "{}_{}".format(
+        hub_name,
+        version_label(pip_attr.python_version),
+    )
 
-        for pkg, download in simpleapi_download(module_ctx, simpleapi_srcs, simpleapi_cache).items():
-            index_urls[pkg] = get_packages(
-                download.urls,
-                download.html,
-                want_shas = simpleapi_srcs[pkg]["want_shas"],
-            )
+    # Replicate a surprising behavior that WORKSPACE builds allowed:
+    # Defining a repo with the same name multiple times, but only the last
+    # definition is respected.
+    # The requirement lines might have duplicate names because lines for extras
+    # are returned as just the base package name. e.g., `foo[bar]` results
+    # in an entry like `("foo", "foo[bar] == 1.0 ...")`.
+    requirements = {
+        normalize_name(entry[0]): entry
+        # The WORKSPACE pip_parse sorted entries, so mimic that ordering.
+        for entry in sorted(parse_result.requirements)
+    }.values()
 
     # Create a new wheel library for each of the different whls
     for whl_name, requirement_line in requirements:
@@ -228,6 +209,167 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
 
         group_name = whl_group_mapping.get(whl_name)
         group_deps = requirement_cycles.get(group_name, [])
+
+        # 1. if we have a single wheel, then just add it as previously.
+        #         <pip_name>_<whl_name>
+        #
+        #    However, it may bring confusion if the whl is platform-specific,
+        #    so using the same convention as 4. would be better.
+        #
+        # 2. if we only have sdist, use the requirement_line for installing it
+        #    as previously and add an entry for each registered python version
+        #    (is it possible to list them here?).
+        #
+        #    This is old behaviour, so everything should remain the same. Could
+        #    we somehow support providing a different label here, where
+        #    rules_pycross could be used?
+        #
+        # 3. If 'download' is used, we need to parse the arguments to get the
+        #    platform_tags that are needed and fail if we don't find at least a
+        #    single wheel. We should be able to always find a single wheel
+        #    here. We ask the user to supply the target platforms so that we can
+        #    filter the wheels by it.
+        #
+        #       This means that the whl naming scheme can remain the same:
+        #
+        #         <pip_name>_<whl_name>
+        #           e.g. pip_310_websockets
+        #
+        #    Given that we would invest the time to implement number 4, it would
+        #    be weird to use something different from it, so this case shall be
+        #    the same as 4.
+        #
+        # 4. In the general case we may have multiple wheels where we have the
+        #    following cases:
+        #    a. We have one version for all os/cpu - we use the platform_tag
+        #       abi_tag to get the list of wheels that we work with. We filter
+        #       them by the list of target_platforms.
+        #
+        #       This means that the whl name must be unique:
+        #
+        #         <pip_name>_<whl_name>__<platform_tag>
+        #           e.g. pip_310_websockets__manylinux_2_16_x86_64
+        #
+        #    b. We have multiple versions for all oses/cpus. We divide the
+        #       target_platform list by version and then we use the
+        #       platform_tag, abi_tag to get the list of wheels we work with.
+        #       This currently may not be supported on pdm, etc, so maybe we
+        #       can focus on the above.
+        #
+        #       This means that the whl name must be unique:
+        #
+        #         <pip_name>_<whl_name>_<sha256>
+        #           e.g. pip_310_websockets_deadbeef
+        #
+        #         <pip_name>_<whl_name>__<platform_tag>_<sha256>
+        #           e.g. pip_310_websockets__manylinux_2_16_x86_64_deadbeef
+        #
+        #         <pip_name>_<whl_name>__<sha256>_<platform_tag>
+        #           e.g. pip_310_websockets__deadbeef_manylinux_2_16_x86_64
+        #
+        #       The second and third options may yield more readable structure
+        #       of the external repos. The double `_` was chosen to easily
+        #       recover the platform_tag if needed for parsing.
+        #
+        #       However, since the target OS/Arch will be unique in the list
+        #       the sha256 information is redundant, unless we allow adding
+        #       more things into the select. The possible list is:
+        #         * os    - platform_tag
+        #         * cpu   - platform_tag
+        #         * libc  - platform_tag
+        #         * abi   - abi_tag (i.e. the repo_prefix)
+        #
+        #    c. We have custom config settings that allow for matching libc on
+        #       Linux. Other OSes don't have those restrictions.
+        #
+        # 5. Add the added wheels to the group by:
+        #
+        #       "wheel name": ["repos"]
+        #
+        #    This will allow to construct a select statement within the group.
+        #    We should something similar to the render_pkg_aliases function to
+        #    do this? What is needed is the modification of the `deps`
+        #    attribute based on which package we are talking about.
+        #
+        # Restrictions:
+        #
+        # * Groups and annotations are applied to all repos sharing the whl
+        #   name.
+        # * The names in PEP600 will be used for linux platform tags to keep
+        #   consistency. If the wheel has multiple, then we will use with the
+        #   lowest glibc number.
+        # * We will prefer the most specialized wheels (i.e.
+        #   `macos_x_y_universal2` will not be used if there are others).
+        #
+        # Out of scope:
+        #
+        # * Parsing METADATA to get the `experimental_requirement_cycles` value
+        #   automatically.
+        # * Parsing METADATA to resolve cycles in a different way.
+        # * Refactoring the API to support passing requirements for a specific
+        #   target platform. Maybe we need to have a label-keyed dict with
+        #   values being comma separated target platforms?
+        # * For whls that are not set up with the default interpreter, we could
+        #   in theory use the default interpreter and setup the
+        #   target_platforms, but this improvement is out of scope for now.
+        # * Creating a single `pip_requests` repo instead of creating one per
+        #   python version. In theory we could also create fewer repos if we
+        #   centralized the creation of the hub repos, but we assume that we
+        #   should not create a single repo for now. Whilst this would benefit
+        #   the users so that they would not need to declare pip.parse multiple
+        #   times, it is too big of a change in the codebase to do this without
+        #   any risk.
+        #
+        # The implementation plan could be:
+        # 1. Pypi index querying and parsing - a new set of files with unit tests.
+        #
+        #    Progress: 80%
+        #
+        # 2. Design the matching of the whls to the target platform parameter.
+        #    This could be potentially unnecessary if we used:
+        #
+        #       pip install --report
+        #
+        #    If we had a true lock file as described in TODO, we would not need
+        #    this step.
+        #
+        #    Progress: 10%
+        #
+        # 3. The usage of pypi index for the host platform. Whilst this does
+        #    some funky platform matching in the repository_ctx, it allows us
+        #    to use the new machinery without changing the APIs. This needs 2,
+        #    where we auto-detect the host platform and select the right wheels
+        #    for it. This would allow users to use bazel downloader e2e.
+        #
+        #    Progress: 10%
+        #
+        # 4. Rename the whl repos that contain platform-specific wheels to the
+        #    new naming scheme. This allows us to tease out the needed changes
+        #    when generating the pkg aliases and better reuse the cache when we
+        #    change the target platform in pip.parse.
+        #
+        #    Progress: 0%
+        #
+        # 5. The user can specify the platform instead of using the host and we
+        #    add extra things into the hub repo. We can accept multiple
+        #    platforms and also supply the 'host' platform if needed.
+        #
+        #    If the platform is specified and user is specifying multiple
+        #    requirements file labels, we fail with validation error. However,
+        #    this allows them to call the `pip.parse` tag class multiple times.
+        #
+        #    Progress: 10% (we can reuse some of the code from #1744)
+        #
+        # Should we do the below at all?
+        #
+        # 6. Use the main lock file to get the list of the desired whls for all
+        #    platforms. This should add the extra stuff into the hub repo
+        #    selects and should allow us to remove the arch/os dependency on
+        #    the lockfile.
+        #
+        # 7. Use all of the lock files to get the list of the desired whls for
+        #    all platforms. This may require us to design a new API so that the
+        #    requirements files can be specified per platform_tag.
 
         urls = []
         sha256 = None
@@ -241,6 +383,46 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
                 if src.sha256 in srcs.shas and src.filename.endswith(".whl")
             ]
 
+            # See https://peps.python.org/pep-0600/
+            legacy_platform_tags = {
+                "manylinux1_i686": "manylinux_2_5_i686",
+                "manylinux1_x86_64": "manylinux_2_5_x86_64",
+                "manylinux2010_i686": "manylinux_2_12_i686",
+                "manylinux2010_x86_64": "manylinux_2_12_x86_64",
+                "manylinux2014_aarch64": "manylinux_2_17_aarch64",
+                "manylinux2014_armv7l": "manylinux_2_17_armv7l",
+                "manylinux2014_i686": "manylinux_2_17_i686",
+                "manylinux2014_ppc64": "manylinux_2_17_ppc64",
+                "manylinux2014_ppc64le": "manylinux_2_17_ppc64le",
+                "manylinux2014_s390x": "manylinux_2_17_s390x",
+                "manylinux2014_x86_64": "manylinux_2_17_x86_64",
+            }
+
+            # Here we should be only filtering the wheels that are compatible with the parameters.
+            # The selection should be ideally done via selects during build phase. Since we cannot
+            # handle the `musllinux` vs `manylinux` selection we need to do it via the filtering.
+            major, _, tail = pip_attr.python_version.partition(".")
+            minor, _, _ = tail.partition(".")
+
+            # TODO @aignas 2024-03-24: make this an attr?
+            want_abi = "cp{}{}".format(major, minor)
+            want_target_platforms = [
+                "macosx_10_9_universal2",
+                "macosx_10_9_x86_64",
+                "macosx_10_9_arm64",
+                "win_amd64",
+                "manylinux_2_17_aarch64",
+                "manylinux_2_17_ppc64le",
+                "manylinux_2_17_390x",
+                "manylinux_2_17_x86_64",
+            ]
+
+            # TODO @aignas 2024-03-24: this is doing some funky auto-discovery
+            # and ideally we should just setup multiple whl_library repos, but
+            # that may be tricky if the user is using
+            # experimental_requirement_cycles functionality.
+            target_platforms = pip_attr.experimental_target_platforms
+
             # For now only use the bazel downloader only whl file is a
             # cross-platform wheel.
             if len(whls) == 1 and whls[0].filename.endswith("-any.whl"):
@@ -250,30 +432,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
 
                 requirement_line = requirement_line.partition("--hash")[0].strip()
             elif whls:
-                # TODO @aignas 2024-03-24: this is doing some funky auto-discovery
-                # and ideally we should just setup multiple whl_library repos, but
-                # that may be tricky if the user is using
-                # experimental_requirement_cycles functionality.
-                major, _, tail = pip_attr.python_version.partition(".")
-                minor, _, _ = tail.partition(".")
-
-                # TODO @aignas 2024-03-24: make this an attr?
-                want_abi = "cp{}{}".format(major, minor)
-                host_plat = "{}_{}".format(
-                    {
-                        # Values returned by https://bazel.build/rules/lib/repository_os.
-                        "linux": "linux",
-                        "mac os": "osx",
-                        "windows": "windows",
-                    }[module_ctx.os.name],
-                    {
-                        # TODO @aignas 2024-03-24: add more
-                        "amd64": "x86_64",
-                    }[module_ctx.os.arch],
-                )
-                target_platforms = pip_attr.experimental_target_platforms or [host_plat]
-
-                selected = None
+                selected = []
                 for whl in whls:
                     parsed = parse_whl_name(whl.filename)
 
@@ -281,13 +440,16 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
                         continue
 
                     if parsed.platform_tag != "any":
-                        # TODO @aignas 2024-03-24: make this configurable via an attr?
-                        if "musllinux" in parsed.platform_tag:
-                            # Currently don't support it
-                            # TODO @aignas 2024-03-24: actually use some libc matching logic within whl_target_platforms
-                            continue
-
+                        platform_tags = []
                         match = False
+                        for p in parsed.platform_tag.split("."):
+                            p = legacy_platform_tags.get(p, p)
+                            if p in want_target_platforms:
+                                match = True
+
+                            if p not in platform_tags:
+                                platform_tags.append(p)
+
                         for supported_platform in [
                             "{}_{}".format(p.os, p.cpu)
                             for p in whl_target_platforms(parsed.platform_tag)
@@ -300,19 +462,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
                         if not match:
                             continue
 
-                    if selected:
-                        existing = selected
-                        p = parse_whl_name(existing.filename)
-
-                        # Get the most specialized, replace with sort?
-                        if p.abi_tag == "none":
-                            # The new one is more specific
-                            selected = whl
-                        elif p.abi_tag == "abi3" and parsed.abi_tag != "none":
-                            # The new one is more specific
-                            selected = whl
-                    else:
-                        selected = whl
+                    selected.append(whl)
 
                 if selected:
                     requirement_line = requirement_line.partition("--hash")[0].strip()
@@ -325,12 +475,9 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
                 pass
 
         repo_name = "{}_{}".format(pip_name, whl_name)
-        whl_library(
+        common = dict(
             name = repo_name,
             requirement = requirement_line,
-            filename = filename,
-            urls = urls,
-            sha256 = sha256,
             repo = pip_name,
             repo_prefix = pip_name + "_",
             annotation = annotation,
@@ -343,9 +490,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
             python_interpreter_target = python_interpreter_target,
             quiet = pip_attr.quiet,
             timeout = pip_attr.timeout,
-            isolated = use_isolated(module_ctx, pip_attr),
-            extra_pip_args = extra_pip_args,
-            download_only = pip_attr.download_only,
             pip_data_exclude = pip_attr.pip_data_exclude,
             enable_implicit_namespace_pkgs = pip_attr.enable_implicit_namespace_pkgs,
             environment = pip_attr.environment,
@@ -353,15 +497,36 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, simpleapi_ca
             group_name = group_name,
             group_deps = group_deps,
         )
+        options = dict(
+            filename = filename,
+            urls = urls,
+            sha256 = sha256,
+        ) if filename else dict(
+            isolated = use_isolated(module_ctx, pip_attr),
+            extra_pip_args = pip_attr.extra_pip_args + parse_result.options,
+            download_only = pip_attr.download_only,
+        )
 
+        whl_library(**common, **options)
         major_minor = _major_minor_version(pip_attr.python_version)
-        whl_map[hub_name].setdefault(whl_name, []).append(
+        whl_map.setdefault(hub_name, {}).setdefault(whl_name, []).append(
             whl_alias(
                 repo = repo_name,
                 version = major_minor,
                 # Call Label() to canonicalize because its used in a different context
                 config_setting = Label("//python/config_settings:is_python_" + major_minor),
             ),
+        )
+
+    if pip_attr.experimental_requirement_cycles:
+        # Setup the group repo
+        group_repo = "%s__groups" % (pip_name,)
+        group_library(
+            name = group_repo,
+            repo_prefix = pip_name + "_",
+            groups = pip_attr.experimental_requirement_cycles,
+            # TODO @aignas 2024-03-24: pass whls to each group so that we can
+            # correctly get the platform-specific whl libraries in here as well.
         )
 
 def _pip_impl(module_ctx):

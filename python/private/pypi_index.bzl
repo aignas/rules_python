@@ -21,6 +21,7 @@ The functions here should not depend on the `module_ctx` for easy unit testing.
 load("@bazel_features//:features.bzl", "bazel_features")
 load("//python/pip_install:requirements_parser.bzl", parse_requirements = "parse")
 load(":auth.bzl", "get_auth")
+load(":envsubst.bzl", "envsubst")
 load(":normalize_name.bzl", "normalize_name")
 load(":text_util.bzl", "render")
 
@@ -30,6 +31,45 @@ _BUILD_TEMPLATE = """\
 package(default_visibility = ["//visibility:public"])
 exports_files(["{}"])
 """
+
+def simpleapi_download_all(ctx, index_url, env_vars, requiremets_files, simpleapi_cache):
+    """Download all of the items in one go and cache it.
+
+    Args:
+        ctx: The ctx used for the download.
+        index_url: The index URL to use.
+        env_vars: The env vars to use for envsubst,
+        requiremets_files: All of the requirements_files.
+        simpleapi_cache: A dict that is used by this function to cache multiple calls.
+
+    Returns:
+        A dict with the whl structs
+    """
+    index_urls = {}
+    index_url = envsubst(
+        index_url,
+        env_vars,
+        ctx.getenv if hasattr(ctx, "getenv") else ctx.os.environ.get,
+    )
+    sources = get_packages_from_requirements(requiremets_files)
+    simpleapi_srcs = {}
+    for pkg, want_shas in sources.simpleapi.items():
+        entry = simpleapi_srcs.setdefault(pkg, {"urls": {}, "want_shas": {}})
+
+        # ensure that we have a trailing slash, because we will otherwise get redirects
+        # which may not work on private indexes with netrc authentication.
+        entry["urls"]["{}/{}/".format(index_url.rstrip("/"), pkg)] = True
+        entry["want_shas"].update(want_shas)
+
+    # We are using a simple dict to decrease the number of times we call the Simple API.
+    for pkg, download in simpleapi_download(ctx, simpleapi_srcs, simpleapi_cache).items():
+        index_urls[pkg] = get_packages(
+            download.urls,
+            download.html,
+            want_shas = simpleapi_srcs[pkg]["want_shas"],
+        )
+
+    return index_urls
 
 def simpleapi_download(ctx, srcs, cache = None):
     """Download Simple API HTML.
