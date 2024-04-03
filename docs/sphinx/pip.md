@@ -90,6 +90,9 @@ See the example in rules_python/examples/pip_parse_vendored.
 The "use Bazel downloader for python wheels" experimental feature includes support for the Bazel
 [Credential Helper][cred-helper-design].
 
+Your python artifact registry may provide a credential helper for you. Refer to your index's docs
+to see if one is provided.
+
 See the [Credential Helper Spec][cred-helper-spec] for details.
 
 [cred-helper-design]: https://github.com/bazelbuild/proposals/blob/main/designs/2022-06-07-bazel-credential-helpers.md
@@ -99,8 +102,9 @@ See the [Credential Helper Spec][cred-helper-spec] for details.
 ### Basic Example:
 
 The simplest form of a credential helper is a bash script that accepts an arg and spits out JSON to
-stdout. For a service like Google Artifact Registry that uses ['Basic' HTTP Auth][rfc7617], the
-script might look like:
+stdout. For a service like Google Artifact Registry that uses ['Basic' HTTP Auth][rfc7617] and does
+not provide a credential helper that conforms to the [spec][cred-helper-spec], the script might
+look like:
 
 ```bash
 #!/bin/bash
