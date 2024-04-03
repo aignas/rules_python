@@ -123,6 +123,6 @@ build --credential_helper=example.com=/full/path/to/cred_helper.sh
 ```
 
 Bazel will call this file like `cred_helper.sh get` and use the returned JSON to inject headers
-into whatever HTTP(S) request it performs against `example.com`
+into whatever HTTP(S) request it performs against `example.com`.
 
 [rfc7617]: https://datatracker.ietf.org/doc/html/rfc7617
