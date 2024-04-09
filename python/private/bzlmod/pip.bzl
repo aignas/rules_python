@@ -16,6 +16,7 @@
 
 load("@bazel_features//:features.bzl", "bazel_features")
 load("@pythons_hub//:interpreters.bzl", "DEFAULT_PYTHON_VERSION", "INTERPRETER_LABELS")
+load("@rules_python_internal//:rules_python_config.bzl", _rules_python_config = "config")
 load(
     "//python/pip_install:pip_repository.bzl",
     "pip_repository_attrs",
@@ -1028,8 +1029,8 @@ def _extension_extra_args():
 
     if bazel_features.external_deps.module_extension_has_os_arch_dependent:
         args = args | {
-            "arch_dependent": True,
-            "os_dependent": True,
+            "arch_dependent": not _rules_python_config.enable_bzlmod_lockfile,
+            "os_dependent": not _rules_python_config.enable_bzlmod_lockfile,
         }
 
     return args

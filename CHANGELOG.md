@@ -83,6 +83,9 @@ A brief description of the categories of changes:
   allows the users to specify specific requirements files for different os_arch
   combinations. This will require the user to use the `experimental_index_url`
   feature for now.
+* (bzlmod) A new `RULES_PYTHON_ENABLE_BZLMOD_LOCKFILE` env var that can be set to `1`
+  to ensure that the `MODULE.bazel.lock` is created for all os/arch tuples at once.
+  The default is `0` and it is backwards compatible with the previous behaviour.
 
 [0.XX.0]: https://github.com/bazelbuild/rules_python/releases/tag/0.XX.0
 [python_default_visibility]: gazelle/README.md#directive-python_default_visibility

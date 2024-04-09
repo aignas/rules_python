@@ -20,10 +20,13 @@ settings for rules to later use.
 
 _ENABLE_PYSTAR_ENVVAR_NAME = "RULES_PYTHON_ENABLE_PYSTAR"
 _ENABLE_PYSTAR_DEFAULT = "1"
+_ENABLE_BZLMOD_LOCKFILE_ENVVAR_NAME = "RULES_PYTHON_ENABLE_BZLMOD_LOCKFILE"
+_ENABLE_BZLMOD_LOCKFILE_DEFAULT = "0"
 
 _CONFIG_TEMPLATE = """\
 config = struct(
   enable_pystar = {enable_pystar},
+  enable_bzlmod_lockfile = {enable_bzlmod_lockfile},
 )
 """
 
@@ -57,16 +60,20 @@ bzl_library(
 
 def _internal_config_repo_impl(rctx):
     pystar_requested = _bool_from_environ(rctx, _ENABLE_PYSTAR_ENVVAR_NAME, _ENABLE_PYSTAR_DEFAULT)
+    bzlmod_lockfile_requested = _bool_from_environ(rctx, _ENABLE_BZLMOD_LOCKFILE_ENVVAR_NAME, _ENABLE_BZLMOD_LOCKFILE_DEFAULT)
 
     # Bazel 7+ (dev and later) has native.starlark_doc_extract, and thus the
     # py_internal global, which are necessary for the pystar implementation.
     if pystar_requested and hasattr(native, "starlark_doc_extract"):
         enable_pystar = pystar_requested
+        enable_bzlmod_lockfile = bzlmod_lockfile_requested
     else:
         enable_pystar = False
+        enable_bzlmod_lockfile = False
 
     rctx.file("rules_python_config.bzl", _CONFIG_TEMPLATE.format(
         enable_pystar = enable_pystar,
+        enable_bzlmod_lockfile = enable_bzlmod_lockfile,
     ))
 
     if enable_pystar:
@@ -92,7 +99,10 @@ def _internal_config_repo_impl(rctx):
 
 internal_config_repo = repository_rule(
     implementation = _internal_config_repo_impl,
-    environ = [_ENABLE_PYSTAR_ENVVAR_NAME],
+    environ = [
+        _ENABLE_PYSTAR_ENVVAR_NAME,
+        _ENABLE_BZLMOD_LOCKFILE_ENVVAR_NAME,
+    ],
 )
 
 def _bool_from_environ(rctx, key, default):
