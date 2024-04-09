@@ -208,7 +208,7 @@ def _parse_requirements(ctx, pip_attr):
 
     return requirements_by_platform, pip_attr.extra_pip_args + options
 
-def _get_whls_and_sdists(*, whl_name, requirements, want_abis, index_urls):
+def _get_whls_and_sdists(*, whl_name, requirements, want_pys, want_abis, index_urls):
     if not index_urls:
         return {}, {}
 
@@ -235,6 +235,7 @@ def _get_whls_and_sdists(*, whl_name, requirements, want_abis, index_urls):
         # Filter out whls that are not compatible with the target abis
         whls[key] = select_whls(
             whls = whls[key],
+            want_pys = want_pys,
             want_abis = want_abis,
             want_platforms = req.target_platforms,
         )
@@ -516,6 +517,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 auth_patterns = pip_attr.auth_patterns,
             ),
             cache = simpleapi_cache,
+            parallel_download = pip_attr.experimental_parallel_download,
         )
 
     for whl_name, reqs in requirements_with_target_platforms.items():
@@ -533,8 +535,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
         whl_library_args = dict(
             repo = pip_name,
             dep_template = "@{}//{{name}}:{{target}}".format(hub_name),
-            # TODO @aignas 2024-04-08: remove this
-            # requirement = requirement_line,
         )
         maybe_args = dict(
             # The following values are safe to omit if they have false like values
@@ -570,6 +570,10 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
         whls, sdists = _get_whls_and_sdists(
             whl_name = whl_name,
             requirements = reqs,
+            want_pys = [
+                "py3",
+                "cp" + major_minor.replace(".", ""),
+            ],
             want_abis = [
                 "none",
                 "abi3",
@@ -605,12 +609,13 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
             )
             for suffix, args in registrations.items():
                 repo_name = "{}_{}__{}".format(pip_name, whl_name, suffix)
+                all_whl_library_args = dict(sorted(whl_library_args.items() + args.items()))
                 whl_library(
                     name = repo_name,
                     # We sort so that the lock-file remains the same no matter
                     # the order of how the args are manipulated in the code
                     # going before.
-                    **dict(sorted(whl_library_args.items() + args.items()))
+                    **all_whl_library_args
                 )
                 for config_setting in config_settings[suffix]:
                     whl_map.setdefault(whl_name, []).append(
@@ -621,16 +626,31 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                         ),
                     )
         else:
-            # TODO @aignas 2024-04-08: use module_ctx.os.name in order to get
-            # the right requirement_line in this case.
+            os_name = module_ctx.os.name.lower()
+            if os_name.startswith("win"):
+                host_platform_os = "windows"
+            elif os_name.startswith("mac"):
+                host_platform_os = "windows"
+            elif os_name.startswith("linux"):
+                host_platform_os = "windows"
+            else:
+                fail("unsupported host platform: {}".format(os_name))
 
-            requirement_line = None  # TODO
+            requirement_line = [
+                req.requirement_line
+                for req in reqs.values()
+                if len([p for p in req.target_platforms if p.startswith(host_platform_os)]) > 0
+            ][0]
+
             if index_urls:
                 print("WARNING: falling back to pip for installing the right file for {}".format(requirement_line))  # buildifier: disable=print
 
             repo_name = "{}_{}".format(pip_name, whl_name)
-
-            whl_library(name = repo_name, **dict(sorted(whl_library_args.items())))
+            whl_library_args["requirement"] = requirement_line
+            whl_library(
+                name = repo_name,
+                **dict(sorted(whl_library_args.items()))
+            )
             whl_map.setdefault(whl_name, []).append(
                 whl_alias(
                     repo = repo_name,
@@ -853,6 +873,14 @@ https://pytorch.org/blog/compromised-nightly-dependency/.
 The indexes must support Simple API as described here:
 https://packaging.python.org/en/latest/specifications/simple-repository-api/
 """,
+        ),
+        "experimental_parallel_download": attr.bool(
+            doc = """\
+This feature is available for bazel 7.1 and above, which allows us to fetch the PyPI
+simple API indexes in parallel. This is currently set to False by default because
+there are some known issues with the API.
+""",
+            default = False,
         ),
         "experimental_requirements_by_platform": attr.label_keyed_string_dict(
             doc = """\

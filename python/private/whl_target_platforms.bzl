@@ -45,11 +45,12 @@ _OS_PREFIXES = {
     "win": "windows",
 }  # buildifier: disable=unsorted-dict-items
 
-def select_whls(*, whls, want_abis, want_platforms):
+def select_whls(*, whls, want_pys, want_abis, want_platforms):
     """Select a subset of wheels suitable for target platforms from a list.
 
     Args:
         whls(list[struct]): A list of candidates.
+        want_pys(list[str]): A list of Python versions that we should care about.
         want_abis(list[str]): A list of ABIs that are supported.
         want_platforms(str): The platforms
 
@@ -65,6 +66,11 @@ def select_whls(*, whls, want_abis, want_platforms):
         parsed = parse_whl_name(whl.filename)
         if parsed.abi_tag not in want_abis:
             # Filter out incompatible ABIs
+            continue
+
+        # TODO @aignas 2024-04-09: add a test for this
+        parsed_py = [py for py in parsed.python_tag.split(".") if py != "py2"][0]
+        if parsed_py not in want_pys:
             continue
 
         if parsed.platform_tag == "any" or not want_platforms:

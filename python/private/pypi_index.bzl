@@ -21,7 +21,7 @@ load(":auth.bzl", "get_auth")
 load(":envsubst.bzl", "envsubst")
 load(":normalize_name.bzl", "normalize_name")
 
-def simpleapi_download(ctx, *, attr, cache):
+def simpleapi_download(ctx, *, attr, cache, parallel_download = True):
     """Download Simple API HTML.
 
     Args:
@@ -47,6 +47,8 @@ def simpleapi_download(ctx, *, attr, cache):
             undesirable because additions to the PyPI index would not be
             reflected when re-evaluating the extension unless we do
             `bazel clean --expunge`.
+        parallel_download: A boolean to change whether we want to use the parallel
+            download if it is available.
 
     Returns:
         dict of pkg name to the parsed HTML contents - a list of structs.
@@ -58,7 +60,7 @@ def simpleapi_download(ctx, *, attr, cache):
 
     download_kwargs = {}
     if bazel_features.external_deps.download_has_block_param:
-        download_kwargs["block"] = False
+        download_kwargs["block"] = not parallel_download
 
     # Download in parallel if possible. This will download (potentially
     # duplicate) data for multiple packages if there is more than one index
