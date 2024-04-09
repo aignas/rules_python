@@ -29,6 +29,7 @@ bzl_library(
     name = "pip_bzl",
     srcs = ["pip.bzl"],
     deps = [
+        "@rules_python_internal//:rules_python_config_bzl",
         ":pip_repository_bzl",
         "//python/pip_install:pip_repository_bzl",
         "//python/pip_install:requirements_parser_bzl",
