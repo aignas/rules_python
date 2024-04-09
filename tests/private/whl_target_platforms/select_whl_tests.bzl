@@ -109,7 +109,7 @@ def _test_selecting(env):
     got = select_whls(
         whls = WHL_LIST,
         want_abis = ["cp39"],
-        want_platforms = ["linux_x86_32"],
+        want_platforms = ["linux_i686"],
     )
     _match(
         env,

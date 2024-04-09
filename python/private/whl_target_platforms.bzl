@@ -61,6 +61,11 @@ def select_whls(*, whls, want_pys = [], want_abis = [], want_platforms = []):
     if not whls:
         return None
 
+    want_platforms = [
+        _normalize_platform(p)
+        for p in want_platforms
+    ]
+
     candidates = []
     for whl in whls:
         parsed = parse_whl_name(whl.filename)
@@ -88,6 +93,21 @@ def select_whls(*, whls, want_pys = [], want_abis = [], want_platforms = []):
             candidates.append(whl)
 
     return candidates
+
+def _normalize_platform(platform):
+    cpus = _cpu_from_tag(platform)
+    if len(cpus) > 1:
+        fail("Expected the '{}' to only map to a single CPU, but got: {}".format(
+            platform,
+            cpus,
+        ))
+
+    for prefix, os in _OS_PREFIXES.items():
+        if platform.startswith(prefix):
+            return "{}_{}".format(os, cpus[0])
+
+    # If it is not known, just return it back
+    return platform
 
 def whl_target_platforms(platform_tag, abi_tag = ""):
     """Parse the wheel abi and platform tags and return (os, cpu) tuples.
@@ -127,13 +147,9 @@ def whl_target_platforms(platform_tag, abi_tag = ""):
     return []
 
 def _cpu_from_tag(tag):
-    candidate = [
-        cpu
-        for input, cpu in _CPU_ALIASES.items()
-        if tag.endswith(input)
-    ]
-    if candidate:
-        return candidate
+    for input, cpu in _CPU_ALIASES.items():
+        if tag.endswith(input):
+            return [cpu]
 
     if tag == "win32":
         return ["x86_32"]
