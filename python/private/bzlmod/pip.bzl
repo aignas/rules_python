@@ -243,6 +243,82 @@ def _get_whls_and_sdists(*, whl_name, requirements, want_pys, want_abis, index_u
 
     return whls, sdists
 
+def _get_repo_name(filename):
+    filename = filename.lower()
+
+    if filename.endswith(".whl"):
+        whl = parse_whl_name(filename)
+
+        # This uses all of the present components and emits a few for shorter
+        # paths. In particular, we use a single platform_tag and python_tag as
+        # they don't add extra value in partitioning the whl repos.
+        return "_".join([
+            normalize_name(whl.distribution),
+            normalize_name("{}_{}".format(whl.version, whl.build_tag) if whl.build_tag else whl.version),
+            whl.python_tag.rpartition(".")[-1],  # just pick the last one
+            whl.abi_tag,
+            whl.platform_tag.partition(".")[0],
+        ])
+
+    filename_no_ext = filename.lower()
+    for ext in [".tar.gz", ".zip", ".tar"]:
+        if filename_no_ext.endswith(ext):
+            filename_no_ext = filename_no_ext[:-len(ext)]
+            break
+
+    if filename_no_ext == filename.lower():
+        fail("unknown sdist extension: {}".format(filename_no_ext))
+
+    return normalize_name(filename_no_ext)
+
+def _get_whl_config_settings(filename, major_minor, target_platforms):
+    parsed = parse_whl_name(filename)
+    is_default = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION)
+
+    hub_config_settings = {}
+    for plat in target_platforms:
+        flavor = ""
+        flag_values = {
+            str(Label("//python/config_settings:use_sdist")): "auto",
+        }
+        if plat and "linux" == plat.os:
+            flavor = "musl" if "musl" in parsed.platform_tag else "glibc"
+            flag_values[str(Label("//python/config_settings:whl_linux_libc"))] = flavor
+        elif plat and "osx" == plat.os and "universal" in parsed.platform_tag:
+            flavor = "multiarch"
+            flag_values[str(Label("//python/config_settings:whl_osx"))] = flavor
+
+        if not plat:
+            plat_label = "is_any"
+        elif flavor:
+            plat_label = "is_{}_{}".format(plat.target_platform, flavor)
+        else:
+            plat_label = "is_{}".format(plat.target_platform)
+
+        constraint_values = [
+            "@platforms//os:" + plat.os,
+            "@platforms//cpu:" + plat.cpu,
+        ] if plat else []
+
+        if is_default:
+            hub_config_settings[plat_label] = render.config_setting(
+                name = plat_label,
+                flag_values = flag_values,
+                constraint_values = constraint_values,
+                visibility = ["//:__subpackages__"],
+            )
+
+        plat_label = "is_python_" + major_minor + plat_label[len("is"):]
+        hub_config_settings[plat_label] = render.is_python_config_setting(
+            name = plat_label,
+            python_version = major_minor,
+            flag_values = flag_values,
+            constraint_values = constraint_values,
+            visibility = ["//:__subpackages__"],
+        )
+
+    return hub_config_settings
+
 def _get_registrations(*, sdists, whls, reqs, major_minor, hub_config_settings, extra_pip_args):
     """Convert the sdists and whls into select statements and whl_library registrations.
 
@@ -278,10 +354,7 @@ def _get_registrations(*, sdists, whls, reqs, major_minor, hub_config_settings, 
             # ideally, we could reuse the same library across multiple versions, but
             # it is hard. The reason is that different python_versions may be using
             # different packages and this could be the case even for .
-            repo_name = "{}_{}".format(
-                parsed.version.replace(".", "_"),
-                parsed.platform_tag.partition(".")[0],
-            )
+            repo_name = _get_repo_name(whl.filename)
             if repo_name in registrations:
                 fail("attempting to register '(name={name}, {args})' whilst '(name={name}, {have}) already exists".format(
                     name = repo_name,
@@ -306,48 +379,13 @@ def _get_registrations(*, sdists, whls, reqs, major_minor, hub_config_settings, 
                         ),
                     )
 
-            for plat in whl_target_platforms_:
-                flavor = ""
-                flag_values = {
-                    str(Label("//python/config_settings:use_sdist")): "auto",
-                }
-                if plat and "linux" == plat.os:
-                    flavor = "musl" if "musl" in parsed.platform_tag else "glibc"
-                    flag_values[str(Label("//python/config_settings:whl_linux_libc"))] = flavor
-                elif plat and "osx" == plat.os and "universal" in parsed.platform_tag:
-                    flavor = "multiarch"
-                    flag_values[str(Label("//python/config_settings:whl_osx"))] = flavor
-
-                if not plat:
-                    plat_label = "is_any"
-                elif flavor:
-                    plat_label = "is_{}_{}".format(plat.target_platform, flavor)
-                else:
-                    plat_label = "is_{}".format(plat.target_platform)
-
-                constraint_values = [
-                    "@platforms//os:" + plat.os,
-                    "@platforms//cpu:" + plat.cpu,
-                ] if plat else []
-
-                if is_default:
-                    config_settings.setdefault(repo_name, []).append("//:" + plat_label)
-                    hub_config_settings[plat_label] = render.config_setting(
-                        name = plat_label,
-                        flag_values = flag_values,
-                        constraint_values = constraint_values,
-                        visibility = ["//:__subpackages__"],
-                    )
-
-                plat_label = "is_python_" + major_minor + plat_label[len("is"):]
+            for plat_label, config_setting in _get_whl_config_settings(
+                filename = whl.filename,
+                major_minor = major_minor,
+                target_platforms = whl_target_platforms_,
+            ).items():
                 config_settings.setdefault(repo_name, []).append("//:" + plat_label)
-                hub_config_settings[plat_label] = render.is_python_config_setting(
-                    name = plat_label,
-                    python_version = major_minor,
-                    flag_values = flag_values,
-                    constraint_values = constraint_values,
-                    visibility = ["//:__subpackages__"],
-                )
+                hub_config_settings[plat_label] = config_setting
 
         sdist = sdists.get(key)
         if not sdist:
@@ -365,18 +403,7 @@ def _get_registrations(*, sdists, whls, reqs, major_minor, hub_config_settings, 
             # Add the args back for when we are building a wheel
             whl_library_args["extra_pip_args"] = extra_pip_args
 
-        filename_no_ext = sdist.filename.lower()
-        for ext in [".tar.gz", ".zip", ".tar"]:
-            if filename_no_ext.endswith(ext):
-                filename_no_ext = filename_no_ext[:-len(ext)]
-                break
-
-        if filename_no_ext == sdist.filename.lower():
-            fail("unknown sdist extension: {}".format(filename_no_ext))
-
-        _, _, version = filename_no_ext.rpartition("-")
-
-        repo_name = normalize_name(version) + "_sdist"
+        repo_name = _get_repo_name(sdist.filename)
         if repo_name in registrations:
             fail("attempting to register '(name={name}, {args})' whilst '(name={name}, {have}) already exists".format(
                 name = repo_name,
@@ -609,7 +636,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 extra_pip_args = extra_pip_args,
             )
             for suffix, args in registrations.items():
-                repo_name = "{}_{}__{}".format(pip_name, whl_name, suffix)
+                repo_name = "{}_{}".format(hub_name, suffix)
                 all_whl_library_args = dict(sorted(whl_library_args.items() + args.items()))
                 whl_library(
                     name = repo_name,
