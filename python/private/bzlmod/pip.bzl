@@ -269,24 +269,42 @@ def _get_repo_name(filename):
     if filename_no_ext == filename.lower():
         fail("unknown sdist extension: {}".format(filename_no_ext))
 
-    return normalize_name(filename_no_ext)
+    return normalize_name(filename_no_ext) + "_sdist"
 
 def _get_whl_config_settings(filename, major_minor, target_platforms):
-    parsed = parse_whl_name(filename)
+    parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
     is_default = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION)
 
     hub_config_settings = {}
+    if not parsed and not target_platforms:
+        is_python = "is_python_{}".format(major_minor)
+        hub_config_settings[is_python] = render.alias(
+            name = is_python,
+            actual = repr(str(Label("//python/config_settings:is_python_" + major_minor))),
+            visibility = ["//:__subpackages__"],
+        )
+        if is_default:
+            hub_config_settings["default"] = ""
+
+        return hub_config_settings
+
     for plat in target_platforms:
         flavor = ""
         flag_values = {
             str(Label("//python/config_settings:use_sdist")): "auto",
         }
-        if plat and "linux" == plat.os:
-            flavor = "musl" if "musl" in parsed.platform_tag else "glibc"
-            flag_values[str(Label("//python/config_settings:whl_linux_libc"))] = flavor
-        elif plat and "osx" == plat.os and "universal" in parsed.platform_tag:
+        if parsed and plat and "linux" == plat.os:
+            if "musl" in parsed.platform_tag:
+                flavor = "musl"
+                flag_values[str(Label("//python/config_settings:whl_linux_libc"))] = flavor
+            elif "linux" in parsed.platform_tag:
+                flavor = "glibc"
+                flag_values[str(Label("//python/config_settings:whl_linux_libc"))] = flavor
+        elif parsed and plat and "osx" == plat.os and "universal" in parsed.platform_tag:
             flavor = "multiarch"
             flag_values[str(Label("//python/config_settings:whl_osx"))] = flavor
+        elif not parsed:
+            flavor = "sdist"
 
         if not plat:
             plat_label = "is_any"
@@ -299,6 +317,13 @@ def _get_whl_config_settings(filename, major_minor, target_platforms):
             "@platforms//os:" + plat.os,
             "@platforms//cpu:" + plat.cpu,
         ] if plat else []
+
+        if is_default and not parsed:
+            # NOTE @aignas 2024-04-08: if we have many sdists, the last one
+            # will win for the default case that would cover the completely unknown
+            # platform, the user could use the new 'experimental_requirements_by_platform'
+            # to avoid this case.
+            hub_config_settings["default"] = ""
 
         if is_default:
             hub_config_settings[plat_label] = render.config_setting(
@@ -332,29 +357,37 @@ def _get_registrations(*, sdists, whls, reqs, major_minor, hub_config_settings, 
         hub_config_settings: The hub_config_settings we have to add to the hub repo.
         extra_pip_args: Extra pip args that are needed when building wheels from sdist.
     """
-    is_default = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION)
-
     registrations = {}  # repo_name -> args
     config_settings = {}  # repo_name -> list
     found_many = len(reqs) != 1
+    has_default = False
 
-    for key, whls_ in whls.items():
+    for key, dists in whls.items():
         req = reqs[key]
-        for whl in whls_:
+        dists = [] + dists
+        sdist = sdists.get(key)
+        if sdist:
+            dists.append(sdist)
+
+        for dist in dists:
             whl_library_args = {
                 "experimental_target_platforms": req.target_platforms,
-                "filename": whl.filename,
+                "filename": dist.filename,
                 "requirement": req.srcs.requirement,
-                "sha256": whl.sha256,
-                "urls": [whl.url],
+                "sha256": dist.sha256,
+                "urls": [dist.url],
             }
 
-            parsed = parse_whl_name(whl.filename)
+            if not dist.filename.endswith(".whl") and extra_pip_args:
+                # TODO @aignas 2024-04-06: If the resultant whl from the sdist is
+                # platform specific, we would get into trouble. I think we should
+                # ensure that we set `target_compatible_with` for the py_library if
+                # that is the case.
 
-            # ideally, we could reuse the same library across multiple versions, but
-            # it is hard. The reason is that different python_versions may be using
-            # different packages and this could be the case even for .
-            repo_name = _get_repo_name(whl.filename)
+                # Add the args back for when we are building a wheel
+                whl_library_args["extra_pip_args"] = extra_pip_args
+
+            repo_name = _get_repo_name(dist.filename)
             if repo_name in registrations:
                 fail("attempting to register '(name={name}, {args})' whilst '(name={name}, {have}) already exists".format(
                     name = repo_name,
@@ -363,103 +396,36 @@ def _get_registrations(*, sdists, whls, reqs, major_minor, hub_config_settings, 
                 ))
             registrations[repo_name] = whl_library_args
 
-            if parsed.platform_tag != "any":
-                whl_target_platforms_ = whl_target_platforms(parsed.platform_tag)
-            elif not found_many:
-                whl_target_platforms_ = [None]
-            else:
-                whl_target_platforms_ = []
+            target_platforms = []
+            if found_many:
                 for plat in req.target_platforms:
                     os, _, cpu = plat.partition("_")
-                    whl_target_platforms_.append(
+                    target_platforms.append(
                         struct(
                             os = os,
                             cpu = cpu,
                             target_platform = plat,
                         ),
                     )
+            elif dist.filename.endswith("-any.whl"):
+                target_platforms.append(None)
+            elif dist.filename.endswith(".whl"):
+                parsed = parse_whl_name(dist.filename)
+                target_platforms = whl_target_platforms(parsed.platform_tag)
 
             for plat_label, config_setting in _get_whl_config_settings(
-                filename = whl.filename,
+                filename = dist.filename,
                 major_minor = major_minor,
-                target_platforms = whl_target_platforms_,
+                target_platforms = target_platforms,
             ).items():
-                config_settings.setdefault(repo_name, []).append("//:" + plat_label)
-                hub_config_settings[plat_label] = config_setting
-
-        sdist = sdists.get(key)
-        if not sdist:
-            continue
-
-        # TODO @aignas 2024-04-08: what todo here? Should we set the `target_compatible_with` in this case?
-
-        whl_library_args = {
-            "filename": sdist.filename,
-            "requirement": req.srcs.requirement,
-            "sha256": sdist.sha256,
-            "urls": [sdist.url],
-        }
-        if extra_pip_args:
-            # Add the args back for when we are building a wheel
-            whl_library_args["extra_pip_args"] = extra_pip_args
-
-        repo_name = _get_repo_name(sdist.filename)
-        if repo_name in registrations:
-            fail("attempting to register '(name={name}, {args})' whilst '(name={name}, {have}) already exists".format(
-                name = repo_name,
-                args = whl_library_args,
-                have = registrations[repo_name],
-            ))
-        registrations[repo_name] = whl_library_args
-
-        # TODO @aignas 2024-04-06: If the resultant whl from the sdist is
-        # platform specific, we would get into trouble. I think we should
-        # ensure that we set `target_compatible_with` for the py_library if
-        # that is the case.
-
-        if not found_many:
-            is_python = "is_python_{}".format(major_minor)
-            hub_config_settings[is_python] = render.alias(
-                name = is_python,
-                actual = repr(str(Label("//python/config_settings:is_python_" + major_minor))),
-                visibility = ["//:__subpackages__"],
-            )
-            config_settings.setdefault(repo_name, []).append("//:" + is_python)
-            if is_default:
-                config_settings.setdefault(repo_name, []).append("//conditions:default")
-
-            continue
-
-        for plat in req.target_platforms:
-            os, _, cpu = plat.partition("_")
-            constraint_values = [
-                "@platforms//os:" + os,
-                "@platforms//cpu:" + cpu,
-            ]
-
-            plat_label = "is_{}_sdist".format(plat)
-            if is_default:
-                config_settings.setdefault(repo_name, []).append("//:" + plat_label)
-                hub_config_settings[plat_label] = render.config_setting(
-                    name = plat_label,
-                    constraint_values = constraint_values,
-                    visibility = ["//:__subpackages__"],
-                )
-
-            plat_label = "is_python_" + major_minor + plat_label[len("is"):]
-            config_settings.setdefault(repo_name, []).append("//:" + plat_label)
-            hub_config_settings[plat_label] = render.is_python_config_setting(
-                name = plat_label,
-                python_version = major_minor,
-                constraint_values = constraint_values,
-                visibility = ["//:__subpackages__"],
-            )
-
-            # NOTE @aignas 2024-04-08: if we have many sdists, the last one
-            # will win for the default case that would cover the completely unknown
-            # platform, the user could use the new 'experimental_requirements_by_platform'
-            # to avoid this case.
-            config_settings.setdefault(repo_name, []).append("//conditions:default")
+                if plat_label == "default":
+                    if not has_default:
+                        config_settings.setdefault(repo_name, []).append("//conditions:" + plat_label)
+                        has_default = True
+                else:
+                    config_settings.setdefault(repo_name, []).append("//:" + plat_label)
+                if config_setting:
+                    hub_config_settings[plat_label] = config_setting
 
     return registrations, config_settings
 
@@ -687,6 +653,15 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                     config_setting = Label("//python/config_settings:is_python_" + major_minor),
                 ),
             )
+            is_default = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION)
+            if is_default:
+                whl_map.setdefault(whl_name, []).append(
+                    whl_alias(
+                        repo = repo_name,
+                        version = major_minor,
+                        config_setting = "//conditions:default",
+                    ),
+                )
 
 def _pip_impl(module_ctx):
     """Implementation of a class tag that creates the pip hub and corresponding pip spoke whl repositories.
