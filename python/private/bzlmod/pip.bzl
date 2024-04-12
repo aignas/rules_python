@@ -209,13 +209,13 @@ def _parse_requirements(ctx, pip_attr):
 
     return requirements_by_platform, pip_attr.extra_pip_args + options
 
-def _get_whls_and_sdists(*, whl_name, requirements, want_pys, want_abis, index_urls):
+def _get_dists(*, whl_name, requirements, want_pys, want_abis, index_urls):
     if not index_urls:
         return {}, {}
 
-    whls = {}
-    sdists = {}
+    dists = {}
     for key, req in requirements.items():
+        sdist = None
         for sha256 in req.srcs.shas:
             # For now if the artifact is marked as yanked we just ignore it.
             #
@@ -223,25 +223,27 @@ def _get_whls_and_sdists(*, whl_name, requirements, want_pys, want_abis, index_u
 
             maybe_whl = index_urls[whl_name].whls.get(sha256)
             if maybe_whl and not maybe_whl.yanked:
-                whls.setdefault(key, []).append(maybe_whl)
+                dists.setdefault(key, []).append(maybe_whl)
                 continue
 
             maybe_sdist = index_urls[whl_name].sdists.get(sha256)
             if maybe_sdist and not maybe_sdist.yanked:
-                sdists[key] = maybe_sdist
+                sdist = maybe_sdist
                 continue
 
             print("WARNING: Could not find a whl or an sdist with sha256={}".format(sha256))  # buildifier: disable=print
 
-        # Filter out whls that are not compatible with the target abis
-        whls[key] = select_whls(
-            whls = whls[key],
+        # Filter out whls that are not compatible with the target abis and add the sdist
+        dists[key] = select_whls(
+            whls = dists[key],
             want_pys = want_pys,
             want_abis = want_abis,
             want_platforms = req.target_platforms,
         )
+        if sdist:
+            dists[key].append(sdist)
 
-    return whls, sdists
+    return dists
 
 def _get_repo_name(filename):
     filename = filename.lower()
@@ -344,14 +346,12 @@ def _get_whl_config_settings(filename, major_minor, target_platforms):
 
     return hub_config_settings
 
-def _get_registrations(*, sdists, whls, reqs, major_minor, hub_config_settings, extra_pip_args):
+def _get_registrations(*, dists, reqs, major_minor, hub_config_settings, extra_pip_args):
     """Convert the sdists and whls into select statements and whl_library registrations.
 
     Args:
-        sdists: The sdist sources. There can be many of them, different for
+        dists: The whl and sdist sources. There can be many of them, different for
             different platforms.
-        whls: The whl sources. There can be many of them, different versions
-            for different platforms.
         reqs: The requirements for each platform.
         major_minor: The major_minor for the registrations.
         hub_config_settings: The hub_config_settings we have to add to the hub repo.
@@ -362,13 +362,8 @@ def _get_registrations(*, sdists, whls, reqs, major_minor, hub_config_settings, 
     found_many = len(reqs) != 1
     has_default = False
 
-    for key, dists in whls.items():
+    for key, dists in dists.items():
         req = reqs[key]
-        dists = [] + dists
-        sdist = sdists.get(key)
-        if sdist:
-            dists.append(sdist)
-
         for dist in dists:
             whl_library_args = {
                 "experimental_target_platforms": req.target_platforms,
@@ -561,7 +556,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
             if v == default
         })
 
-        whls, sdists = _get_whls_and_sdists(
+        dists = _get_dists(
             whl_name = whl_name,
             requirements = reqs,
             want_pys = [
@@ -578,10 +573,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
             index_urls = index_urls,
         )
 
-        if whls or sdists:
-            # TODO @aignas 2024-04-08: How can we handle fallback to the legacy
-            # machinery for particular platforms? which do not have whls or an sdist?
-
+        if dists:
             # pip is not used to download wheels and the python `whl_library` helpers are only extracting things
             whl_library_args.pop("extra_pip_args", None)
 
@@ -594,8 +586,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 whl_library_args["auth_patterns"] = pip_attr.auth_patterns
 
             registrations, config_settings = _get_registrations(
-                sdists = sdists,
-                whls = whls,
+                dists = dists,
                 reqs = reqs,
                 major_minor = major_minor,
                 hub_config_settings = hub_config_settings,  # Modified by this rule
