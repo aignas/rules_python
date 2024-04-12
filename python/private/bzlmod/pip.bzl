@@ -610,14 +610,16 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                             config_setting = config_setting,
                         ),
                     )
+
+            continue
         else:
             os_name = module_ctx.os.name.lower()
             if os_name.startswith("win"):
                 host_platform_os = "windows"
             elif os_name.startswith("mac"):
-                host_platform_os = "windows"
+                host_platform_os = "osx"
             elif os_name.startswith("linux"):
-                host_platform_os = "windows"
+                host_platform_os = "linux"
             else:
                 fail("unsupported host platform: {}".format(os_name))
 
