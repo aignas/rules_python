@@ -35,7 +35,7 @@ def _pip_repository_impl(rctx):
         requirement_cycles = rctx.attr.groups,
     )
     for path, contents in aliases.items():
-        rctx.file(path, contents)
+        rctx.file(path, contents.rstrip() + "\n", executable = True)
 
     # NOTE: we are using the canonical name with the double '@' in order to
     # always uniquely identify a repository, as the labels are being passed as

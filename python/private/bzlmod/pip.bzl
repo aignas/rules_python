@@ -278,7 +278,28 @@ def _get_whl_config_settings(filename, major_minor, target_platforms):
     is_default = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION)
 
     hub_config_settings = {}
-    if not parsed and not target_platforms:
+    if parsed and not target_platforms:
+        plat_label = "is_any"
+        flag_values = {
+            str(Label("//python/config_settings:use_sdist")): "auto",
+        }
+        if is_default:
+            hub_config_settings[plat_label] = render.config_setting(
+                name = plat_label,
+                flag_values = flag_values,
+                visibility = ["//:__subpackages__"],
+            )
+
+        plat_label = "is_python_" + major_minor + plat_label[len("is"):]
+        hub_config_settings[plat_label] = render.is_python_config_setting(
+            name = plat_label,
+            python_version = major_minor,
+            flag_values = flag_values,
+            visibility = ["//:__subpackages__"],
+        )
+
+        return hub_config_settings
+    elif not parsed and not target_platforms:
         is_python = "is_python_{}".format(major_minor)
         hub_config_settings[is_python] = render.alias(
             name = is_python,
@@ -403,7 +424,7 @@ def _get_registrations(*, dists, reqs, major_minor, hub_config_settings, extra_p
                         ),
                     )
             elif dist.filename.endswith("-any.whl"):
-                target_platforms.append(None)
+                pass
             elif dist.filename.endswith(".whl"):
                 parsed = parse_whl_name(dist.filename)
                 target_platforms = whl_target_platforms(parsed.platform_tag)
@@ -593,7 +614,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 extra_pip_args = extra_pip_args,
             )
             for suffix, args in registrations.items():
-                repo_name = "{}_{}".format(hub_name, suffix)
+                repo_name = "{}_{}".format(pip_name, suffix)
                 all_whl_library_args = dict(sorted(whl_library_args.items() + args.items()))
                 whl_library(
                     name = repo_name,
