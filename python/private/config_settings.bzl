@@ -181,27 +181,6 @@ def construct_config_settings(name = None):  # buildifier: disable=function-docs
         visibility = ["//visibility:public"],
     )
 
-    string_flag(
-        name = "whl_linux_libc",
-        build_setting_default = "glibc",
-        values = ["glibc", "musl"],
-        visibility = ["//visibility:public"],
-    )
-
-    string_flag(
-        name = "whl_osx",
-        build_setting_default = "",
-        values = ["", "multiarch"],
-        visibility = ["//visibility:public"],
-    )
-
-    string_flag(
-        name = "use_sdist",
-        build_setting_default = "auto",
-        values = ["auto", "only"],
-        visibility = ["//visibility:public"],
-    )
-
     for version, matching_versions in VERSION_FLAG_VALUES.items():
         is_python_config_setting(
             name = "is_python_{}".format(version),

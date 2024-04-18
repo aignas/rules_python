@@ -22,6 +22,11 @@ package(default_visibility = ["//visibility:public"])
 
 # Ensure the `requirements.bzl` source can be accessed by stardoc, since users load() from it
 exports_files(["requirements.bzl"])
+
+dist_config_settings(
+    name = "dist_config_settings",
+    visibility = ["//visibility:public"],
+)
 """
 
 def _pip_repository_impl(rctx):
@@ -43,12 +48,11 @@ def _pip_repository_impl(rctx):
     # `requirement`, et al. macros.
     macro_tmpl = "@@{name}//{{}}:{{}}".format(name = rctx.attr.name)
 
-    loads = {}
-    for config_setting in rctx.attr.config_settings:
-        if config_setting.startswith("is_python_config_setting"):
-            rules_python, _, _ = str(Label("//:unused")).partition("//")
-            loads["""load("{}//python/config_settings:config_settings.bzl", "is_python_config_setting")""".format(rules_python)] = None
-
+    rules_python, _, _ = str(Label("//:unused")).partition("//")
+    loads = [
+        """load("{}//python/config_settings:config_settings.bzl", "is_python_config_setting")""".format(rules_python),
+        """load("{}//python/private:dist_config_settings.bzl", "dist_config_settings")""".format(rules_python),
+    ]
     rctx.file("BUILD.bazel", "\n\n".join(
         [
             "\n".join(sorted(loads)),

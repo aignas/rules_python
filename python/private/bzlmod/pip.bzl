@@ -281,7 +281,7 @@ def _get_whl_config_settings(filename, major_minor, target_platforms):
     if parsed and not target_platforms:
         plat_label = "is_any"
         flag_values = {
-            str(Label("//python/config_settings:use_sdist")): "auto",
+            "//:use_sdist": "auto",
         }
         if is_default:
             hub_config_settings[plat_label] = render.config_setting(
@@ -314,20 +314,20 @@ def _get_whl_config_settings(filename, major_minor, target_platforms):
     for plat in target_platforms:
         flavor = ""
         flag_values = {
-            str(Label("//python/config_settings:use_sdist")): "auto",
+            "//:use_sdist": "auto",
         }
-        if parsed and plat and "linux" == plat.os:
-            if "musl" in parsed.platform_tag:
-                flavor = "musl"
-                flag_values[str(Label("//python/config_settings:whl_linux_libc"))] = flavor
-            elif "linux" in parsed.platform_tag:
-                flavor = "glibc"
-                flag_values[str(Label("//python/config_settings:whl_linux_libc"))] = flavor
-        elif parsed and plat and "osx" == plat.os and "universal" in parsed.platform_tag:
-            flavor = "multiarch"
-            flag_values[str(Label("//python/config_settings:whl_osx"))] = flavor
-        elif not parsed:
+        if not parsed:
             flavor = "sdist"
+            flag_values = {}  # Reset the flag values
+        elif "musl" in parsed.platform_tag:
+            flavor = "musl"
+            flag_values["//:whl_linux_libc"] = flavor
+        elif "linux" in parsed.platform_tag:
+            flavor = "glibc"
+            flag_values["//:whl_linux_libc"] = flavor
+        elif "universal2" in parsed.platform_tag:
+            flavor = "multiarch"
+            flag_values["//:whl_osx"] = flavor
 
         if not plat:
             plat_label = "is_any"
