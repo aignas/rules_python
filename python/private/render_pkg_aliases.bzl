@@ -210,7 +210,8 @@ def render_pkg_aliases(*, aliases, default_config_setting = None, requirement_cy
                 filename = alias.filename,
                 major_minor = alias.version,
                 target_platforms = [
-                    struct(**p) for p in alias.target_platforms
+                    struct(**p)
+                    for p in alias.target_platforms
                 ],
                 is_default_version = alias.is_default_version,
             ).items():
@@ -223,11 +224,11 @@ def render_pkg_aliases(*, aliases, default_config_setting = None, requirement_cy
                 if config_setting:
                     hub_config_settings[plat_label] = config_setting
 
-            print(config_settings)
             for config_setting in config_settings:
                 _aliases[whl_name].append(
                     whl_alias(
                         repo = alias.repo,
+                        version = alias.version,
                         config_setting = config_setting,
                     ),
                 )
@@ -239,7 +240,7 @@ def render_pkg_aliases(*, aliases, default_config_setting = None, requirement_cy
             default_config_setting = default_config_setting,
             group_name = whl_group_mapping.get(normalize_name(name)),
         ).strip()
-        for name, pkg_aliases in aliases.items()
+        for name, pkg_aliases in _aliases.items()
     }
     if requirement_cycles:
         files["_groups/BUILD.bazel"] = generate_group_library_build_bazel("", requirement_cycles)
@@ -257,7 +258,7 @@ dist_config_settings(
     name = "dist_config_settings",
     visibility = ["//visibility:public"],
 )""",
-            ] + list(hub_config_settings.values())
+            ] + list(hub_config_settings.values()),
         )
 
     return files
@@ -304,8 +305,6 @@ def whl_alias(*, repo, version = None, config_setting = None, extra_targets = No
 
 def _get_whl_config_settings(filename, major_minor, target_platforms, is_default_version):
     parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
-
-    print(target_platforms)
 
     hub_config_settings = {}
     if parsed and not target_platforms:

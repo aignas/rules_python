@@ -330,7 +330,7 @@ def _get_registrations(*, dists, reqs, extra_pip_args):
                 parsed = parse_whl_name(dist.filename)
                 target_platforms = whl_target_platforms(parsed.platform_tag)
 
-            whl_library_args["experimental_target_platforms"] = target_platforms
+            whl_library_args["alias_target_platforms"] = target_platforms
 
     return registrations
 
@@ -502,8 +502,15 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
             )
             for suffix, args in registrations.items():
                 repo_name = "{}_{}".format(pip_name, suffix)
-                target_platforms = args["experimental_target_platforms"]
-                args["experimental_target_platforms"] = sorted([p.target_platform for p in target_platforms])
+                whl_map.setdefault(whl_name, []).append(
+                    whl_alias(
+                        repo = repo_name,
+                        version = major_minor,
+                        filename = args["filename"],
+                        target_platforms = args.pop("alias_target_platforms"),
+                        is_default_version = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION),
+                    ),
+                )
                 all_whl_library_args = dict(sorted(whl_library_args.items() + args.items()))
                 whl_library(
                     name = repo_name,
@@ -511,15 +518,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                     # the order of how the args are manipulated in the code
                     # going before.
                     **all_whl_library_args
-                )
-                whl_map.setdefault(whl_name, []).append(
-                    whl_alias(
-                        repo = repo_name,
-                        version = major_minor,
-                        filename = args["filename"],
-                        target_platforms = target_platforms,
-                        is_default_version = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION),
-                    ),
                 )
 
             continue
