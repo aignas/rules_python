@@ -17,21 +17,16 @@
 load("//python/private:render_pkg_aliases.bzl", "render_pkg_aliases", "whl_alias")
 load("//python/private:text_util.bzl", "render")
 
-_BUILD_FILE_CONTENTS = """\
+_BUILD_FILE_CONTENTS = """
 package(default_visibility = ["//visibility:public"])
 
 # Ensure the `requirements.bzl` source can be accessed by stardoc, since users load() from it
 exports_files(["requirements.bzl"])
-
-dist_config_settings(
-    name = "dist_config_settings",
-    visibility = ["//visibility:public"],
-)
 """
 
 def _pip_repository_impl(rctx):
     bzl_packages = rctx.attr.whl_map.keys()
-    aliases = render_pkg_aliases(
+    files = render_pkg_aliases(
         aliases = {
             key: [whl_alias(**v) for v in json.decode(values)]
             for key, values in rctx.attr.whl_map.items()
@@ -39,7 +34,8 @@ def _pip_repository_impl(rctx):
         default_config_setting = rctx.attr.default_config_setting,
         requirement_cycles = rctx.attr.groups,
     )
-    for path, contents in aliases.items():
+    files["BUILD.bazel"] = files.get("BUILD.bazel", "") + _BUILD_FILE_CONTENTS
+    for path, contents in files.items():
         rctx.file(path, contents.rstrip() + "\n", executable = True)
 
     # NOTE: we are using the canonical name with the double '@' in order to
@@ -48,17 +44,6 @@ def _pip_repository_impl(rctx):
     # `requirement`, et al. macros.
     macro_tmpl = "@@{name}//{{}}:{{}}".format(name = rctx.attr.name)
 
-    rules_python, _, _ = str(Label("//:unused")).partition("//")
-    loads = [
-        """load("{}//python/config_settings:config_settings.bzl", "is_python_config_setting")""".format(rules_python),
-        """load("{}//python/private:dist_config_settings.bzl", "dist_config_settings")""".format(rules_python),
-    ]
-    rctx.file("BUILD.bazel", "\n\n".join(
-        [
-            "\n".join(sorted(loads)),
-            _BUILD_FILE_CONTENTS,
-        ] + rctx.attr.config_settings,
-    ))
     rctx.template("requirements.bzl", rctx.attr._template, substitutions = {
         "%%ALL_DATA_REQUIREMENTS%%": render.list([
             macro_tmpl.format(p, "data")
@@ -77,7 +62,6 @@ def _pip_repository_impl(rctx):
     })
 
 pip_repository_attrs = {
-    "config_settings": attr.string_list(mandatory = True),
     "default_config_setting": attr.string(
         mandatory = True,
         doc = """\

@@ -30,6 +30,7 @@ load(
     "WHEEL_FILE_PUBLIC_LABEL",
 )
 load(":normalize_name.bzl", "normalize_name")
+load(":parse_whl_name.bzl", "parse_whl_name")
 load(":text_util.bzl", "render")
 
 NO_MATCH_ERROR_MESSAGE_TEMPLATE = """\
@@ -194,6 +195,43 @@ def render_pkg_aliases(*, aliases, default_config_setting = None, requirement_cy
             for whl_name in group_whls
         }
 
+    _aliases = {}
+    hub_config_settings = {}
+    for whl_name, pkg_aliases in aliases.items():
+        has_default = False
+        _aliases[whl_name] = []
+        for alias in pkg_aliases:
+            if not alias.filename:
+                _aliases[whl_name].append(alias)
+                continue
+
+            config_settings = []
+            for plat_label, config_setting in _get_whl_config_settings(
+                filename = alias.filename,
+                major_minor = alias.version,
+                target_platforms = [
+                    struct(**p) for p in alias.target_platforms
+                ],
+                is_default_version = alias.is_default_version,
+            ).items():
+                if plat_label == "default":
+                    if not has_default:
+                        config_settings.append("//conditions:" + plat_label)
+                        has_default = True
+                else:
+                    config_settings.append("//:" + plat_label)
+                if config_setting:
+                    hub_config_settings[plat_label] = config_setting
+
+            print(config_settings)
+            for config_setting in config_settings:
+                _aliases[whl_name].append(
+                    whl_alias(
+                        repo = alias.repo,
+                        config_setting = config_setting,
+                    ),
+                )
+
     files = {
         "{}/BUILD.bazel".format(normalize_name(name)): _render_common_aliases(
             name = normalize_name(name),
@@ -205,9 +243,26 @@ def render_pkg_aliases(*, aliases, default_config_setting = None, requirement_cy
     }
     if requirement_cycles:
         files["_groups/BUILD.bazel"] = generate_group_library_build_bazel("", requirement_cycles)
+    if hub_config_settings:
+        rules_python, _, _ = str(Label("//:unused")).partition("//")
+        loads = [
+            """load("{}//python/config_settings:config_settings.bzl", "is_python_config_setting")""".format(rules_python),
+            """load("{}//python/private:dist_config_settings.bzl", "dist_config_settings")""".format(rules_python),
+        ]
+        files["BUILD.bazel"] = "\n\n".join(
+            [
+                "\n".join(sorted(loads)),
+                """\
+dist_config_settings(
+    name = "dist_config_settings",
+    visibility = ["//visibility:public"],
+)""",
+            ] + list(hub_config_settings.values())
+        )
+
     return files
 
-def whl_alias(*, repo, version = None, config_setting = None, extra_targets = None):
+def whl_alias(*, repo, version = None, config_setting = None, extra_targets = None, filename = None, target_platforms = None, is_default_version = None):
     """The bzl_packages value used by by the render_pkg_aliases function.
 
     This contains the minimum amount of information required to generate correct
@@ -223,6 +278,9 @@ def whl_alias(*, repo, version = None, config_setting = None, extra_targets = No
             to "@rules_python//python/config_settings:is_python_{version}".
         extra_targets: optional(list[str]), the extra targets that we need to create
             aliases for.
+        filename: The filename of the dist that the aliases need to be created for.
+        target_platforms: The target platforms that the dist is targetting.
+        is_default_version: Whether this is a default python version.
 
     Returns:
         a struct with the validated and parsed values.
@@ -239,4 +297,102 @@ def whl_alias(*, repo, version = None, config_setting = None, extra_targets = No
         version = version,
         config_setting = config_setting,
         extra_targets = extra_targets or [],
+        filename = filename,
+        target_platforms = target_platforms,
+        is_default_version = is_default_version,
     )
+
+def _get_whl_config_settings(filename, major_minor, target_platforms, is_default_version):
+    parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
+
+    print(target_platforms)
+
+    hub_config_settings = {}
+    if parsed and not target_platforms:
+        plat_label = "is_any"
+        flag_values = {
+            "//:use_sdist": "auto",
+        }
+        if is_default_version:
+            hub_config_settings[plat_label] = render.config_setting(
+                name = plat_label,
+                flag_values = flag_values,
+                visibility = ["//:__subpackages__"],
+            )
+
+        plat_label = "is_python_" + major_minor + plat_label[len("is"):]
+        hub_config_settings[plat_label] = render.is_python_config_setting(
+            name = plat_label,
+            python_version = major_minor,
+            flag_values = flag_values,
+            visibility = ["//:__subpackages__"],
+        )
+
+        return hub_config_settings
+    elif not parsed and not target_platforms:
+        is_python = "is_python_{}".format(major_minor)
+        hub_config_settings[is_python] = render.alias(
+            name = is_python,
+            actual = repr(str(Label("//python/config_settings:is_python_" + major_minor))),
+            visibility = ["//:__subpackages__"],
+        )
+        if is_default_version:
+            hub_config_settings["default"] = ""
+
+        return hub_config_settings
+
+    for plat in target_platforms:
+        flavor = ""
+        flag_values = {
+            "//:use_sdist": "auto",
+        }
+        if not parsed:
+            flavor = "sdist"
+            flag_values = {}  # Reset the flag values
+        elif "musl" in parsed.platform_tag:
+            flavor = "musl"
+            flag_values["//:whl_linux_libc"] = flavor
+        elif "linux" in parsed.platform_tag:
+            flavor = "glibc"
+            flag_values["//:whl_linux_libc"] = flavor
+        elif "universal2" in parsed.platform_tag:
+            flavor = "multiarch"
+            flag_values["//:whl_osx"] = flavor
+
+        if not plat:
+            plat_label = "is_any"
+        elif flavor:
+            plat_label = "is_{}_{}".format(plat.target_platform, flavor)
+        else:
+            plat_label = "is_{}".format(plat.target_platform)
+
+        constraint_values = [
+            "@platforms//os:" + plat.os,
+            "@platforms//cpu:" + plat.cpu,
+        ] if plat else []
+
+        if is_default_version and not parsed:
+            # NOTE @aignas 2024-04-08: if we have many sdists, the last one
+            # will win for the default case that would cover the completely unknown
+            # platform, the user could use the new 'experimental_requirements_by_platform'
+            # to avoid this case.
+            hub_config_settings["default"] = ""
+
+        if is_default_version:
+            hub_config_settings[plat_label] = render.config_setting(
+                name = plat_label,
+                flag_values = flag_values,
+                constraint_values = constraint_values,
+                visibility = ["//:__subpackages__"],
+            )
+
+        plat_label = "is_python_" + major_minor + plat_label[len("is"):]
+        hub_config_settings[plat_label] = render.is_python_config_setting(
+            name = plat_label,
+            python_version = major_minor,
+            flag_values = flag_values,
+            constraint_values = constraint_values,
+            visibility = ["//:__subpackages__"],
+        )
+
+    return hub_config_settings

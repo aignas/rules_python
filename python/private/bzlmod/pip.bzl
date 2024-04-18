@@ -29,7 +29,6 @@ load("//python/private:normalize_name.bzl", "normalize_name")
 load("//python/private:parse_whl_name.bzl", "parse_whl_name")
 load("//python/private:pypi_index.bzl", "get_simpleapi_sources", "simpleapi_download")
 load("//python/private:render_pkg_aliases.bzl", "whl_alias")
-load("//python/private:text_util.bzl", "render")
 load("//python/private:version_label.bzl", "version_label")
 load("//python/private:whl_target_platforms.bzl", "select_whls", "whl_target_platforms")
 load(":pip_repository.bzl", "pip_repository")
@@ -273,115 +272,17 @@ def _get_repo_name(filename):
 
     return normalize_name(filename_no_ext) + "_sdist"
 
-def _get_whl_config_settings(filename, major_minor, target_platforms):
-    parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
-    is_default = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION)
-
-    hub_config_settings = {}
-    if parsed and not target_platforms:
-        plat_label = "is_any"
-        flag_values = {
-            "//:use_sdist": "auto",
-        }
-        if is_default:
-            hub_config_settings[plat_label] = render.config_setting(
-                name = plat_label,
-                flag_values = flag_values,
-                visibility = ["//:__subpackages__"],
-            )
-
-        plat_label = "is_python_" + major_minor + plat_label[len("is"):]
-        hub_config_settings[plat_label] = render.is_python_config_setting(
-            name = plat_label,
-            python_version = major_minor,
-            flag_values = flag_values,
-            visibility = ["//:__subpackages__"],
-        )
-
-        return hub_config_settings
-    elif not parsed and not target_platforms:
-        is_python = "is_python_{}".format(major_minor)
-        hub_config_settings[is_python] = render.alias(
-            name = is_python,
-            actual = repr(str(Label("//python/config_settings:is_python_" + major_minor))),
-            visibility = ["//:__subpackages__"],
-        )
-        if is_default:
-            hub_config_settings["default"] = ""
-
-        return hub_config_settings
-
-    for plat in target_platforms:
-        flavor = ""
-        flag_values = {
-            "//:use_sdist": "auto",
-        }
-        if not parsed:
-            flavor = "sdist"
-            flag_values = {}  # Reset the flag values
-        elif "musl" in parsed.platform_tag:
-            flavor = "musl"
-            flag_values["//:whl_linux_libc"] = flavor
-        elif "linux" in parsed.platform_tag:
-            flavor = "glibc"
-            flag_values["//:whl_linux_libc"] = flavor
-        elif "universal2" in parsed.platform_tag:
-            flavor = "multiarch"
-            flag_values["//:whl_osx"] = flavor
-
-        if not plat:
-            plat_label = "is_any"
-        elif flavor:
-            plat_label = "is_{}_{}".format(plat.target_platform, flavor)
-        else:
-            plat_label = "is_{}".format(plat.target_platform)
-
-        constraint_values = [
-            "@platforms//os:" + plat.os,
-            "@platforms//cpu:" + plat.cpu,
-        ] if plat else []
-
-        if is_default and not parsed:
-            # NOTE @aignas 2024-04-08: if we have many sdists, the last one
-            # will win for the default case that would cover the completely unknown
-            # platform, the user could use the new 'experimental_requirements_by_platform'
-            # to avoid this case.
-            hub_config_settings["default"] = ""
-
-        if is_default:
-            hub_config_settings[plat_label] = render.config_setting(
-                name = plat_label,
-                flag_values = flag_values,
-                constraint_values = constraint_values,
-                visibility = ["//:__subpackages__"],
-            )
-
-        plat_label = "is_python_" + major_minor + plat_label[len("is"):]
-        hub_config_settings[plat_label] = render.is_python_config_setting(
-            name = plat_label,
-            python_version = major_minor,
-            flag_values = flag_values,
-            constraint_values = constraint_values,
-            visibility = ["//:__subpackages__"],
-        )
-
-    return hub_config_settings
-
-def _get_registrations(*, dists, reqs, major_minor, hub_config_settings, extra_pip_args):
+def _get_registrations(*, dists, reqs, extra_pip_args):
     """Convert the sdists and whls into select statements and whl_library registrations.
 
     Args:
         dists: The whl and sdist sources. There can be many of them, different for
             different platforms.
         reqs: The requirements for each platform.
-        major_minor: The major_minor for the registrations.
-        hub_config_settings: The hub_config_settings we have to add to the hub repo.
         extra_pip_args: Extra pip args that are needed when building wheels from sdist.
     """
     registrations = {}  # repo_name -> args
-    config_settings = {}  # repo_name -> list
     found_many = len(reqs) != 1
-    has_default = False
 
     for key, dists in dists.items():
         req = reqs[key]
@@ -429,23 +330,11 @@ def _get_registrations(*, dists, reqs, major_minor, hub_config_settings, extra_p
                 parsed = parse_whl_name(dist.filename)
                 target_platforms = whl_target_platforms(parsed.platform_tag)
 
-            for plat_label, config_setting in _get_whl_config_settings(
-                filename = dist.filename,
-                major_minor = major_minor,
-                target_platforms = target_platforms,
-            ).items():
-                if plat_label == "default":
-                    if not has_default:
-                        config_settings.setdefault(repo_name, []).append("//conditions:" + plat_label)
-                        has_default = True
-                else:
-                    config_settings.setdefault(repo_name, []).append("//:" + plat_label)
-                if config_setting:
-                    hub_config_settings[plat_label] = config_setting
+            whl_library_args["experimental_target_platforms"] = target_platforms
 
-    return registrations, config_settings
+    return registrations
 
-def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, simpleapi_cache, hub_config_settings):
+def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, simpleapi_cache):
     python_interpreter_target = pip_attr.python_interpreter_target
 
     # if we do not have the python_interpreter set in the attributes
@@ -606,15 +495,15 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
             if pip_attr.auth_patterns:
                 whl_library_args["auth_patterns"] = pip_attr.auth_patterns
 
-            registrations, config_settings = _get_registrations(
+            registrations = _get_registrations(
                 dists = dists,
                 reqs = reqs,
-                major_minor = major_minor,
-                hub_config_settings = hub_config_settings,  # Modified by this rule
                 extra_pip_args = extra_pip_args,
             )
             for suffix, args in registrations.items():
                 repo_name = "{}_{}".format(pip_name, suffix)
+                target_platforms = args["experimental_target_platforms"]
+                args["experimental_target_platforms"] = sorted([p.target_platform for p in target_platforms])
                 all_whl_library_args = dict(sorted(whl_library_args.items() + args.items()))
                 whl_library(
                     name = repo_name,
@@ -623,14 +512,15 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                     # going before.
                     **all_whl_library_args
                 )
-                for config_setting in config_settings[suffix]:
-                    whl_map.setdefault(whl_name, []).append(
-                        whl_alias(
-                            repo = repo_name,
-                            version = major_minor,
-                            config_setting = config_setting,
-                        ),
-                    )
+                whl_map.setdefault(whl_name, []).append(
+                    whl_alias(
+                        repo = repo_name,
+                        version = major_minor,
+                        filename = args["filename"],
+                        target_platforms = target_platforms,
+                        is_default_version = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION),
+                    ),
+                )
 
             continue
         else:
@@ -784,7 +674,6 @@ def _pip_impl(module_ctx):
     # Where hub, whl, and pip are the repo names
     hub_whl_map = {}
     hub_group_map = {}
-    hub_config_settings = {}
 
     simpleapi_cache = {}
 
@@ -830,7 +719,6 @@ def _pip_impl(module_ctx):
                 whl_overrides,
                 hub_group_map,
                 simpleapi_cache,
-                hub_config_settings.setdefault(hub_name, {}),
             )
 
     for hub_name, whl_map in hub_whl_map.items():
@@ -843,7 +731,6 @@ def _pip_impl(module_ctx):
             },
             default_config_setting = "//conditions:default",
             groups = hub_group_map.get(hub_name),
-            config_settings = list(hub_config_settings[hub_name].values()),
         )
 
 def _pip_parse_ext_attrs():
