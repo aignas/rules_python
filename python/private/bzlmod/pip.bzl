@@ -30,7 +30,7 @@ load("//python/private:parse_whl_name.bzl", "parse_whl_name")
 load("//python/private:pypi_index.bzl", "get_simpleapi_sources", "simpleapi_download")
 load("//python/private:render_pkg_aliases.bzl", "whl_alias")
 load("//python/private:version_label.bzl", "version_label")
-load("//python/private:whl_target_platforms.bzl", "select_whls", "whl_target_platforms")
+load("//python/private:whl_target_platforms.bzl", "select_whls")
 load(":pip_repository.bzl", "pip_repository")
 
 def _parse_version(version):
@@ -313,24 +313,8 @@ def _get_registrations(*, dists, reqs, extra_pip_args):
                 ))
             registrations[repo_name] = whl_library_args
 
-            target_platforms = []
-            if found_many:
-                for plat in req.target_platforms:
-                    os, _, cpu = plat.partition("_")
-                    target_platforms.append(
-                        struct(
-                            os = os,
-                            cpu = cpu,
-                            target_platform = plat,
-                        ),
-                    )
-            elif dist.filename.endswith("-any.whl"):
-                pass
-            elif dist.filename.endswith(".whl"):
-                parsed = parse_whl_name(dist.filename)
-                target_platforms = whl_target_platforms(parsed.platform_tag)
-
-            whl_library_args["alias_target_platforms"] = target_platforms
+            if found_many and (dist.filename.endswith("-any.whl") or not dist.filename.endswith(".whl")):
+                whl_library_args["alias_target_platforms"] = req.target_platforms
 
     return registrations
 
@@ -507,10 +491,11 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                         repo = repo_name,
                         version = major_minor,
                         filename = args["filename"],
-                        target_platforms = args.pop("alias_target_platforms"),
+                        target_platforms = args.pop("alias_target_platforms", None),
                         is_default_version = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION),
                     ),
                 )
+
                 all_whl_library_args = dict(sorted(whl_library_args.items() + args.items()))
                 whl_library(
                     name = repo_name,
@@ -551,19 +536,9 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 whl_alias(
                     repo = repo_name,
                     version = major_minor,
-                    # Call Label() to canonicalize because its used in a different context
-                    config_setting = Label("//python/config_settings:is_python_" + major_minor),
+                    is_default_version = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION),
                 ),
             )
-            is_default = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION)
-            if is_default:
-                whl_map.setdefault(whl_name, []).append(
-                    whl_alias(
-                        repo = repo_name,
-                        version = major_minor,
-                        config_setting = "//conditions:default",
-                    ),
-                )
 
 def _pip_impl(module_ctx):
     """Implementation of a class tag that creates the pip hub and corresponding pip spoke whl repositories.

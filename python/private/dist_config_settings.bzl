@@ -17,7 +17,7 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 
-def dist_config_settings(name, default_whl_linux_libc = "glibc", default_whl_osx = "", default_use_sdist = "auto", **kwargs):
+def dist_config_settings(name, default_whl_linux_libc = "glibc", default_whl_osx = "", default_use_sdist = "auto", default_prefer_any = "auto", **kwargs):
     """Create string flags for dist configuration.
 
     Args:
@@ -29,6 +29,9 @@ def dist_config_settings(name, default_whl_linux_libc = "glibc", default_whl_osx
             specific wheels.
         default_use_sdist: str, default for whether the sdist is used. Defaults
             to using `sdist` if there is no wheel available.
+        default_prefer_any: str, default for whether the any wheel should be
+            preferred over the platform specific wheels. Defaults to using `any`
+            wheel only if the platform-specific wheel is unavailable.
         **kwargs: Extra args passed to string_flags.
     """
 
@@ -50,5 +53,12 @@ def dist_config_settings(name, default_whl_linux_libc = "glibc", default_whl_osx
         name = "use_sdist",
         build_setting_default = default_use_sdist,
         values = ["auto", "only"],
+        **kwargs
+    )
+
+    string_flag(
+        name = "prefer_any",
+        build_setting_default = default_prefer_any,
+        values = ["auto", "yes"],
         **kwargs
     )

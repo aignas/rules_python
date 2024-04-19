@@ -32,6 +32,7 @@ load(
 load(":normalize_name.bzl", "normalize_name")
 load(":parse_whl_name.bzl", "parse_whl_name")
 load(":text_util.bzl", "render")
+load(":whl_target_platforms.bzl", "whl_target_platforms")
 
 NO_MATCH_ERROR_MESSAGE_TEMPLATE = """\
 No matching wheel for current configuration's Python version.
@@ -209,10 +210,7 @@ def render_pkg_aliases(*, aliases, default_config_setting = None, requirement_cy
             for plat_label, config_setting in _get_whl_config_settings(
                 filename = alias.filename,
                 major_minor = alias.version,
-                target_platforms = [
-                    struct(**p)
-                    for p in alias.target_platforms
-                ],
+                target_platforms = alias.target_platforms,
                 is_default_version = alias.is_default_version,
             ).items():
                 if plat_label == "default":
@@ -263,48 +261,20 @@ dist_config_settings(
 
     return files
 
-def whl_alias(*, repo, version = None, config_setting = None, extra_targets = None, filename = None, target_platforms = None, is_default_version = None):
-    """The bzl_packages value used by by the render_pkg_aliases function.
-
-    This contains the minimum amount of information required to generate correct
-    aliases in a hub repository.
-
-    Args:
-        repo: str, the repo of where to find the things to be aliased.
-        version: optional(str), the version of the python toolchain that this
-            whl alias is for. If not set, then non-version aware aliases will be
-            constructed. This is mainly used for better error messages when there
-            is no match found during a select.
-        config_setting: optional(Label or str), the config setting that we should use. Defaults
-            to "@rules_python//python/config_settings:is_python_{version}".
-        extra_targets: optional(list[str]), the extra targets that we need to create
-            aliases for.
-        filename: The filename of the dist that the aliases need to be created for.
-        target_platforms: The target platforms that the dist is targetting.
-        is_default_version: Whether this is a default python version.
-
-    Returns:
-        a struct with the validated and parsed values.
-    """
-    if not repo:
-        fail("'repo' must be specified")
-
-    if version:
-        config_setting = config_setting or Label("//python/config_settings:is_python_" + version)
-        config_setting = str(config_setting)
-
-    return struct(
-        repo = repo,
-        version = version,
-        config_setting = config_setting,
-        extra_targets = extra_targets or [],
-        filename = filename,
-        target_platforms = target_platforms,
-        is_default_version = is_default_version,
-    )
-
 def _get_whl_config_settings(filename, major_minor, target_platforms, is_default_version):
     parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
+    if parsed and not target_platforms and not parsed.platform_tag == "any":
+        target_platforms = whl_target_platforms(parsed.platform_tag)
+    elif target_platforms:
+        target_platforms_ = []
+        for plat in target_platforms:
+            os, _, cpu = plat.partition("_")
+            target_platforms_.append(struct(
+                os = os,
+                cpu = cpu,
+                target_platform = plat,
+            ))
+        target_platforms = target_platforms_
 
     hub_config_settings = {}
     if parsed and not target_platforms:
@@ -343,11 +313,19 @@ def _get_whl_config_settings(filename, major_minor, target_platforms, is_default
     for plat in target_platforms:
         flavor = ""
         flag_values = {
+            "//:prefer_any": "auto",
             "//:use_sdist": "auto",
         }
         if not parsed:
             flavor = "sdist"
-            flag_values = {}  # Reset the flag values
+            flag_values = {
+                "//:prefer_any": "auto",
+            }  # Reset the flag values
+        elif parsed.platform_tag == "any":
+            flavor = "any"
+            flag_values = {
+                "//:use_sdist": "auto",
+            }
         elif "musl" in parsed.platform_tag:
             flavor = "musl"
             flag_values["//:whl_linux_libc"] = flavor
@@ -358,9 +336,7 @@ def _get_whl_config_settings(filename, major_minor, target_platforms, is_default
             flavor = "multiarch"
             flag_values["//:whl_osx"] = flavor
 
-        if not plat:
-            plat_label = "is_any"
-        elif flavor:
+        if flavor:
             plat_label = "is_{}_{}".format(plat.target_platform, flavor)
         else:
             plat_label = "is_{}".format(plat.target_platform)
@@ -368,7 +344,7 @@ def _get_whl_config_settings(filename, major_minor, target_platforms, is_default
         constraint_values = [
             "@platforms//os:" + plat.os,
             "@platforms//cpu:" + plat.cpu,
-        ] if plat else []
+        ]
 
         if is_default_version and not parsed:
             # NOTE @aignas 2024-04-08: if we have many sdists, the last one
@@ -395,3 +371,42 @@ def _get_whl_config_settings(filename, major_minor, target_platforms, is_default
         )
 
     return hub_config_settings
+
+def whl_alias(*, repo, version = None, config_setting = None, filename = None, target_platforms = None, is_default_version = None):
+    """The bzl_packages value used by by the render_pkg_aliases function.
+
+    This contains the minimum amount of information required to generate correct
+    aliases in a hub repository.
+
+    Args:
+        repo: str, the repo of where to find the things to be aliased.
+        version: optional(str), the version of the python toolchain that this
+            whl alias is for. If not set, then non-version aware aliases will be
+            constructed. This is mainly used for better error messages when there
+            is no match found during a select.
+        config_setting: optional(Label or str), the config setting that we should use. Defaults
+            to "@rules_python//python/config_settings:is_python_{version}".
+        filename: The filename of the dist that the aliases need to be created for.
+        target_platforms: The target platforms that the dist is targeting. This
+            is only needed for `sdist` or `any` dists that target a subset of
+            platforms.
+        is_default_version: Whether this is a default python version.
+
+    Returns:
+        a struct with the validated and parsed values.
+    """
+    if not repo:
+        fail("'repo' must be specified")
+
+    if version:
+        config_setting = config_setting or Label("//python/config_settings:is_python_" + version)
+        config_setting = str(config_setting)
+
+    return struct(
+        repo = repo,
+        version = version,
+        config_setting = config_setting,
+        filename = filename,
+        target_platforms = target_platforms,
+        is_default_version = is_default_version,
+    )
