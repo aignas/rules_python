@@ -96,25 +96,37 @@ def _render_tuple(items):
         ")",
     ])
 
-def _config_setting(name, **kwargs):
+def _config_setting(*, name, constraint_values, **kwargs):
+    lines = [
+        "name = \"{}\",".format(name),
+        "constraint_values = {},".format(
+            _render_list(constraint_values),
+        ),
+    ]
     return "\n".join([
         "config_setting(",
-        _indent("\n".join([
-            "name = \"{}\",".format(name),
-        ] + [
+        _indent("\n".join(lines + [
             "{} = {},".format(k, repr(v))
             for k, v in kwargs.items()
         ])),
         ")",
     ])
 
-def _is_python_config_setting(name, *, python_version, **kwargs):
+def _is_python_config_setting(name, *, python_version, constraint_values = None, **kwargs):
+    lines = [
+        "name = \"{}\",".format(name),
+        "python_version = \"{}\",".format(python_version),
+    ]
+    if constraint_values:
+        lines.append(
+            "constraint_values = {},".format(
+                _render_list(constraint_values),
+            ),
+        )
+
     return "\n".join([
         "is_python_config_setting(",
-        _indent("\n".join([
-            "name = \"{}\",".format(name),
-            "python_version = \"{}\",".format(python_version),
-        ] + [
+        _indent("\n".join(lines + [
             "{} = {},".format(k, repr(v))
             for k, v in kwargs.items()
         ])),

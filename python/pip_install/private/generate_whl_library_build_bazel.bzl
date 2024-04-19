@@ -131,7 +131,8 @@ def _render_list_and_select(deps, deps_by_platform, tmpl):
         return "{} + {}".format(deps, deps_by_platform)
 
 def _render_config_settings(dependencies_by_platform):
-    py_version_by_os_arch = {}
+    loads = []
+    additional_content = []
     for p in dependencies_by_platform:
         # p can be one of the following formats:
         # * @platforms//os:{value}
@@ -150,64 +151,40 @@ def _render_config_settings(dependencies_by_platform):
         os = "" if os == "anyos" else os
         arch = "" if arch == "anyarch" else arch
 
-        py_version_by_os_arch.setdefault((os, arch), []).append(abi)
-
-    if not py_version_by_os_arch:
-        return None, None
-
-    loads = []
-    additional_content = []
-    for (os, arch), abis in py_version_by_os_arch.items():
         constraint_values = []
-        if os:
-            constraint_values.append("@platforms//os:{}".format(os))
         if arch:
             constraint_values.append("@platforms//cpu:{}".format(arch))
+        if os:
+            constraint_values.append("@platforms//os:{}".format(os))
 
         os_arch = (os or "anyos") + "_" + (arch or "anyarch")
+        if not abi:
+            additional_content.append(
+                render.config_setting(
+                    name = "is_{}".format(os_arch),
+                    constraint_values = constraint_values,
+                    visibility = ["//visibility:private"],
+                ),
+            )
+            continue
+
+        minor_version = int(abi[len("cp3"):])
+
+        if not loads:
+            loads.append(
+                """load("@rules_python//python/config_settings:config_settings.bzl", "is_python_config_setting")""",
+            )
         additional_content.append(
-            """\
-config_setting(
-    name = "is_{name}",
-    constraint_values = {values},
-    visibility = ["//visibility:private"],
-)""".format(
-                name = os_arch,
-                values = render.indent(render.list(sorted([str(Label(c)) for c in constraint_values]))).strip(),
+            render.is_python_config_setting(
+                name = "is_{}_{}".format(abi, os_arch),
+                python_version = "3." + str(minor_version),
+                constraint_values = constraint_values,
+                visibility = ["//visibility:private"],
             ),
         )
 
-        if abis == [""]:
-            if not os or not arch:
-                fail("BUG: both os and arch should be set in this case")
-            continue
-
-        for abi in abis:
-            if not loads:
-                loads.append("""load("@bazel_skylib//lib:selects.bzl", "selects")""")
-            minor_version = int(abi[len("cp3"):])
-            setting = "@@{rules_python}//python/config_settings:is_python_3.{version}".format(
-                rules_python = str(Label("//:BUILD.bazel")).partition("//")[0].strip("@"),
-                version = minor_version,
-            )
-            settings = [
-                ":is_" + os_arch,
-                setting,
-            ]
-
-            plat = "{}_{}".format(abi, os_arch)
-
-            additional_content.append(
-                """\
-selects.config_setting_group(
-    name = "{name}",
-    match_all = {values},
-    visibility = ["//visibility:private"],
-)""".format(
-                    name = _plat_label(plat).lstrip(":"),
-                    values = render.indent(render.list(sorted(settings))).strip(),
-                ),
-            )
+    if not loads and not additional_content:
+        return None, None
 
     return loads, "\n\n".join(additional_content)
 
@@ -379,7 +356,7 @@ def generate_whl_library_build_bazel(
     contents = "\n".join(
         [
             _BUILD_TEMPLATE.format(
-                loads = "\n".join(loads),
+                loads = "\n".join(sorted(loads)),
                 py_library_label = py_library_label,
                 dependencies = render.indent(lib_dependencies, " " * 4).lstrip(),
                 whl_file_deps = render.indent(whl_file_deps, " " * 4).lstrip(),
