@@ -488,13 +488,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
             # No need for this because we use dep_template
             whl_library_args.pop("repo")
 
-            old_interpreter_target = whl_library_args.pop("python_interpreter_target", None)
-            if old_interpreter_target:
-                whl_library_args["python_interpreter_target"] = str(old_interpreter_target).replace(
-                    "_{}_".format(major_minor.replace(".", "_")),
-                    "_{}_".format(_major_minor_version(DEFAULT_PYTHON_VERSION).replace(".", "_")),
-                )
-
             if pip_attr.netrc:
                 whl_library_args["netrc"] = pip_attr.netrc
             if pip_attr.auth_patterns:
@@ -524,12 +517,24 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 if repo_name in whl_registrations:
                     _have = dict(sorted(whl_registrations[repo_name].items()))
                     _args = dict(sorted(all_whl_library_args.items()))
-                    _have.pop("experimental_target_platforms")
-                    _args.pop("experimental_target_platforms")
                     _have_str = render.dict(_have)
                     _args_str = render.dict(_args)
 
-                    if _have_str != _args_str:
+                    # This field is going to be extended later
+                    _have.pop("experimental_target_platforms")
+                    _args.pop("experimental_target_platforms")
+
+                    # We will just use the first interpreter we find. We don't
+                    # choose the default because it might change with the
+                    # --@rules_python//python/config_settings:python_version=3.Y
+                    # setting and using the first one in the hub list at least gives
+                    # us determinism and a stable lock file.
+                    _have.pop("python_interpreter_target")
+                    _args.pop("python_interpreter_target")
+                    _have_str_cmp = render.dict(_have)
+                    _args_str_cmp = render.dict(_args)
+
+                    if _have_str_cmp != _args_str_cmp:
                         fail("attempting to register {name} whilst a different registration with different args already exists:\nhave: {have}\n new: {args}".format(
                             name = repo_name,
                             args = _args_str,
