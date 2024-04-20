@@ -193,43 +193,59 @@ def render_pkg_aliases(*, aliases, default_version = None, requirement_cycles = 
         }
 
     _aliases = {}
+    _alias_target_platforms = {}
     hub_config_settings = {}
     for whl_name, pkg_aliases in aliases.items():
-        has_default = False
         _aliases[whl_name] = []
         for alias in pkg_aliases:
             if not alias.filename:
+                plat_label = "is_python_" + alias.version
+                hub_config_settings[plat_label] = render.alias(
+                    name = "plat_label",
+                    actual = repr(str(Label("//python/config_settings:is_python_" + alias.version))),
+                    visibility = ["//:__subpackages__"],
+                )
                 _aliases[whl_name].append(whl_alias(
                     repo = alias.repo,
                     version = alias.version,
-                    _config_setting = str(Label("//python/config_settings:is_python_" + alias.version)),
+                    _config_setting = "//:" + plat_label,
                 ))
                 continue
 
-            config_settings = []
-            for plat_label, config_setting in _get_whl_config_settings(
-                filename = alias.filename,
-                major_minor = alias.version,
-                target_platforms = alias.target_platforms,
-                is_default_version = alias.version == default_version,
-            ).items():
-                if plat_label == "":
-                    if not has_default:
-                        config_settings.append(DEFAULT_CONFIG_SETTING)
-                        has_default = True
-                else:
-                    config_settings.append("//:" + plat_label)
-                if config_setting:
-                    hub_config_settings[plat_label] = config_setting
+            _target_plats = _alias_target_platforms.setdefault(whl_name, {}).setdefault((alias.repo, alias.filename), [])
+            if alias.target_platforms:
+                _target_plats.extend([(alias.version, p) for p in alias.target_platforms])
+            else:
+                _target_plats.append((alias.version, None))
 
-            for config_setting in config_settings:
-                _aliases[whl_name].append(
-                    whl_alias(
-                        repo = alias.repo,
-                        version = alias.version,
-                        _config_setting = config_setting,
-                    ),
-                )
+    for whl_name, x in _alias_target_platforms.items():
+        for (repo, filename), target_platforms in x.items():
+            has_default = False
+            for version, p in target_platforms:
+                config_settings = []
+                for plat_label, config_setting in _get_whl_config_settings(
+                    filename = filename,
+                    major_minor = version,
+                    target_platforms = [p] if p else [],
+                    is_default_version = version == default_version,
+                ).items():
+                    if plat_label == "":
+                        if not has_default:
+                            config_settings.append(DEFAULT_CONFIG_SETTING)
+                            has_default = True
+                    else:
+                        config_settings.append("//:" + plat_label)
+                    if config_setting:
+                        hub_config_settings[plat_label] = config_setting
+
+                for config_setting in config_settings:
+                    _aliases[whl_name].append(
+                        whl_alias(
+                            repo = repo,
+                            version = version,
+                            _config_setting = config_setting,
+                        ),
+                    )
 
     files = {
         "{}/BUILD.bazel".format(normalize_name(name)): _render_common_aliases(

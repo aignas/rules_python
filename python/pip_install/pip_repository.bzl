@@ -23,6 +23,7 @@ load("//python/pip_install/private:generate_group_library_build_bazel.bzl", "gen
 load("//python/pip_install/private:generate_whl_library_build_bazel.bzl", "generate_whl_library_build_bazel")
 load("//python/pip_install/private:srcs.bzl", "PIP_INSTALL_PY_SRCS")
 load("//python/private:auth.bzl", "AUTH_ATTRS", "get_auth")
+load("//python/private:bzlmod_enabled.bzl", "BZLMOD_ENABLED")
 load("//python/private:envsubst.bzl", "envsubst")
 load("//python/private:normalize_name.bzl", "normalize_name")
 load("//python/private:parse_whl_name.bzl", "parse_whl_name")
@@ -966,7 +967,7 @@ whl_library_attrs = dict({
         doc = "Name of the group, if any.",
     ),
     "repo": attr.string(
-        mandatory = True,
+        mandatory = not BZLMOD_ENABLED,
         doc = "Pointer to parent repo name. Used to make these rules rerun if the parent repo changes.",
     ),
     "requirement": attr.string(

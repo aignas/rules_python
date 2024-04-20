@@ -29,6 +29,7 @@ load("//python/private:normalize_name.bzl", "normalize_name")
 load("//python/private:parse_whl_name.bzl", "parse_whl_name")
 load("//python/private:pypi_index.bzl", "get_simpleapi_sources", "simpleapi_download")
 load("//python/private:render_pkg_aliases.bzl", "whl_alias")
+load("//python/private:text_util.bzl", "render")
 load("//python/private:version_label.bzl", "version_label")
 load("//python/private:whl_target_platforms.bzl", "select_whls")
 load(":pip_repository.bzl", "pip_repository")
@@ -154,6 +155,12 @@ def _parse_requirements(ctx, pip_attr):
     for file, plats in files_by_platform:
         if not file and plats:
             for p in plats:
+                if "host" in p:
+                    fail("The host platform is not allowed")
+
+                if "*" in p:
+                    fail("Wildcards are not allowed in platform")
+
                 if p in default_platforms:
                     continue
 
@@ -209,10 +216,11 @@ def _parse_requirements(ctx, pip_attr):
     return requirements_by_platform, pip_attr.extra_pip_args + options
 
 def _get_dists(*, whl_name, requirements, want_pys, want_abis, index_urls):
-    if not index_urls:
-        return {}, {}
-
     dists = {}
+
+    if not index_urls:
+        return dists
+
     for key, req in requirements.items():
         sdist = None
         for sha256 in req.srcs.shas:
@@ -284,7 +292,8 @@ def _get_registrations(*, dists, reqs, extra_pip_args):
     registrations = {}  # repo_name -> args
     found_many = len(reqs) != 1
 
-    for key, dists in dists.items():
+    dists_ = dists
+    for key, dists in dists_.items():
         req = reqs[key]
         for dist in dists:
             whl_library_args = {
@@ -318,7 +327,7 @@ def _get_registrations(*, dists, reqs, extra_pip_args):
 
     return registrations
 
-def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, simpleapi_cache):
+def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, simpleapi_cache, whl_registrations):
     python_interpreter_target = pip_attr.python_interpreter_target
 
     # if we do not have the python_interpreter set in the attributes
@@ -450,22 +459,24 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
             if v == default
         })
 
-        dists = _get_dists(
-            whl_name = whl_name,
-            requirements = reqs,
-            want_pys = [
-                "py3",
-                "cp" + major_minor.replace(".", ""),
-            ],
-            want_abis = [
-                "none",
-                "abi3",
-                "cp" + major_minor.replace(".", ""),
-                # Older python versions have wheels for the `*m` ABI.
-                "cp" + major_minor.replace(".", "") + "m",
-            ],
-            index_urls = index_urls,
-        )
+        dists = []
+        if index_urls:
+            dists = _get_dists(
+                whl_name = whl_name,
+                requirements = reqs,
+                want_pys = [
+                    "py3",
+                    "cp" + major_minor.replace(".", ""),
+                ],
+                want_abis = [
+                    "none",
+                    "abi3",
+                    "cp" + major_minor.replace(".", ""),
+                    # Older python versions have wheels for the `*m` ABI.
+                    "cp" + major_minor.replace(".", "") + "m",
+                ],
+                index_urls = index_urls,
+            )
 
         if dists:
             # pip is not used to download wheels and the python `whl_library` helpers are only extracting things
@@ -473,6 +484,16 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
 
             # This is no-op because pip is not used to download the wheel.
             whl_library_args.pop("download_only", None)
+
+            # No need for this because we use dep_template
+            whl_library_args.pop("repo")
+
+            old_interpreter_target = whl_library_args.pop("python_interpreter_target", None)
+            if old_interpreter_target:
+                whl_library_args["python_interpreter_target"] = str(old_interpreter_target).replace(
+                    "_{}_".format(major_minor.replace(".", "_")),
+                    "_{}_".format(_major_minor_version(DEFAULT_PYTHON_VERSION).replace(".", "_")),
+                )
 
             if pip_attr.netrc:
                 whl_library_args["netrc"] = pip_attr.netrc
@@ -485,7 +506,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 extra_pip_args = extra_pip_args,
             )
             for suffix, args in registrations.items():
-                repo_name = "{}_{}".format(pip_name, suffix)
+                repo_name = "{}_{}".format(hub_name, suffix)
                 whl_map.setdefault(whl_name, []).append(
                     whl_alias(
                         repo = repo_name,
@@ -496,13 +517,17 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 )
 
                 all_whl_library_args = dict(sorted(whl_library_args.items() + args.items()))
-                whl_library(
-                    name = repo_name,
-                    # We sort so that the lock-file remains the same no matter
-                    # the order of how the args are manipulated in the code
-                    # going before.
-                    **all_whl_library_args
-                )
+                if repo_name in whl_registrations:
+                    _have = render.dict(dict(sorted(whl_registrations[repo_name].items())))
+                    _args = render.dict(dict(sorted(all_whl_library_args.items())))
+                    if _have != _args:
+                        fail("attempting to register {name} whilst a different registration with different args already exists:\nhave: {have}\n new: {args}".format(
+                            name = repo_name,
+                            args = _args,
+                            have = _have,
+                        ))
+                else:
+                    whl_registrations[repo_name] = all_whl_library_args
 
             continue
         else:
@@ -535,7 +560,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 whl_alias(
                     repo = repo_name,
                     version = major_minor,
-                    is_default_version = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION),
                 ),
             )
 
@@ -648,6 +672,10 @@ def _pip_impl(module_ctx):
     hub_group_map = {}
 
     simpleapi_cache = {}
+    whl_registrations = {}
+
+    # TODO @aignas 2024-04-20: allow only a single declaration of the repo if
+    # we use the experimental index URL
 
     for mod in module_ctx.modules:
         for pip_attr in mod.tags.parse:
@@ -656,6 +684,7 @@ def _pip_impl(module_ctx):
                 pip_hub_map[pip_attr.hub_name] = struct(
                     module_name = mod.name,
                     python_versions = [pip_attr.python_version],
+                    index_url = pip_attr.experimental_index_url,
                 )
             elif pip_hub_map[hub_name].module_name != mod.name:
                 # We cannot have two hubs with the same name in different
@@ -671,7 +700,7 @@ def _pip_impl(module_ctx):
                     second_module = mod.name,
                 ))
 
-            elif pip_attr.python_version in pip_hub_map[hub_name].python_versions:
+            elif pip_attr.python_version and pip_attr.python_version in pip_hub_map[hub_name].python_versions:
                 fail((
                     "Duplicate pip python version '{version}' for hub " +
                     "'{hub}' in module '{module}': the Python versions " +
@@ -691,7 +720,17 @@ def _pip_impl(module_ctx):
                 whl_overrides,
                 hub_group_map,
                 simpleapi_cache,
+                whl_registrations,
             )
+
+    for repo, args in whl_registrations.items():
+        whl_library(
+            name = repo,
+            # We sort so that the lock-file remains the same no matter
+            # the order of how the args are manipulated in the code
+            # going before.
+            **dict(sorted(args.items()))
+        )
 
     for hub_name, whl_map in hub_whl_map.items():
         pip_repository(

@@ -59,7 +59,7 @@ def select_whls(*, whls, want_pys = [], want_abis = [], want_platforms = []):
         selected whl. If no match is found, None is returned.
     """
     if not whls:
-        return None
+        return whls
 
     want_platforms = [
         _normalize_platform(p)

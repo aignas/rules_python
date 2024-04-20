@@ -165,7 +165,8 @@ def read_simple_api(ctx, url, attr, cache, **download_kwargs):
 
     cache_key = real_url
     if cache_key in cache:
-        return struct(success = True, output = cache[cache_key])
+        cached = cache[cache_key]
+        return struct(success = True, output = cached, cache_key = cache_key)
 
     output_str = envsubst(
         url,
@@ -207,7 +208,7 @@ def _read_index_result(ctx, result, output, url, cache, cache_key):
 
     output = parse_simple_api_html(url = url, content = content)
     if output:
-        cache.setdefault(cache_key, output)
+        cache[cache_key] = output
         return struct(success = True, output = output, cache_key = cache_key)
     else:
         return struct(success = False)
