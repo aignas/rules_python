@@ -492,7 +492,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                         version = major_minor,
                         filename = args["filename"],
                         target_platforms = args.pop("alias_target_platforms", None),
-                        is_default_version = major_minor == _major_minor_version(DEFAULT_PYTHON_VERSION),
                     ),
                 )
 
@@ -699,10 +698,10 @@ def _pip_impl(module_ctx):
             name = hub_name,
             repo_name = hub_name,
             whl_map = {
-                key: json.encode(value)
+                key: [json.encode(v) for v in value]
                 for key, value in whl_map.items()
             },
-            default_config_setting = "//conditions:default",
+            default_version = _major_minor_version(DEFAULT_PYTHON_VERSION),
             groups = hub_group_map.get(hub_name),
         )
 

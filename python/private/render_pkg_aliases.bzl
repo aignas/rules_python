@@ -53,7 +53,7 @@ If the value is missing, then the "default" Python version is being used,
 which has a "null" version value and will not match version constraints.
 """
 
-default_config_setting = "//conditions:default"
+DEFAULT_CONFIG_SETTING = "//conditions:default"
 
 def _render_whl_library_alias(
         *,
@@ -83,7 +83,7 @@ def _render_whl_library_alias(
         # hub repo
         actual = "@{repo}//:{name}".format(repo = alias.repo, name = target_name)
         selects.setdefault(actual, []).append(alias.config_setting)
-        if alias.config_setting == default_config_setting:
+        if alias.config_setting == DEFAULT_CONFIG_SETTING:
             no_match_error = None
 
     return render.alias(
@@ -107,7 +107,7 @@ def _render_common_aliases(*, name, aliases, group_name = None):
     if aliases:
         config_settings = sorted([v.config_setting for v in aliases if v.config_setting])
 
-    if not config_settings or default_config_setting in config_settings:
+    if not config_settings or DEFAULT_CONFIG_SETTING in config_settings:
         pass
     else:
         error_msg = NO_MATCH_ERROR_MESSAGE_TEMPLATE.format(
@@ -201,8 +201,8 @@ def render_pkg_aliases(*, aliases, default_version = None, requirement_cycles = 
             if not alias.filename:
                 _aliases[whl_name].append(whl_alias(
                     repo = alias.repo,
-                    version = version,
-                    config_setting = str(Label("//python/config_settings:is_python_" + alias.version)),
+                    version = alias.version,
+                    _config_setting = str(Label("//python/config_settings:is_python_" + alias.version)),
                 ))
                 continue
 
@@ -213,9 +213,9 @@ def render_pkg_aliases(*, aliases, default_version = None, requirement_cycles = 
                 target_platforms = alias.target_platforms,
                 is_default_version = alias.version == default_version,
             ).items():
-                if plat_label == "default":
+                if plat_label == "":
                     if not has_default:
-                        config_settings.append("//conditions:" + plat_label)
+                        config_settings.append(DEFAULT_CONFIG_SETTING)
                         has_default = True
                 else:
                     config_settings.append("//:" + plat_label)
@@ -227,7 +227,7 @@ def render_pkg_aliases(*, aliases, default_version = None, requirement_cycles = 
                     whl_alias(
                         repo = alias.repo,
                         version = alias.version,
-                        config_setting = config_setting,
+                        _config_setting = config_setting,
                     ),
                 )
 
@@ -235,7 +235,6 @@ def render_pkg_aliases(*, aliases, default_version = None, requirement_cycles = 
         "{}/BUILD.bazel".format(normalize_name(name)): _render_common_aliases(
             name = normalize_name(name),
             aliases = pkg_aliases,
-            default_config_setting = default_config_setting,
             group_name = whl_group_mapping.get(normalize_name(name)),
         ).strip()
         for name, pkg_aliases in _aliases.items()
@@ -275,48 +274,24 @@ def _get_whl_config_settings(filename, major_minor, target_platforms, is_default
                 target_platform = plat,
             ))
         target_platforms = target_platforms_
+    elif not target_platforms:
+        target_platforms = [None]
 
     hub_config_settings = {}
-    if parsed and not target_platforms:
-        plat_label = "is_any"
-        flag_values = {
-            "//:use_sdist": "auto",
-        }
-        if is_default_version:
-            hub_config_settings[plat_label] = render.config_setting(
-                name = plat_label,
-                flag_values = flag_values,
-                visibility = ["//:__subpackages__"],
-            )
-
-        plat_label = "is_python_" + major_minor + plat_label[len("is"):]
-        hub_config_settings[plat_label] = render.is_python_config_setting(
-            name = plat_label,
-            python_version = major_minor,
-            flag_values = flag_values,
-            visibility = ["//:__subpackages__"],
-        )
-
-        return hub_config_settings
-    elif not parsed and not target_platforms:
-        is_python = "is_python_{}".format(major_minor)
-        hub_config_settings[is_python] = render.alias(
-            name = is_python,
-            actual = repr(str(Label("//python/config_settings:is_python_" + major_minor))),
-            visibility = ["//:__subpackages__"],
-        )
-        if is_default_version:
-            hub_config_settings["default"] = ""
-
-        return hub_config_settings
-
     for plat in target_platforms:
         flavor = ""
         flag_values = {
             "//:prefer_any": "auto",
             "//:use_sdist": "auto",
         }
-        if not parsed:
+        if not plat and not parsed:
+            flag_values = {}
+        elif not plat and parsed:
+            flag_values = {
+                "//:use_sdist": "auto",
+            }
+            flavor = "any"
+        elif not parsed:
             flavor = "sdist"
             flag_values = {
                 "//:prefer_any": "auto",
@@ -336,24 +311,30 @@ def _get_whl_config_settings(filename, major_minor, target_platforms, is_default
             flavor = "multiarch"
             flag_values["//:whl_osx"] = flavor
 
-        if flavor:
+        if flavor and plat:
             plat_label = "is_{}_{}".format(plat.target_platform, flavor)
-        else:
+        elif flavor:
+            plat_label = "is_{}".format(flavor)
+        elif plat:
             plat_label = "is_{}".format(plat.target_platform)
+        else:
+            plat_label = "is"
 
-        constraint_values = [
-            "@platforms//os:" + plat.os,
-            "@platforms//cpu:" + plat.cpu,
-        ]
+        if plat:
+            constraint_values = [
+                "@platforms//os:" + plat.os,
+                "@platforms//cpu:" + plat.cpu,
+            ]
+        else:
+            constraint_values = []
 
-        if is_default_version and not parsed:
+        if is_default_version and (not parsed or plat_label == "is"):
             # NOTE @aignas 2024-04-08: if we have many sdists, the last one
             # will win for the default case that would cover the completely unknown
             # platform, the user could use the new 'experimental_requirements_by_platform'
             # to avoid this case.
-            hub_config_settings["default"] = ""
-
-        if is_default_version:
+            hub_config_settings[""] = ""
+        elif is_default_version:
             hub_config_settings[plat_label] = render.config_setting(
                 name = plat_label,
                 flag_values = flag_values,
@@ -372,7 +353,7 @@ def _get_whl_config_settings(filename, major_minor, target_platforms, is_default
 
     return hub_config_settings
 
-def whl_alias(*, repo, version = None, filename = None, target_platforms = None):
+def whl_alias(*, repo, version = None, filename = None, target_platforms = None, _config_setting = None):
     """The bzl_packages value used by by the render_pkg_aliases function.
 
     This contains the minimum amount of information required to generate correct
@@ -388,6 +369,7 @@ def whl_alias(*, repo, version = None, filename = None, target_platforms = None)
         target_platforms: The target platforms that the dist is targeting. This
             is only needed for `sdist` or `any` dists that target a subset of
             platforms.
+        _config_setting: TODO
 
     Returns:
         a struct with the validated and parsed values.
@@ -395,9 +377,14 @@ def whl_alias(*, repo, version = None, filename = None, target_platforms = None)
     if not repo:
         fail("'repo' must be specified")
 
-    return struct(
+    attrs = dict(
         repo = repo,
         version = version,
         filename = filename,
-        target_platforms = target_platforms,
     )
+    if filename:
+        attrs["target_platforms"] = target_platforms
+    if _config_setting:
+        attrs["config_setting"] = _config_setting
+
+    return struct(**attrs)

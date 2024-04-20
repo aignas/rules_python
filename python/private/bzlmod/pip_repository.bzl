@@ -28,10 +28,10 @@ def _pip_repository_impl(rctx):
     bzl_packages = rctx.attr.whl_map.keys()
     files = render_pkg_aliases(
         aliases = {
-            key: [whl_alias(**v) for v in json.decode(values)]
+            key: [whl_alias(**json.decode(v)) for v in values]
             for key, values in rctx.attr.whl_map.items()
         },
-        default_config_setting = rctx.attr.default_config_setting,
+        default_version = rctx.attr.default_version,
         requirement_cycles = rctx.attr.groups,
     )
     files["BUILD.bazel"] = files.get("BUILD.bazel", "") + _BUILD_FILE_CONTENTS
@@ -62,7 +62,7 @@ def _pip_repository_impl(rctx):
     })
 
 pip_repository_attrs = {
-    "default_config_setting": attr.string(
+    "default_version": attr.string(
         mandatory = True,
         doc = """\
 This is the default python version in the format of X.Y. This should match
@@ -76,7 +76,7 @@ setting.""",
         mandatory = True,
         doc = "The apparent name of the repo. This is needed because in bzlmod, the name attribute becomes the canonical name.",
     ),
-    "whl_map": attr.string_dict(
+    "whl_map": attr.string_list_dict(
         mandatory = True,
         doc = """\
 The wheel map where values are json.encoded strings of the whl_map constructed
