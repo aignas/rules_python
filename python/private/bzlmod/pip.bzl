@@ -516,16 +516,27 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                     ),
                 )
 
+                args["experimental_target_platforms"] = [
+                    "cp{}_{}".format(major_minor.replace(".", ""), p)
+                    for p in (args["experimental_target_platforms"] or [])
+                ]
                 all_whl_library_args = dict(sorted(whl_library_args.items() + args.items()))
                 if repo_name in whl_registrations:
-                    _have = render.dict(dict(sorted(whl_registrations[repo_name].items())))
-                    _args = render.dict(dict(sorted(all_whl_library_args.items())))
-                    if _have != _args:
+                    _have = dict(sorted(whl_registrations[repo_name].items()))
+                    _args = dict(sorted(all_whl_library_args.items()))
+                    _have.pop("experimental_target_platforms")
+                    _args.pop("experimental_target_platforms")
+                    _have_str = render.dict(_have)
+                    _args_str = render.dict(_args)
+
+                    if _have_str != _args_str:
                         fail("attempting to register {name} whilst a different registration with different args already exists:\nhave: {have}\n new: {args}".format(
                             name = repo_name,
-                            args = _args,
-                            have = _have,
+                            args = _args_str,
+                            have = _have_str,
                         ))
+                    else:
+                        whl_registrations[repo_name]["experimental_target_platforms"].extend(args["experimental_target_platforms"])
                 else:
                     whl_registrations[repo_name] = all_whl_library_args
 
