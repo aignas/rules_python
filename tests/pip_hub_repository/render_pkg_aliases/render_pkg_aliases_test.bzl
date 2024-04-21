@@ -65,6 +65,8 @@ def _test_legacy_aliases(env):
 
     want_key = "foo/BUILD.bazel"
     want_content = """\
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
 package(default_visibility = ["//visibility:public"])
 
 alias(
@@ -101,13 +103,15 @@ def _test_bzlmod_aliases(env):
         default_version = "3.2",
         aliases = {
             "bar-baz": [
-                whl_alias(version = "3.2", repo = "pypi_32_bar_baz", config_setting = "//:my_config_setting"),
+                whl_alias(version = "3.2", repo = "pypi_32_bar_baz"),
             ],
         },
     )
 
     want_key = "bar_baz/BUILD.bazel"
     want_content = """\
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
 package(default_visibility = ["//visibility:public"])
 
 alias(
@@ -117,45 +121,53 @@ alias(
 
 alias(
     name = "pkg",
-    actual = select(
+    actual = selects.with_or(
         {
-            "//:my_config_setting": "@pypi_32_bar_baz//:pkg",
-            "//conditions:default": "@pypi_32_bar_baz//:pkg",
+            (
+                "//:is_python_3.2",
+                "//conditions:default",
+            ): "@pypi_32_bar_baz//:pkg",
         },
     ),
 )
 
 alias(
     name = "whl",
-    actual = select(
+    actual = selects.with_or(
         {
-            "//:my_config_setting": "@pypi_32_bar_baz//:whl",
-            "//conditions:default": "@pypi_32_bar_baz//:whl",
+            (
+                "//:is_python_3.2",
+                "//conditions:default",
+            ): "@pypi_32_bar_baz//:whl",
         },
     ),
 )
 
 alias(
     name = "data",
-    actual = select(
+    actual = selects.with_or(
         {
-            "//:my_config_setting": "@pypi_32_bar_baz//:data",
-            "//conditions:default": "@pypi_32_bar_baz//:data",
+            (
+                "//:is_python_3.2",
+                "//conditions:default",
+            ): "@pypi_32_bar_baz//:data",
         },
     ),
 )
 
 alias(
     name = "dist_info",
-    actual = select(
+    actual = selects.with_or(
         {
-            "//:my_config_setting": "@pypi_32_bar_baz//:dist_info",
-            "//conditions:default": "@pypi_32_bar_baz//:dist_info",
+            (
+                "//:is_python_3.2",
+                "//conditions:default",
+            ): "@pypi_32_bar_baz//:dist_info",
         },
     ),
 )"""
 
-    env.expect.that_collection(actual.keys()).contains_exactly([want_key])
+    env.expect.that_collection(actual.keys()).contains_exactly(["BUILD.bazel", want_key])
     env.expect.that_str(actual[want_key]).equals(want_content)
 
 _tests.append(_test_bzlmod_aliases)
@@ -168,8 +180,6 @@ def _test_bzlmod_aliases_with_no_default_version(env):
                 whl_alias(
                     version = "3.2",
                     repo = "pypi_32_bar_baz",
-                    # pass the label to ensure that it gets converted to string
-                    config_setting = Label("//python/config_settings:is_python_3.2"),
                 ),
                 whl_alias(version = "3.1", repo = "pypi_31_bar_baz"),
             ],
@@ -178,6 +188,8 @@ def _test_bzlmod_aliases_with_no_default_version(env):
 
     want_key = "bar_baz/BUILD.bazel"
     want_content = """\
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
 package(default_visibility = ["//visibility:public"])
 
 _NO_MATCH_ERROR = \"\"\"\\
@@ -206,10 +218,10 @@ alias(
 
 alias(
     name = "pkg",
-    actual = select(
+    actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:pkg",
-            "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:pkg",
+            "//:is_python_3.1": "@pypi_31_bar_baz//:pkg",
+            "//:is_python_3.2": "@pypi_32_bar_baz//:pkg",
         },
         no_match_error = _NO_MATCH_ERROR,
     ),
@@ -217,10 +229,10 @@ alias(
 
 alias(
     name = "whl",
-    actual = select(
+    actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:whl",
-            "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:whl",
+            "//:is_python_3.1": "@pypi_31_bar_baz//:whl",
+            "//:is_python_3.2": "@pypi_32_bar_baz//:whl",
         },
         no_match_error = _NO_MATCH_ERROR,
     ),
@@ -228,10 +240,10 @@ alias(
 
 alias(
     name = "data",
-    actual = select(
+    actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:data",
-            "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:data",
+            "//:is_python_3.1": "@pypi_31_bar_baz//:data",
+            "//:is_python_3.2": "@pypi_32_bar_baz//:data",
         },
         no_match_error = _NO_MATCH_ERROR,
     ),
@@ -239,17 +251,17 @@ alias(
 
 alias(
     name = "dist_info",
-    actual = select(
+    actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:dist_info",
-            "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:dist_info",
+            "//:is_python_3.1": "@pypi_31_bar_baz//:dist_info",
+            "//:is_python_3.2": "@pypi_32_bar_baz//:dist_info",
         },
         no_match_error = _NO_MATCH_ERROR,
     ),
 )"""
 
-    env.expect.that_collection(actual.keys()).contains_exactly([want_key])
-    env.expect.that_str(actual[want_key]).equals(_normalize_label_strings(want_content))
+    env.expect.that_collection(actual.keys()).contains_exactly(["BUILD.bazel", want_key])
+    env.expect.that_str(actual[want_key]).equals(want_content)
 
 _tests.append(_test_bzlmod_aliases_with_no_default_version)
 
@@ -273,6 +285,8 @@ def _test_bzlmod_aliases_for_non_root_modules(env):
 
     want_key = "bar_baz/BUILD.bazel"
     want_content = """\
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
 package(default_visibility = ["//visibility:public"])
 
 _NO_MATCH_ERROR = \"\"\"\\
@@ -301,10 +315,10 @@ alias(
 
 alias(
     name = "pkg",
-    actual = select(
+    actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:pkg",
-            "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:pkg",
+            "//:is_python_3.1": "@pypi_31_bar_baz//:pkg",
+            "//:is_python_3.2": "@pypi_32_bar_baz//:pkg",
         },
         no_match_error = _NO_MATCH_ERROR,
     ),
@@ -312,10 +326,10 @@ alias(
 
 alias(
     name = "whl",
-    actual = select(
+    actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:whl",
-            "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:whl",
+            "//:is_python_3.1": "@pypi_31_bar_baz//:whl",
+            "//:is_python_3.2": "@pypi_32_bar_baz//:whl",
         },
         no_match_error = _NO_MATCH_ERROR,
     ),
@@ -323,10 +337,10 @@ alias(
 
 alias(
     name = "data",
-    actual = select(
+    actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:data",
-            "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:data",
+            "//:is_python_3.1": "@pypi_31_bar_baz//:data",
+            "//:is_python_3.2": "@pypi_32_bar_baz//:data",
         },
         no_match_error = _NO_MATCH_ERROR,
     ),
@@ -334,17 +348,17 @@ alias(
 
 alias(
     name = "dist_info",
-    actual = select(
+    actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:dist_info",
-            "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:dist_info",
+            "//:is_python_3.1": "@pypi_31_bar_baz//:dist_info",
+            "//:is_python_3.2": "@pypi_32_bar_baz//:dist_info",
         },
         no_match_error = _NO_MATCH_ERROR,
     ),
 )"""
 
-    env.expect.that_collection(actual.keys()).contains_exactly([want_key])
-    env.expect.that_str(actual[want_key]).equals(_normalize_label_strings(want_content))
+    env.expect.that_collection(actual.keys()).contains_exactly(["BUILD.bazel", want_key])
+    env.expect.that_str(actual[want_key]).equals(want_content)
 
 _tests.append(_test_bzlmod_aliases_for_non_root_modules)
 
@@ -366,11 +380,171 @@ def _test_aliases_are_created_for_all_wheels(env):
     want_files = [
         "bar/BUILD.bazel",
         "foo/BUILD.bazel",
+        "BUILD.bazel",
     ]
 
     env.expect.that_dict(actual).keys().contains_exactly(want_files)
 
 _tests.append(_test_aliases_are_created_for_all_wheels)
+
+def _test_version_config_settings(env):
+    actual = render_pkg_aliases(
+        default_version = "3.2",
+        aliases = {
+            "bar": [
+                whl_alias(version = "3.1", repo = "pypi_31_bar"),
+                whl_alias(version = "3.2", repo = "pypi_32_bar"),
+            ],
+            "foo": [
+                whl_alias(version = "3.1", repo = "pypi_32_foo"),
+                whl_alias(version = "3.2", repo = "pypi_31_foo"),
+            ],
+        },
+    )
+
+    want_files = [
+        "bar/BUILD.bazel",
+        "foo/BUILD.bazel",
+        "BUILD.bazel",
+    ]
+
+    want_content = """\
+load("@@//python/config_settings:config_settings.bzl", "is_python_config_setting")
+load("@@//python/private:dist_config_settings.bzl", "dist_config_settings")
+
+dist_config_settings(
+    name = "dist_config_settings",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "is_python_3.1",
+    actual = "@@//python/config_settings:is_python_3.1",
+    visibility = ["//:__subpackages__"],
+)
+
+alias(
+    name = "is_python_3.2",
+    actual = "@@//python/config_settings:is_python_3.2",
+    visibility = ["//:__subpackages__"],
+)"""
+
+    env.expect.that_dict(actual).keys().contains_exactly(want_files)
+    env.expect.that_str(actual["BUILD.bazel"]).equals(_normalize_label_strings(want_content))
+
+_tests.append(_test_version_config_settings)
+
+def _test_filename_aliases(env):
+    actual = render_pkg_aliases(
+        default_version = "3.2",
+        aliases = {
+            "foo": [
+                whl_alias(
+                    version = "3.1",
+                    repo = "pypi",
+                    filename = "foo-0.0.1-py2.py3-none-any.whl",
+                ),
+            ],
+        },
+    )
+
+    want_files = [
+        "foo/BUILD.bazel",
+        "BUILD.bazel",
+    ]
+
+    want_content = """\
+load("@@//python/config_settings:config_settings.bzl", "is_python_config_setting")
+load("@@//python/private:dist_config_settings.bzl", "dist_config_settings")
+
+dist_config_settings(
+    name = "dist_config_settings",
+    visibility = ["//visibility:public"],
+)
+
+is_python_config_setting(
+    name = "is_python_3.1_any",
+    python_version = "3.1",
+    flag_values = {
+        "//:use_sdist": "auto",
+    },
+    visibility = ["//:__subpackages__"],
+)"""
+
+    env.expect.that_dict(actual).keys().contains_exactly(want_files)
+    env.expect.that_str(actual.get("BUILD.bazel", "")).equals(_normalize_label_strings(want_content))
+
+    want_content = """\
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
+package(default_visibility = ["//visibility:public"])
+
+_NO_MATCH_ERROR = \"\"\"\\
+No matching wheel for current configuration's Python version.
+
+The current build configuration's Python version doesn't match any of the Python
+versions available for this wheel. This wheel supports the following Python versions:
+    3.1
+
+As matched by the `@rules_python//python/config_settings:is_python_<version>`
+configuration settings.
+
+To determine the current configuration's Python version, run:
+    `bazel config <config id>` (shown further below)
+and look for
+    rules_python//python/config_settings:python_version
+
+If the value is missing, then the "default" Python version is being used,
+which has a "null" version value and will not match version constraints.
+\"\"\"
+
+alias(
+    name = "foo",
+    actual = ":pkg",
+)
+
+alias(
+    name = "pkg",
+    actual = selects.with_or(
+        {
+            "//:is_python_3.1_any": "@pypi_foo_0_0_1_py3_none_any//:pkg",
+        },
+        no_match_error = _NO_MATCH_ERROR,
+    ),
+)
+
+alias(
+    name = "whl",
+    actual = selects.with_or(
+        {
+            "//:is_python_3.1_any": "@pypi_foo_0_0_1_py3_none_any//:whl",
+        },
+        no_match_error = _NO_MATCH_ERROR,
+    ),
+)
+
+alias(
+    name = "data",
+    actual = selects.with_or(
+        {
+            "//:is_python_3.1_any": "@pypi_foo_0_0_1_py3_none_any//:data",
+        },
+        no_match_error = _NO_MATCH_ERROR,
+    ),
+)
+
+alias(
+    name = "dist_info",
+    actual = selects.with_or(
+        {
+            "//:is_python_3.1_any": "@pypi_foo_0_0_1_py3_none_any//:dist_info",
+        },
+        no_match_error = _NO_MATCH_ERROR,
+    ),
+)"""
+    env.expect.that_str(actual["foo/BUILD.bazel"]).equals(want_content)
+
+_tests.append(_test_filename_aliases)
 
 def _test_aliases_with_groups(env):
     actual = render_pkg_aliases(
@@ -399,6 +573,7 @@ def _test_aliases_with_groups(env):
         "foo/BUILD.bazel",
         "baz/BUILD.bazel",
         "_groups/BUILD.bazel",
+        "BUILD.bazel",
     ]
     env.expect.that_dict(actual).keys().contains_exactly(want_files)
 

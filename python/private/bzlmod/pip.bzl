@@ -502,7 +502,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 repo_name = "{}_{}".format(hub_name, suffix)
                 whl_map.setdefault(whl_name, []).append(
                     whl_alias(
-                        repo = repo_name,
+                        repo = hub_name,
                         version = major_minor,
                         filename = args["filename"],
                         target_platforms = args.pop("alias_target_platforms", None),

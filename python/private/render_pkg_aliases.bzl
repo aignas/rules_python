@@ -39,7 +39,7 @@ No matching wheel for current configuration's Python version.
 
 The current build configuration's Python version doesn't match any of the Python
 versions available for this wheel. This wheel supports the following Python versions:
-    {config_settings}
+    {versions}
 
 As matched by the `@{rules_python}//python/config_settings:is_python_<version>`
 configuration settings.
@@ -53,7 +53,7 @@ If the value is missing, then the "default" Python version is being used,
 which has a "null" version value and will not match version constraints.
 """
 
-DEFAULT_CONFIG_SETTING = "//conditions:default"
+_DEFAULT_CONFIG_SETTING = "//conditions:default"
 
 def _render_whl_library_alias(
         *,
@@ -83,7 +83,7 @@ def _render_whl_library_alias(
         # hub repo
         actual = "@{repo}//:{name}".format(repo = alias.repo, name = target_name)
         selects.setdefault(actual, []).append(alias.config_setting)
-        if alias.config_setting == DEFAULT_CONFIG_SETTING:
+        if alias.config_setting == _DEFAULT_CONFIG_SETTING:
             no_match_error = None
 
     return render.alias(
@@ -103,15 +103,17 @@ def _render_common_aliases(*, name, aliases, group_name = None):
         """package(default_visibility = ["//visibility:public"])""",
     ]
 
+    versions = None
     config_settings = None
-    if aliases:
-        config_settings = sorted([v.config_setting for v in aliases if v.config_setting])
+    if aliases and hasattr(aliases[0], "config_setting"):
+        config_settings = {v.config_setting: None for v in aliases if v.config_setting}
+        versions = sorted({v.version: None for v in aliases if v.version})
 
-    if not config_settings or DEFAULT_CONFIG_SETTING in config_settings:
+    if not versions or _DEFAULT_CONFIG_SETTING in config_settings:
         pass
     else:
         error_msg = NO_MATCH_ERROR_MESSAGE_TEMPLATE.format(
-            config_settings = ", ".join(config_settings),
+            versions = ", ".join(versions),
             rules_python = "rules_python",
         )
 
@@ -192,60 +194,10 @@ def render_pkg_aliases(*, aliases, default_version = None, requirement_cycles = 
             for whl_name in group_whls
         }
 
-    _aliases = {}
-    _alias_target_platforms = {}
-    hub_config_settings = {}
-    for whl_name, pkg_aliases in aliases.items():
-        _aliases[whl_name] = []
-        for alias in pkg_aliases:
-            if not alias.filename:
-                plat_label = "is_python_" + alias.version
-                hub_config_settings[plat_label] = render.alias(
-                    name = "plat_label",
-                    actual = repr(str(Label("//python/config_settings:is_python_" + alias.version))),
-                    visibility = ["//:__subpackages__"],
-                )
-                _aliases[whl_name].append(whl_alias(
-                    repo = alias.repo,
-                    version = alias.version,
-                    _config_setting = "//:" + plat_label,
-                ))
-                continue
-
-            _target_plats = _alias_target_platforms.setdefault(whl_name, {}).setdefault((alias.repo, alias.filename), [])
-            if alias.target_platforms:
-                _target_plats.extend([(alias.version, p) for p in alias.target_platforms])
-            else:
-                _target_plats.append((alias.version, None))
-
-    for whl_name, x in _alias_target_platforms.items():
-        for (repo, filename), target_platforms in x.items():
-            has_default = False
-            for version, p in target_platforms:
-                config_settings = []
-                for plat_label, config_setting in _get_whl_config_settings(
-                    filename = filename,
-                    major_minor = version,
-                    target_platforms = [p] if p else [],
-                    is_default_version = version == default_version,
-                ).items():
-                    if plat_label == "":
-                        if not has_default:
-                            config_settings.append(DEFAULT_CONFIG_SETTING)
-                            has_default = True
-                    else:
-                        config_settings.append("//:" + plat_label)
-                    if config_setting:
-                        hub_config_settings[plat_label] = config_setting
-
-                for config_setting in config_settings:
-                    _aliases[whl_name].append(
-                        whl_alias(
-                            repo = repo,
-                            version = version,
-                            _config_setting = config_setting,
-                        ),
-                    )
+    hub_config_settings, _aliases = _get_aliases(
+        aliases = aliases,
+        default_version = default_version,
+    )
 
     files = {
         "{}/BUILD.bazel".format(normalize_name(name)): _render_common_aliases(
@@ -276,7 +228,102 @@ dist_config_settings(
 
     return files
 
-def _get_whl_config_settings(filename, major_minor, target_platforms, is_default_version):
+def _get_aliases(*, aliases, default_version):
+    _aliases = {}
+    _alias_target_platforms = {}
+    hub_config_settings = {}
+    for whl_name, pkg_aliases in aliases.items():
+        _aliases[whl_name] = []
+        for alias in pkg_aliases:
+            if not alias.filename and not alias.version:
+                _aliases[whl_name].append(whl_alias(repo = alias.repo))
+                continue
+            elif not alias.filename and alias.version:
+                plat_label = "is_python_" + alias.version
+                hub_config_settings[plat_label] = render.alias(
+                    name = plat_label,
+                    actual = repr(str(Label("//python/config_settings:is_python_" + alias.version))),
+                    visibility = ["//:__subpackages__"],
+                )
+                _aliases[whl_name].append(whl_alias(
+                    repo = alias.repo,
+                    version = alias.version,
+                    _config_setting = "//:" + plat_label,
+                ))
+                if default_version == alias.version:
+                    _aliases[whl_name].append(whl_alias(
+                        repo = alias.repo,
+                        version = alias.version,
+                        _config_setting = _DEFAULT_CONFIG_SETTING,
+                    ))
+                continue
+
+            _target_plats = _alias_target_platforms.setdefault(whl_name, {}).setdefault((alias.repo, alias.filename), [])
+            if alias.target_platforms:
+                _target_plats.extend([(alias.version, p) for p in alias.target_platforms])
+            else:
+                _target_plats.append((alias.version, None))
+
+    for whl_name, x in _alias_target_platforms.items():
+        for (hub_name, filename), target_platforms in x.items():
+            has_default = False
+            for version, p in target_platforms:
+                config_settings = []
+                for plat_label, config_setting in _get_dist_config_settings(
+                    filename = filename,
+                    major_minor = version,
+                    target_platforms = [p] if p else [],
+                    is_default_version = version == default_version,
+                ).items():
+                    if plat_label == "":
+                        if not has_default:
+                            config_settings.append(_DEFAULT_CONFIG_SETTING)
+                            has_default = True
+                    else:
+                        config_settings.append("//:" + plat_label)
+                    if config_setting:
+                        hub_config_settings[plat_label] = config_setting
+
+                for config_setting in config_settings:
+                    _aliases[whl_name].append(
+                        whl_alias(
+                            repo = "{}_{}".format(hub_name, _get_repo_name(filename)),
+                            version = version,
+                            _config_setting = config_setting,
+                        ),
+                    )
+
+    return hub_config_settings, _aliases
+
+def _get_repo_name(filename):
+    filename = filename.lower()
+
+    if filename.endswith(".whl"):
+        whl = parse_whl_name(filename)
+
+        # This uses all of the present components and emits a few for shorter
+        # paths. In particular, we use a single platform_tag and python_tag as
+        # they don't add extra value in partitioning the whl repos.
+        return "_".join([
+            normalize_name(whl.distribution),
+            normalize_name("{}_{}".format(whl.version, whl.build_tag) if whl.build_tag else whl.version),
+            whl.python_tag.rpartition(".")[-1],  # just pick the last one
+            whl.abi_tag,
+            whl.platform_tag.partition(".")[0],
+        ])
+
+    filename_no_ext = filename.lower()
+    for ext in [".tar.gz", ".zip", ".tar"]:
+        if filename_no_ext.endswith(ext):
+            filename_no_ext = filename_no_ext[:-len(ext)]
+            break
+
+    if filename_no_ext == filename.lower():
+        fail("unknown sdist extension: {}".format(filename_no_ext))
+
+    return normalize_name(filename_no_ext) + "_sdist"
+
+def _get_dist_config_settings(filename, major_minor, target_platforms, is_default_version):
     parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
     if parsed and not target_platforms and not parsed.platform_tag == "any":
         target_platforms = whl_target_platforms(parsed.platform_tag)
