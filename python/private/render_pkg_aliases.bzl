@@ -267,6 +267,23 @@ def _get_aliases(*, aliases, default_version):
     for whl_name, x in _alias_target_platforms.items():
         for (hub_name, filename), target_platforms in x.items():
             has_default = False
+            if len(x) == 1 and filename.endswith("py3-none-any.whl"):
+                _aliases[whl_name].append(
+                    whl_alias(
+                        version = "",
+                        repo = "{}_{}".format(hub_name, _get_repo_name(filename)),
+                    ),
+                )
+                continue
+            elif filename.endswith("py3-none-any.whl") and not has_default:
+                _aliases[whl_name].append(
+                    whl_alias(
+                        repo = "{}_{}".format(hub_name, _get_repo_name(filename)),
+                        version = "",
+                        _config_setting = _DEFAULT_CONFIG_SETTING,
+                    ),
+                )
+
             for version, p in target_platforms:
                 config_settings = []
                 for plat_label, config_setting in _get_dist_config_settings(
