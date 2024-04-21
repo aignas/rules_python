@@ -520,6 +520,14 @@ dist_config_settings(
     visibility = ["//visibility:public"],
 )
 
+config_setting(
+    name = "is_any",
+    flag_values = {
+        "//:use_sdist": "auto",
+    },
+    visibility = ["//:__subpackages__"],
+)
+
 is_python_config_setting(
     name = "is_python_3.1_any",
     python_version = "3.1",
@@ -538,6 +546,10 @@ is_python_config_setting(
     env.expect.that_dict(actual).keys().contains_exactly(want_files)
     env.expect.that_str(actual["BUILD.bazel"]).equals(_normalize_label_strings(want_content))
 
+    # If we have an `any` whl with no abi constraints, then we should use it by
+    # default if `sdist` is not selected.  sdist should be only used for the python
+    # version that has the interpreter configuration, so we should just leave
+    # it with `is_python_3.1`.
     want_content = """\
 load("@bazel_skylib//lib:selects.bzl", "selects")
 
@@ -554,6 +566,7 @@ alias(
         {
             (
                 "//:is_python_3.1_any",
+                "//:is_any",
                 "//conditions:default",
             ): "@pypi_foo_0_0_1_py3_none_any//:pkg",
             "//:is_python_3.1": "@pypi_foo_0_0_1_sdist//:pkg",
@@ -567,6 +580,7 @@ alias(
         {
             (
                 "//:is_python_3.1_any",
+                "//:is_any",
                 "//conditions:default",
             ): "@pypi_foo_0_0_1_py3_none_any//:whl",
             "//:is_python_3.1": "@pypi_foo_0_0_1_sdist//:whl",
@@ -580,6 +594,7 @@ alias(
         {
             (
                 "//:is_python_3.1_any",
+                "//:is_any",
                 "//conditions:default",
             ): "@pypi_foo_0_0_1_py3_none_any//:data",
             "//:is_python_3.1": "@pypi_foo_0_0_1_sdist//:data",
@@ -593,6 +608,7 @@ alias(
         {
             (
                 "//:is_python_3.1_any",
+                "//:is_any",
                 "//conditions:default",
             ): "@pypi_foo_0_0_1_py3_none_any//:dist_info",
             "//:is_python_3.1": "@pypi_foo_0_0_1_sdist//:dist_info",

@@ -265,9 +265,12 @@ def _get_aliases(*, aliases, default_version):
                 _target_plats.append((alias.version, None))
 
     for whl_name, x in _alias_target_platforms.items():
+        has_any = False
         for (hub_name, filename), target_platforms in x.items():
             has_default = False
-            if len(x) == 1 and filename.endswith("py3-none-any.whl"):
+            is_any = filename.endswith("py3-none-any.whl")
+            has_any = has_any or is_any
+            if len(x) == 1 and is_any and has_any:
                 _aliases[whl_name].append(
                     whl_alias(
                         version = "",
@@ -275,7 +278,7 @@ def _get_aliases(*, aliases, default_version):
                     ),
                 )
                 continue
-            elif filename.endswith("py3-none-any.whl") and not has_default:
+            elif has_any and is_any and not has_default:
                 _aliases[whl_name].append(
                     whl_alias(
                         repo = "{}_{}".format(hub_name, _get_repo_name(filename)),
@@ -290,7 +293,7 @@ def _get_aliases(*, aliases, default_version):
                     filename = filename,
                     major_minor = version,
                     target_platforms = [p] if p else [],
-                    is_default_version = version == default_version,
+                    is_default_version = version == default_version or (has_any and is_any),
                 ).items():
                     if plat_label == "":
                         if not has_default:
