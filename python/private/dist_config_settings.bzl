@@ -35,7 +35,7 @@ def dist_config_settings(
         **kwargs: Extra args passed to string_flags.
     """
 
-    whl_abi_values = ["auto", "none", "abi3"]
+    whl_abi_values = ["auto", "none", "abi3", "cp"]
 
     string_flag(
         name = "whl_abi",

@@ -55,6 +55,9 @@ def _test_library_matching(name, test):
             ("3.11", None),
             ("3.12", None),
             (None, None),
+        ] if "-cp311-" not in suffix else [
+            ("3.11", None),
+            (None, None),
         ]
         for suffix in [
             ".tar.gz",
@@ -63,7 +66,8 @@ def _test_library_matching(name, test):
         ] + [
             "-" + "-".join([py, abi_tag, platform + ".whl"])
             for py in ["py3"]
-            for abi_tag in ["none", "abi3"]
+            # Let's simulate not all whls being available on cp312
+            for abi_tag in ["none", "abi3", "cp311"]
             for platform in _PLATFORMS
         ]
     }
@@ -92,6 +96,7 @@ def _test_library_matching(name, test):
             continue
         select_value, _ = whl_select_dict(
             hub_name = "hub",
+            default_version = "3.11",
             target_name = "pkg",
             dists = dists,
             condition_package = Label(":unused").package,
@@ -119,9 +124,18 @@ def _test_library_matching(name, test):
         },
         "cp311_linux_aarch64_sdist": {
             Label(":dist_type"): "sdist",
+            Label("//python/config_settings:python_version"): "3.11.1",
             "//command_line_option:platforms": Label(":linux_aarch64"),
         },
+        "cp312_osx_aarch64": {
+            Label("//python/config_settings:python_version"): "3.12.1",
+            "//command_line_option:platforms": Label(":osx_aarch64"),
+        },
         "linux_aarch64": {
+            "//command_line_option:platforms": Label(":linux_aarch64"),
+        },
+        "linux_aarch64_musl": {
+            Label(":whl_flavor"): "musl",
             "//command_line_option:platforms": Label(":linux_aarch64"),
         },
         "osx_aarch64_any": {
@@ -166,7 +180,7 @@ def _test_matching_defaults(name):
                 "sdist_match",
             ],
             expect = lambda env, target: _match(env, target, {
-                "all_dists_match": "@hub_foo_0_0_1_py3_abi3_manylinux_2_27_aarch64//:pkg",
+                "all_dists_match": "@hub_foo_0_0_1_py3_cp311_manylinux_2_27_aarch64//:pkg",
                 "any_match": "@hub_foo_0_0_1_py3_none_any//:pkg",
                 "sdist_match": "@hub_foo_0_0_1_sdist//:pkg",
             }),
@@ -223,7 +237,7 @@ def _test_using_osx_fat_wheels(name):
                 "sdist_match",
             ],
             expect = lambda env, target: _match(env, target, {
-                "all_dists_match": "@hub_foo_0_0_1_py3_abi3_macosx_12_0_universal2//:pkg",
+                "all_dists_match": "@hub_foo_0_0_1_py3_cp311_macosx_12_0_universal2//:pkg",
                 "any_match": "@hub_foo_0_0_1_py3_none_any//:pkg",
                 "sdist_match": "@hub_foo_0_0_1_sdist//:pkg",
             }),
@@ -236,7 +250,6 @@ def _test_prefer_any_whls(name):
     _test_library_matching(
         name = name,
         test = struct(
-            debug = True,
             setting = "osx_aarch64_any",
             attrs = [
                 "any_match",
@@ -253,11 +266,30 @@ def _test_prefer_any_whls(name):
 
 _tests.append(_test_prefer_any_whls)
 
+def _test_using_musl_wheels(name):
+    _test_library_matching(
+        name = name,
+        test = struct(
+            setting = "linux_aarch64_musl",
+            attrs = [
+                "any_match",
+                "all_dists_match",
+                "sdist_match",
+            ],
+            expect = lambda env, target: _match(env, target, {
+                "all_dists_match": "@hub_foo_0_0_1_py3_cp311_musllinux_1_1_aarch64//:pkg",
+                "any_match": "@hub_foo_0_0_1_py3_none_any//:pkg",
+                "sdist_match": "@hub_foo_0_0_1_sdist//:pkg",
+            }),
+        ),
+    )
+
+_tests.append(_test_using_musl_wheels)
+
 def _test_prefer_abi_none_whls(name):
     _test_library_matching(
         name = name,
         test = struct(
-            debug = True,
             setting = "osx_aarch64_any_abi_none",
             attrs = [
                 "any_match",
@@ -273,6 +305,26 @@ def _test_prefer_abi_none_whls(name):
     )
 
 _tests.append(_test_prefer_abi_none_whls)
+
+def _test_new_version_of_python(name):
+    _test_library_matching(
+        name = name,
+        test = struct(
+            setting = "cp312_osx_aarch64",
+            attrs = [
+                "any_match",
+                "all_dists_match",
+                "sdist_match",
+            ],
+            expect = lambda env, target: _match(env, target, {
+                "all_dists_match": "@hub_foo_0_0_1_py3_abi3_macosx_12_0_aarch64//:pkg",
+                "any_match": "@hub_foo_0_0_1_py3_none_any//:pkg",
+                "sdist_match": "@hub_foo_0_0_1_sdist//:pkg",
+            }),
+        ),
+    )
+
+_tests.append(_test_new_version_of_python)
 
 def select_dist_test_suite(name):  # buildifier: disable=function-docstring
     test_suite(

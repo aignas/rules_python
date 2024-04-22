@@ -60,6 +60,7 @@ _DEFAULT_CONFIG_SETTING = "//conditions:default"
 def whl_library_aliases(
         name,
         aliases,
+        default_version,
         config_settings = None,
         hub_name = None,
         dists = None,
@@ -90,6 +91,7 @@ def whl_library_aliases(
     actual, has_default = whl_select_dict(
         target_name = "{target_name}",  # So that we can use this as a template later
         hub_name = hub_name,
+        default_version = default_version,
         config_settings = config_settings,
         dists = dists,
     )
@@ -126,7 +128,7 @@ def whl_library_aliases(
             **kwargs
         )
 
-def whl_select_dict(hub_name, target_name, dists = None, config_settings = None, condition_package = ""):
+def whl_select_dict(hub_name, target_name, default_version, dists = None, config_settings = None, condition_package = ""):
     """Return an actual label value (or a dict that can be used in a select).
 
     Args:
@@ -155,7 +157,7 @@ def whl_select_dict(hub_name, target_name, dists = None, config_settings = None,
     if dists:
         config_settings = {}
         defaults = []
-        for filename, cfgs in _get_dist_config_setting_names(dists).items():
+        for filename, cfgs in _get_dist_config_setting_names(dists, default_version).items():
             repo = "{}_{}".format(hub_name, _get_repo_name(filename))
             for plat_label in cfgs:
                 if plat_label:
@@ -216,6 +218,7 @@ def _render_whl_library_aliases(
         *,
         name,
         hub_name,
+        default_version,
         config_settings,
         aliases,
         dists = None,
@@ -223,6 +226,7 @@ def _render_whl_library_aliases(
     lines = [
         "name = \"{}\"".format(name),
         "aliases = {}".format(render.dict(aliases)),
+        "default_version = \"{}\"".format(default_version),
     ]
     if config_settings:
         lines.append("config_settings = {}".format(render.list(config_settings)))
@@ -241,7 +245,7 @@ def _render_whl_library_aliases(
         ")",
     ])
 
-def _render_common_aliases(*, name, hub_name, aliases, group_name = None):
+def _render_common_aliases(*, name, hub_name, aliases, default_version, group_name = None):
     lines = [
         """load("{}", "whl_library_aliases")""".format(
             str(Label("//python/private:render_pkg_aliases.bzl")),
@@ -250,6 +254,7 @@ def _render_common_aliases(*, name, hub_name, aliases, group_name = None):
         _render_whl_library_aliases(
             name = name,
             hub_name = hub_name,
+            default_version = default_version,
             config_settings = [
                 (alias.repo, alias.config_setting)
                 for alias in aliases
@@ -331,6 +336,7 @@ def render_pkg_aliases(*, hub_name, aliases, default_version = None, requirement
             name = normalize_name(name),
             hub_name = hub_name,
             aliases = pkg_aliases,
+            default_version = default_version,
             group_name = whl_group_mapping.get(normalize_name(name)),
         ).strip()
         for name, pkg_aliases in _aliases.items()
@@ -443,16 +449,25 @@ def _get_repo_name(filename):
 
     return normalize_name(filename_no_ext) + "_sdist"
 
-def _get_dist_config_setting_names(dists):
+def _get_dist_config_setting_names(dists, default_version):
     config_settings = {}
     seen_platforms = {}
+
+    _, _, minor_version = default_version.partition(".")
+    default_abi = "cp3" + minor_version
+
     for filename, target_platforms_ in sorted(dists.items(), key = lambda x: _more_specific_first(x[0])):
-        print("Processing {}".format(filename))
         parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
         for (version, plat) in target_platforms_:
             platforms = [plat]
             flavors = [""]
             abis = [""]
+
+            if version:
+                _, _, minor_version = version.partition(".")
+                want_abi = "cp3" + minor_version
+            else:
+                want_abi = default_abi
 
             if not parsed:
                 config_settings.setdefault("", {})[filename] = None
@@ -461,8 +476,8 @@ def _get_dist_config_setting_names(dists):
                 abis = ["", parsed.abi_tag]
                 flavors = ["", "any"]
                 platforms = seen_platforms.keys()
-            elif parsed.abi_tag in ["none", "abi3"]:
-                abis = ["", parsed.abi_tag]
+            elif parsed.abi_tag in ["none", "abi3", want_abi]:
+                abis = ["", "cp" if parsed.abi_tag.startswith("cp") else parsed.abi_tag]
                 dist_types = ["whl"]
                 platforms = [p.target_platform for p in whl_target_platforms(parsed.platform_tag)]
                 if "musl" in parsed.platform_tag:
@@ -472,7 +487,7 @@ def _get_dist_config_setting_names(dists):
                 elif "universal2" in parsed.platform_tag:
                     flavors = ["", "multiarch"]
             else:
-                fail("TODO, annot handle multi-platform wheels yet: {}".format(filename))
+                continue
 
             for abi in abis:
                 for platform in platforms:
@@ -491,15 +506,10 @@ def _get_dist_config_setting_names(dists):
                             candidate = ""
                         config_settings.setdefault(candidate, {})[filename] = None
 
-    print()
-    print()
     ret = {}
     for setting, filenames in config_settings.items():
         filenames = sorted(filenames, key = _more_specific_first)
-        print(setting, filenames)
         ret.setdefault(filenames[0], []).append(setting)
-    print()
-    print()
 
     return ret
 
@@ -510,12 +520,18 @@ def _more_specific_first(filename):
         )
 
     parsed = parse_whl_name(filename)
+
+    # This ensures that we get the correct priority for the `auto` value of the
+    # string flags
     return (
         False,
         parsed.abi_tag == "none",
         parsed.abi_tag == "abi3",
         parsed.abi_tag not in ["none", "abi3"],
         parsed.platform_tag == "any",
+        "musl" in parsed.platform_tag,
+        "many" in parsed.platform_tag,
+        "linux" in parsed.platform_tag,
         "universal2" in parsed.platform_tag,
     )
 
