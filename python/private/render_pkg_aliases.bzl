@@ -57,101 +57,177 @@ which has a "null" version value and will not match version constraints.
 _DEFAULT_CONFIG_SETTING = "//conditions:default"
 
 # TODO buildifier: disable=function-docstring
-def whl_library_aliases(name, targets, default_version, config_settings = None, dists = None, **kwargs):
-    if not dists and config_settings:
-        fail("At least one of 'dists' and 'config_settings' is required")
+def whl_library_aliases(
+        name,
+        aliases,
+        config_settings = None,
+        hub_name = None,
+        dists = None,
+        **kwargs):
+    """Create all macros for a given package.
 
-    if dists:
-        has_any = False
-        config_settings = []
-        has_default = False
-        for filename, target_platforms in dists.items():
-            has_default = False
-            is_any = filename.endswith("py3-none-any.whl")
-            has_any = has_any or is_any
+    This is getting the config settings and then creating a list of aliases. The
+    main idea is to use a macro that can be easily changed and we don't need to
+    rely on inspecting generating code too much, we could test the macro
+    separately.
 
-            repo = "{}_{}".format(name, _get_repo_name(filename))
-            for version, p in target_platforms:
-                for plat_label in _get_dist_config_settings(
-                    filename = filename,
-                    major_minor = version,
-                    target_platform = p,
-                    is_default_version = version == default_version or (has_any and is_any),
-                ).keys():
-                    if plat_label == "":
-                        if not has_default:
-                            config_settings.append((repo, _DEFAULT_CONFIG_SETTING))
-                            has_default = True
-                    else:
-                        config_settings.append((repo, "//:" + plat_label))
+    This is for internal use only.
 
-    if len(config_settings) == 1 and not config_settings[0].version:
-        alias = config_settings[0]
-        for target_name, name in targets.items():
+    Args:
+        name: str, the name of the whl package, normalized.
+        aliases: the dictinoary of aliases that need to be created for the
+            target whl.
+        hub_name: the hub name that the dists are located in.
+        dists: the dist filenames and the target platforms.
+        config_settings: the config settings taht
+        **kwargs: Any extra kwargs to pass to `native.alias`.
+    """
+    native.alias(
+        name = name,
+        actual = ":pkg",
+    )
+
+    actual, has_default = whl_select_dict(
+        target_name = "{target_name}",  # So that we can use this as a template later
+        hub_name = hub_name,
+        config_settings = config_settings,
+        dists = dists,
+    )
+
+    if type(actual) == type(""):
+        for target_name, name in aliases.items():
             native.alias(
                 name = name,
-                actual = "@{repo}//:{name}".format(
-                    repo = alias.repo,
-                    name = target_name,
-                ),
+                actual = actual.format(target_name = target_name),
                 **kwargs
             )
         return
 
-    # Create the alias repositories which contains different select
-    # statements  These select statements point to the different pip
-    # whls that are based on a specific version of Python.
-    items = {}
-    no_match_error = "tmpl"
-    for repo, config_setting in config_settings:
-        if config_setting == _DEFAULT_CONFIG_SETTING:
-            if no_match_error == "":
-                continue
-            no_match_error = ""
-        items.setdefault(repo, []).append(config_setting)
-
-    if no_match_error:
+    if not has_default:
         # This is to avoid templating too much
         no_match_error = NO_MATCH_ERROR_MESSAGE_TEMPLATE.format(
             versions = "\n,    ".join([c[1] for c in config_settings]),
             # TODO @aignas 2024-04-22: use a proper thing
             rules_python = "@rules_python",
         )
+    else:
+        no_match_error = ""
 
-    for target_name, name in targets.items():
+    for target_name, name in aliases.items():
         native.alias(
             name = name,
             actual = selects.with_or(
                 {
-                    tuple(v) if len(v) > 1 else v[0]: "@{repo}//:{name}".format(
-                        repo = repo,
-                        name = target_name,
-                    )
-                    for repo, v in sorted(items.items())
+                    k: v.format(target_name = target_name)
+                    for k, v in actual.items()
                 },
                 no_match_error = no_match_error,
             ),
             **kwargs
         )
 
+def whl_select_dict(hub_name, target_name, dists = None, config_settings = None, condition_package = ""):
+    """Return an actual label value (or a dict that can be used in a select).
+
+    Args:
+        hub_name: str, the hub name that the dists are located in.
+        target_name: str, the target name to use. Can be a template token.
+        dists: dict[str, (str, str | None)] a dict of distributions for the
+            keys are filenames and the values are lists of version and target
+            platforms tuples. The target platform can be a `None`.
+        config_settings: list[(str, str)] a list of repo and config setting
+            values that we should use for this whl.
+        condition_package: str, used in tests to change where the conditions
+            are located.
+
+    Returns:
+        a dict or a string that can be used in an alias and a second parameter
+        to know if the match can be found for all target platforms. If not,
+        then we can construct the no_match_error. The dict can be used in
+        @bazel_skylib//lib:selects.bzl#selects.with_or.
+    """
+    if not dists and not config_settings:
+        fail("At least one of 'dists' and 'config_settings' is required")
+    if dists and config_settings:
+        fail("At most one of 'dists' and 'config_settings' can be specified")
+
+    has_default = False
+    if dists:
+        config_settings = {}
+        defaults = []
+        for filename, cfgs in _get_dist_config_setting_names(dists).items():
+            repo = "{}_{}".format(hub_name, _get_repo_name(filename))
+            for plat_label in cfgs:
+                if plat_label:
+                    plat_label = "//{}:{}".format(
+                        condition_package,
+                        plat_label,
+                    )
+                else:
+                    defaults.append(filename)
+                    continue
+
+                if plat_label in config_settings:
+                    fail(
+                        "Adding '{}' for the second time for {}, ".format(
+                            plat_label,
+                            repo,
+                        ) +
+                        "this is already configured for {}".format(config_settings[plat_label]),
+                    )
+                config_settings[plat_label] = repo
+
+        # Select the only default if there is a single thing
+        if len(defaults) == 1:
+            repo = "{}_{}".format(hub_name, _get_repo_name(defaults[0]))
+            config_settings[_DEFAULT_CONFIG_SETTING] = repo
+        elif defaults:
+            # whl and sdist is in here, let's chose the whl
+            whl_defaults = [d for d in defaults if d.endswith(".whl")]
+            if len(whl_defaults) != 1:
+                fail("TODO")
+            else:
+                repo = "{}_{}".format(hub_name, _get_repo_name(whl_defaults[0]))
+                config_settings[_DEFAULT_CONFIG_SETTING] = repo
+
+    if len(config_settings) == 1 and not config_settings.items()[0].version:
+        alias = config_settings.items()[0]
+        return "@{repo}//:{target_name}".format(
+            repo = alias.repo,
+            target_name = target_name,
+        ), True
+
+    # Create the alias repositories which contains different select
+    # statements  These select statements point to the different pip
+    # whls that are based on a specific version of Python.
+    items = {}
+    for config_setting, repo in config_settings.items():
+        items.setdefault(repo, []).append(config_setting)
+
+    return {
+        tuple(v) if len(v) > 1 else v[0]: "@{repo}//:{target_name}".format(
+            repo = repo,
+            target_name = target_name,
+        )
+        for repo, v in sorted(items.items())
+    }, has_default
+
 def _render_whl_library_aliases(
         *,
         name,
+        hub_name,
         config_settings,
-        targets,
+        aliases,
         dists = None,
-        default_version = None,
         visibility = None):
     lines = [
         "name = \"{}\"".format(name),
-        "targets = {}".format(render.dict(targets)),
+        "aliases = {}".format(render.dict(aliases)),
     ]
-    if default_version:
-        lines.append("default_version = {}".format(repr(default_version)))
-
     if config_settings:
         lines.append("config_settings = {}".format(render.list(config_settings)))
     elif dists:
+        lines.append("hub_name = \"{}\"".format(hub_name))
         lines.append("dists = {}".format(
             render.dict(dists, value_repr = render.list),
         ))
@@ -165,17 +241,15 @@ def _render_whl_library_aliases(
         ")",
     ])
 
-def _render_common_aliases(*, hub_name, name, default_version, aliases, group_name = None):
+def _render_common_aliases(*, name, hub_name, aliases, group_name = None):
     lines = [
-        """load("@rules_python//python/private:render_pkg_aliases.bzl", "whl_library_aliases")""",
-        """package(default_visibility = ["//visibility:public"])""",
-        render.alias(
-            name = name,
-            actual = repr(":pkg"),
+        """load("{}", "whl_library_aliases")""".format(
+            str(Label("//python/private:render_pkg_aliases.bzl")),
         ),
+        """package(default_visibility = ["//visibility:public"])""",
         _render_whl_library_aliases(
-            name = hub_name,
-            default_version = default_version,
+            name = name,
+            hub_name = hub_name,
             config_settings = [
                 (alias.repo, alias.config_setting)
                 for alias in aliases
@@ -186,7 +260,7 @@ def _render_common_aliases(*, hub_name, name, default_version, aliases, group_na
                 for alias in aliases
                 if alias.filename
             },
-            targets = {
+            aliases = {
                 PY_LIBRARY_PUBLIC_LABEL: PY_LIBRARY_IMPL_LABEL if group_name else PY_LIBRARY_PUBLIC_LABEL,
                 WHEEL_FILE_PUBLIC_LABEL: WHEEL_FILE_IMPL_LABEL if group_name else WHEEL_FILE_PUBLIC_LABEL,
                 DATA_LABEL: DATA_LABEL,
@@ -247,27 +321,25 @@ def render_pkg_aliases(*, hub_name, aliases, default_version = None, requirement
             for whl_name in group_whls
         }
 
-    hub_config_settings, _aliases = _get_aliases(
+    whl_platforms, _aliases = _get_aliases(
         aliases = aliases,
         default_version = default_version,
     )
 
     files = {
         "{}/BUILD.bazel".format(normalize_name(name)): _render_common_aliases(
-            hub_name = hub_name,
             name = normalize_name(name),
+            hub_name = hub_name,
             aliases = pkg_aliases,
-            default_version = default_version,
             group_name = whl_group_mapping.get(normalize_name(name)),
         ).strip()
         for name, pkg_aliases in _aliases.items()
     }
     if requirement_cycles:
         files["_groups/BUILD.bazel"] = generate_group_library_build_bazel("", requirement_cycles)
-    if hub_config_settings:
+    if whl_platforms:
         rules_python, _, _ = str(Label("//:unused")).partition("//")
         loads = [
-            """load("{}//python/config_settings:config_settings.bzl", "is_python_config_setting")""".format(rules_python),
             """load("{}//python/private:dist_config_settings.bzl", "dist_config_settings")""".format(rules_python),
         ]
         files["BUILD.bazel"] = "\n\n".join(
@@ -276,88 +348,72 @@ def render_pkg_aliases(*, hub_name, aliases, default_version = None, requirement
                 """\
 dist_config_settings(
     name = "dist_config_settings",
+    whl_platforms = {},
     visibility = ["//visibility:public"],
-)""",
-            ] + list(hub_config_settings.values()),
+)""".format(
+                    repr(whl_platforms),
+                ),
+            ],
         )
 
     return files
 
 def _get_aliases(*, aliases, default_version):
-    _aliases = {}
-    hub_config_settings = {}
+    ret = {}
+    whl_platforms = {}
     for whl_name, pkg_aliases in aliases.items():
-        _alias_target_platforms = {}
-        _aliases[whl_name] = []
+        alias_target_platforms = {}
+        ret[whl_name] = []
         for alias in pkg_aliases:
             if not alias.filename and not alias.version:
-                _aliases[whl_name].append(whl_alias(repo = alias.repo))
+                ret[whl_name].append(whl_alias(repo = alias.repo))
                 continue
             elif not alias.filename and alias.version:
-                plat_label = "is_python_{}".fromat(alias.version)
-                hub_config_settings[plat_label] = render.alias(
-                    name = plat_label,
-                    actual = repr(str(Label("//python/config_settings:is_python_" + alias.version))),
-                    visibility = ["//:__subpackages__"],
-                )
-                _aliases[whl_name].append(whl_alias(
+                plat_label = "is_python_{}".format(alias.version)
+
+                # hub_config_settings[plat_label] = render.alias(
+                #     name = plat_label,
+                #     actual = repr(str(Label("//python/config_settings:is_python_" + alias.version))),
+                #     visibility = ["//:__subpackages__"],
+                # )
+                ret[whl_name].append(whl_alias(
                     repo = alias.repo,
                     version = alias.version,
                     _config_setting = "//:" + plat_label,
                 ))
                 if default_version == alias.version:
-                    _aliases[whl_name].append(whl_alias(
+                    ret[whl_name].append(whl_alias(
                         repo = alias.repo,
                         version = alias.version,
                         _config_setting = _DEFAULT_CONFIG_SETTING,
                     ))
                 continue
 
-            _target_plats = _alias_target_platforms.setdefault(alias.filename, [])
+            _target_plats = alias_target_platforms.setdefault(alias.filename, [])
             if alias.target_platforms:
                 _target_plats.extend([(alias.version, p) for p in alias.target_platforms])
+                if alias.version == default_version:
+                    _target_plats.extend([("", p) for p in alias.target_platforms])
             else:
                 _target_plats.append((alias.version, None))
+                if alias.version == default_version:
+                    _target_plats.append(("", None))
 
-        has_any = False
-        for filename, target_platforms in _alias_target_platforms.items():
-            has_default = False
-            is_any = filename.endswith("py3-none-any.whl")
-            has_any = has_any or is_any
-            if len(_alias_target_platforms) == 1 and is_any and has_any:
-                _aliases[whl_name].append(
-                    whl_alias(
-                        version = "",
-                        filename = filename,
-                    ),
-                )
-                continue
-            elif has_any and is_any and not has_default:
-                _aliases[whl_name].append(
-                    whl_alias(
-                        version = "",
-                        _config_setting = _DEFAULT_CONFIG_SETTING,
-                        filename = filename,
-                    ),
-                )
-
-            _aliases[whl_name].append(
+        for filename, target_platforms in alias_target_platforms.items():
+            ret[whl_name].append(
                 whl_alias(
                     filename = filename,
                     target_platforms = target_platforms,
                 ),
             )
-            for version, p in target_platforms:
-                for plat_label, config_setting in _get_dist_config_settings(
-                    filename = filename,
-                    major_minor = version,
-                    target_platform = p,
-                    is_default_version = version == default_version or (has_any and is_any),
-                ).items():
-                    if config_setting:
-                        hub_config_settings[plat_label] = config_setting
 
-    return hub_config_settings, _aliases
+            whl_platform = parse_whl_name(filename).platform_tag if filename.endswith(".whl") else None
+            for version, p in target_platforms:
+                whl_platforms.setdefault(whl_platform, {})[(version, p)] = None
+                if version == default_version:
+                    whl_platforms[whl_platform][("", p)] = None
+
+    return whl_platforms, ret
 
 def _get_repo_name(filename):
     filename = filename.lower()
@@ -387,102 +443,81 @@ def _get_repo_name(filename):
 
     return normalize_name(filename_no_ext) + "_sdist"
 
-def _get_dist_config_settings(filename, major_minor, target_platform, is_default_version):
-    target_platforms = [target_platform] if target_platform else []
-    parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
-    if parsed and not target_platforms and not parsed.platform_tag == "any":
-        target_platforms = whl_target_platforms(parsed.platform_tag)
-    elif target_platforms:
-        target_platforms_ = []
-        for plat in target_platforms:
-            os, _, cpu = plat.partition("_")
-            target_platforms_.append(struct(
-                os = os,
-                cpu = cpu,
-                target_platform = plat,
-            ))
-        target_platforms = target_platforms_
-    elif not target_platforms:
-        target_platforms = [None]
+def _get_dist_config_setting_names(dists):
+    config_settings = {}
+    seen_platforms = {}
+    for filename, target_platforms_ in sorted(dists.items(), key = lambda x: _more_specific_first(x[0])):
+        print("Processing {}".format(filename))
+        parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
+        for (version, plat) in target_platforms_:
+            platforms = [plat]
+            flavors = [""]
+            abis = [""]
 
-    hub_config_settings = {}
-    for plat in target_platforms:
-        flavor = ""
-        flag_values = {
-            "//:prefer_any": "auto",
-            "//:use_sdist": "auto",
-        }
-        if not plat and not parsed:
-            flag_values = {}
-        elif not plat and parsed:
-            flag_values = {
-                "//:use_sdist": "auto",
-            }
-            flavor = "any"
-        elif not parsed:
-            flavor = "sdist"
-            flag_values = {
-                "//:prefer_any": "auto",
-            }  # Reset the flag values
-        elif parsed.platform_tag == "any":
-            flavor = "any"
-            flag_values = {
-                "//:use_sdist": "auto",
-            }
-        elif "musl" in parsed.platform_tag:
-            flavor = "musl"
-            flag_values["//:whl_linux_libc"] = flavor
-        elif "linux" in parsed.platform_tag:
-            flavor = "glibc"
-            flag_values["//:whl_linux_libc"] = flavor
-        elif "universal2" in parsed.platform_tag:
-            flavor = "multiarch"
-            flag_values["//:whl_osx"] = flavor
+            if not parsed:
+                config_settings.setdefault("", {})[filename] = None
+            elif parsed.platform_tag == "any":
+                config_settings.setdefault("", {})[filename] = None
+                abis = ["", parsed.abi_tag]
+                flavors = ["", "any"]
+                platforms = seen_platforms.keys()
+            elif parsed.abi_tag in ["none", "abi3"]:
+                abis = ["", parsed.abi_tag]
+                dist_types = ["whl"]
+                platforms = [p.target_platform for p in whl_target_platforms(parsed.platform_tag)]
+                if "musl" in parsed.platform_tag:
+                    flavors = ["", "musl"]
+                elif "many" in parsed.platform_tag:
+                    flavors = ["", "glibc"]
+                elif "universal2" in parsed.platform_tag:
+                    flavors = ["", "multiarch"]
+            else:
+                fail("TODO, annot handle multi-platform wheels yet: {}".format(filename))
 
-        if flavor and plat:
-            plat_label = "is_{}_{}".format(plat.target_platform, flavor)
-        elif flavor:
-            plat_label = "is_{}".format(flavor)
-        elif plat:
-            plat_label = "is_{}".format(plat.target_platform)
-        else:
-            plat_label = "is"
+            for abi in abis:
+                for platform in platforms:
+                    seen_platforms[platform] = None
+                    for flavor in flavors:
+                        name = [
+                            "is",
+                            "python_{}".format(version) if version else "",
+                            abi,
+                            platform,
+                            flavor,
+                            "whl" if parsed else "sdist",
+                        ]
+                        candidate = "_".join([n for n in name if n and n != "auto"])
+                        if candidate == "is":
+                            candidate = ""
+                        config_settings.setdefault(candidate, {})[filename] = None
 
-        if plat:
-            constraint_values = [
-                "@platforms//os:" + plat.os,
-                "@platforms//cpu:" + plat.cpu,
-            ]
-        else:
-            constraint_values = []
+    print()
+    print()
+    ret = {}
+    for setting, filenames in config_settings.items():
+        filenames = sorted(filenames, key = _more_specific_first)
+        print(setting, filenames)
+        ret.setdefault(filenames[0], []).append(setting)
+    print()
+    print()
 
-        if is_default_version and (not parsed or plat_label == "is"):
-            # NOTE @aignas 2024-04-08: if we have many sdists, the last one
-            # will win for the default case that would cover the completely unknown
-            # platform, the user could use the new 'experimental_requirements_by_platform'
-            # to avoid this case.
-            hub_config_settings[""] = ""
-        elif is_default_version:
-            hub_config_settings[plat_label] = render.config_setting(
-                name = plat_label,
-                flag_values = flag_values,
-                constraint_values = constraint_values,
-                visibility = ["//:__subpackages__"],
-            )
+    return ret
 
-        plat_label = "is_python_{}_{}".format(
-            major_minor,
-            plat_label[len("is"):],
-        )
-        hub_config_settings[plat_label] = render.is_python_config_setting(
-            name = plat_label,
-            python_version = major_minor,
-            flag_values = flag_values,
-            constraint_values = constraint_values,
-            visibility = ["//:__subpackages__"],
+def _more_specific_first(filename):
+    if not filename.endswith(".whl"):
+        return (
+            True,
         )
 
-    return hub_config_settings
+    parsed = parse_whl_name(filename)
+    return (
+        False,
+        parsed.abi_tag == "none",
+        parsed.abi_tag == "abi3",
+        parsed.abi_tag not in ["none", "abi3"],
+        parsed.platform_tag == "any",
+        "universal2" in parsed.platform_tag,
+    )
 
 def whl_alias(*, repo = None, version = None, filename = None, target_platforms = None, _config_setting = None):
     """The bzl_packages value used by by the render_pkg_aliases function.

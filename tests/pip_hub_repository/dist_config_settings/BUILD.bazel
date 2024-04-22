@@ -1,0 +1,3 @@
+load(":select_dist_test.bzl", "select_dist_test_suite")
+
+select_dist_test_suite(name = "select_dist_tests")

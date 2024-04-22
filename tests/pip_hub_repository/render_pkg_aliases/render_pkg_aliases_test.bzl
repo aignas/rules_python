@@ -45,6 +45,7 @@ _tests = []
 
 def _test_empty(env):
     actual = render_pkg_aliases(
+        hub_name = "",
         aliases = None,
     )
 
@@ -56,6 +57,7 @@ _tests.append(_test_empty)
 
 def _test_legacy_aliases(env):
     actual = render_pkg_aliases(
+        hub_name = "",
         aliases = {
             "foo": [
                 whl_alias(repo = "pypi_foo"),
@@ -65,41 +67,33 @@ def _test_legacy_aliases(env):
 
     want_key = "foo/BUILD.bazel"
     want_content = """\
-load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@@//python/private:render_pkg_aliases.bzl", "whl_library_aliases")
 
 package(default_visibility = ["//visibility:public"])
 
-alias(
-    name = "foo",
-    actual = ":pkg",
-)
-
-alias(
-    name = "pkg",
-    actual = "@pypi_foo//:pkg",
-)
-
-alias(
-    name = "whl",
-    actual = "@pypi_foo//:whl",
-)
-
-alias(
-    name = "data",
-    actual = "@pypi_foo//:data",
-)
-
-alias(
-    name = "dist_info",
-    actual = "@pypi_foo//:dist_info",
+whl_library_aliases(
+    name = "bar_baz",
+    aliases = {
+        "pkg": "pkg",
+        "whl": "whl",
+        "data": "data",
+        "dist_info": "dist_info",
+    },
+    config_settings = [
+        ("pypi_32_bar_baz", "//:is_python_3.2"),
+        ("pypi_31_bar_baz", "//:is_python_3.1"),
+    ],
 )"""
 
-    env.expect.that_dict(actual).contains_exactly({want_key: want_content})
+    env.expect.that_dict(actual).contains_exactly({
+        want_key: _normalize_label_strings(want_content),
+    })
 
 _tests.append(_test_legacy_aliases)
 
 def _test_bzlmod_aliases(env):
     actual = render_pkg_aliases(
+        hub_name = "",
         default_version = "3.2",
         aliases = {
             "bar-baz": [
@@ -110,70 +104,32 @@ def _test_bzlmod_aliases(env):
 
     want_key = "bar_baz/BUILD.bazel"
     want_content = """\
-load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@@//python/private:render_pkg_aliases.bzl", "whl_library_aliases")
 
 package(default_visibility = ["//visibility:public"])
 
-alias(
+whl_library_aliases(
     name = "bar_baz",
-    actual = ":pkg",
-)
-
-alias(
-    name = "pkg",
-    actual = selects.with_or(
-        {
-            (
-                "//:is_python_3.2",
-                "//conditions:default",
-            ): "@pypi_32_bar_baz//:pkg",
-        },
-    ),
-)
-
-alias(
-    name = "whl",
-    actual = selects.with_or(
-        {
-            (
-                "//:is_python_3.2",
-                "//conditions:default",
-            ): "@pypi_32_bar_baz//:whl",
-        },
-    ),
-)
-
-alias(
-    name = "data",
-    actual = selects.with_or(
-        {
-            (
-                "//:is_python_3.2",
-                "//conditions:default",
-            ): "@pypi_32_bar_baz//:data",
-        },
-    ),
-)
-
-alias(
-    name = "dist_info",
-    actual = selects.with_or(
-        {
-            (
-                "//:is_python_3.2",
-                "//conditions:default",
-            ): "@pypi_32_bar_baz//:dist_info",
-        },
-    ),
+    aliases = {
+        "pkg": "pkg",
+        "whl": "whl",
+        "data": "data",
+        "dist_info": "dist_info",
+    },
+    config_settings = [
+        ("pypi_32_bar_baz", "//:is_python_3.2"),
+        ("pypi_31_bar_baz", "//:is_python_3.1"),
+    ],
 )"""
 
     env.expect.that_collection(actual.keys()).contains_exactly(["BUILD.bazel", want_key])
-    env.expect.that_str(actual[want_key]).equals(want_content)
+    env.expect.that_str(actual[want_key]).equals(_normalize_label_strings(want_content))
 
 _tests.append(_test_bzlmod_aliases)
 
 def _test_bzlmod_aliases_with_no_default_version(env):
     actual = render_pkg_aliases(
+        hub_name = "",
         default_version = None,
         aliases = {
             "bar-baz": [
@@ -267,6 +223,7 @@ _tests.append(_test_bzlmod_aliases_with_no_default_version)
 
 def _test_bzlmod_aliases_for_non_root_modules(env):
     actual = render_pkg_aliases(
+        hub_name = "",
         # NOTE @aignas 2024-01-17: if the default X.Y version coincides with the
         # versions that are used in the root module, then this would be the same as
         # as _test_bzlmod_aliases.
@@ -364,6 +321,7 @@ _tests.append(_test_bzlmod_aliases_for_non_root_modules)
 
 def _test_aliases_are_created_for_all_wheels(env):
     actual = render_pkg_aliases(
+        hub_name = "",
         default_version = "3.2",
         aliases = {
             "bar": [
@@ -389,6 +347,7 @@ _tests.append(_test_aliases_are_created_for_all_wheels)
 
 def _test_version_config_settings(env):
     actual = render_pkg_aliases(
+        hub_name = "",
         default_version = "3.2",
         aliases = {
             "bar": [
@@ -436,6 +395,7 @@ _tests.append(_test_version_config_settings)
 
 def _test_single_any_whl(env):
     actual = render_pkg_aliases(
+        hub_name = "",
         default_version = "3.2",
         aliases = {
             "foo": [
@@ -489,6 +449,7 @@ _tests.append(_test_single_any_whl)
 
 def _test_single_any_whl_with_sdist(env):
     actual = render_pkg_aliases(
+        hub_name = "",
         default_version = "3.2",
         aliases = {
             "foo": [
@@ -621,6 +582,7 @@ _tests.append(_test_single_any_whl_with_sdist)
 
 def _test_single_any_whl_with_sdist_default_version(env):
     actual = render_pkg_aliases(
+        hub_name = "",
         default_version = "3.1",
         aliases = {
             "foo": [
@@ -753,6 +715,7 @@ _tests.append(_test_single_any_whl_with_sdist_default_version)
 
 def _test_aliases_with_groups(env):
     actual = render_pkg_aliases(
+        hub_name = "",
         default_version = "3.2",
         aliases = {
             "bar": [

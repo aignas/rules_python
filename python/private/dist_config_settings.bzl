@@ -16,49 +16,145 @@
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load(":config_settings.bzl", "is_python_config_setting")
+load(":whl_target_platforms.bzl", "whl_target_platforms")
 
-def dist_config_settings(name, default_whl_linux_libc = "glibc", default_whl_osx = "", default_use_sdist = "auto", default_prefer_any = "auto", **kwargs):
+def dist_config_settings(
+        name,
+        python_versions,
+        whl_platforms,
+        **kwargs):
     """Create string flags for dist configuration.
 
     Args:
         name: Currently unused.
-        default_whl_linux_libc: str, default for the string_flag controlling
-            whether musl or glibc wheels are selected. Defaults to `glibc`.
-        default_whl_osx: str, default for the string_flag controlling whether
-            `universal2` or arch-specific wheels are used. Defaults to arch
-            specific wheels.
-        default_use_sdist: str, default for whether the sdist is used. Defaults
-            to using `sdist` if there is no wheel available.
-        default_prefer_any: str, default for whether the any wheel should be
-            preferred over the platform specific wheels. Defaults to using `any`
-            wheel only if the platform-specific wheel is unavailable.
+        python_versions: list[str] A list of python version to generate
+            config_setting targets for.
+        whl_platforms: list[str] A list of whl platforms that should be used
+            to generate the config_setting targets.
         **kwargs: Extra args passed to string_flags.
     """
 
+    whl_abi_values = ["auto", "none", "abi3"]
+
     string_flag(
-        name = "whl_linux_libc",
-        build_setting_default = default_whl_linux_libc,
-        values = ["glibc", "musl"],
+        name = "whl_abi",
+        build_setting_default = "auto",
+        values = whl_abi_values,
         **kwargs
     )
 
     string_flag(
-        name = "whl_osx",
-        build_setting_default = default_whl_osx,
-        values = ["", "multiarch"],
+        name = "whl_flavor",
+        build_setting_default = "auto",
+        values = ["auto", "any", "glibc", "musl", "multiarch"],
         **kwargs
     )
 
     string_flag(
-        name = "use_sdist",
-        build_setting_default = default_use_sdist,
-        values = ["auto", "only"],
+        name = "dist_type",
+        build_setting_default = "whl",
+        values = ["whl", "sdist"],
         **kwargs
     )
 
-    string_flag(
-        name = "prefer_any",
-        build_setting_default = default_prefer_any,
-        values = ["auto", "yes"],
-        **kwargs
-    )
+    visibility = [
+        native.package_relative_label(":__subpackages__"),
+    ]
+
+    target_platforms = [None] + list({
+        p.target_platform: None
+        for target_platform in whl_platforms
+        for p in whl_target_platforms(target_platform)
+    })
+    for target_platform in target_platforms:
+        if target_platform:
+            os, _, cpu = target_platform.partition("_")
+            constraint_values = [
+                "@platforms//os:" + os,
+                "@platforms//cpu:" + cpu,
+            ]
+            if "linux" in os:
+                whl_flavors = ["", "any", "musl", "glibc"]
+            elif "osx" in os:
+                whl_flavors = ["", "any", "multiarch"]
+            else:
+                whl_flavors = ["", "any"]
+        else:
+            constraint_values = None
+            whl_flavors = ["", "any"]
+
+        # TODO @aignas 2024-04-22: replace with injected values
+        for python_version in python_versions:
+            for whl_abi in whl_abi_values:
+                for whl_flavor in whl_flavors:
+                    _config_setting(
+                        name = [
+                            "is",
+                            "python_%s" % python_version if python_version else "",
+                            whl_abi,
+                            target_platform,
+                            whl_flavor,
+                            "whl",
+                        ],
+                        python_version = python_version,
+                        whl_flavor = whl_flavor,
+                        whl_abi = whl_abi,
+                        dist_type = "whl",
+                        constraint_values = constraint_values,
+                        visibility = visibility,
+                    )
+
+            _config_setting(
+                name = [
+                    "is",
+                    "python_%s" % python_version if python_version else "",
+                    target_platform,
+                    "sdist",
+                ],
+                dist_type = "sdist",
+                constraint_values = constraint_values,
+                visibility = visibility,
+            )
+
+def _config_setting(
+        *,
+        name,
+        python_version = None,
+        whl_abi = "auto",
+        whl_flavor = "auto",
+        dist_type = "auto",
+        constraint_values = None,
+        **kwargs):
+    name = "_".join([n for n in name if n and n != "auto"]) if type(name) == type([]) else name
+    flag_values = {
+        k: v
+        for k, v in {
+            ":dist_type": dist_type,
+            ":whl_abi": whl_abi,
+            ":whl_flavor": whl_flavor,
+        }.items()
+        if v and v != "auto"
+    }
+
+    if python_version:
+        is_python_config_setting(
+            name = name,
+            python_version = python_version,
+            flag_values = flag_values,
+            constraint_values = constraint_values,
+            **kwargs
+        )
+    elif flag_values or constraint_values:
+        native.config_setting(
+            name = name,
+            flag_values = flag_values,
+            constraint_values = constraint_values,
+            **kwargs
+        )
+
+    # else:
+    #    print(
+    #        "At least one of 'constraint_values' or 'flag_values' needs " +
+    #        "to be specified, '{}' did not specify them".format(name),
+    #    )

@@ -126,6 +126,7 @@ def whl_target_platforms(platform_tag, abi_tag = ""):
           wheel_installer for parsing whl METADATA.
     """
     cpus = _cpu_from_tag(platform_tag)
+    flavor = _get_flavor(platform_tag)
 
     abi = None
     if abi_tag not in ["", "none", "abi3"]:
@@ -139,12 +140,22 @@ def whl_target_platforms(platform_tag, abi_tag = ""):
                     cpu = cpu,
                     abi = abi,
                     target_platform = "_".join([abi, os, cpu] if abi else [os, cpu]),
+                    flavor = flavor,
                 )
                 for cpu in cpus
             ]
 
     print("WARNING: ignoring unknown platform_tag os: {}".format(platform_tag))  # buildifier: disable=print
     return []
+
+def _get_flavor(tag):
+    if "musl" in tag:
+        return "musl"
+    if "many" in tag:
+        return "glibc"
+    if "universal" in tag:
+        return "multiarch"
+    return ""
 
 def _cpu_from_tag(tag):
     for input, cpu in _CPU_ALIASES.items():
