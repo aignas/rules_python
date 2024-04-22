@@ -27,6 +27,7 @@ exports_files(["requirements.bzl"])
 def _pip_repository_impl(rctx):
     bzl_packages = rctx.attr.whl_map.keys()
     files = render_pkg_aliases(
+        hub_name = rctx.attr.repo_name,
         aliases = {
             key: [whl_alias(**json.decode(v)) for v in values]
             for key, values in rctx.attr.whl_map.items()

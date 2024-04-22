@@ -619,6 +619,138 @@ alias(
 
 _tests.append(_test_single_any_whl_with_sdist)
 
+def _test_single_any_whl_with_sdist_default_version(env):
+    actual = render_pkg_aliases(
+        default_version = "3.1",
+        aliases = {
+            "foo": [
+                whl_alias(
+                    version = "3.1",
+                    repo = "pypi",
+                    filename = "foo-0.0.1-py2.py3-none-any.whl",
+                ),
+                whl_alias(
+                    version = "3.1",
+                    repo = "pypi",
+                    filename = "foo-0.0.1.tar.gz",
+                ),
+            ],
+        },
+    )
+
+    want_files = [
+        "foo/BUILD.bazel",
+        "BUILD.bazel",
+    ]
+
+    want_content = """\
+load("@@//python/config_settings:config_settings.bzl", "is_python_config_setting")
+load("@@//python/private:dist_config_settings.bzl", "dist_config_settings")
+
+dist_config_settings(
+    name = "dist_config_settings",
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "is_any",
+    flag_values = {
+        "//:use_sdist": "auto",
+    },
+    visibility = ["//:__subpackages__"],
+)
+
+is_python_config_setting(
+    name = "is_python_3.1_any",
+    python_version = "3.1",
+    flag_values = {
+        "//:use_sdist": "auto",
+    },
+    visibility = ["//:__subpackages__"],
+)
+
+is_python_config_setting(
+    name = "is_python_3.1",
+    python_version = "3.1",
+    visibility = ["//:__subpackages__"],
+)"""
+
+    env.expect.that_dict(actual).keys().contains_exactly(want_files)
+    env.expect.that_str(actual["BUILD.bazel"]).equals(_normalize_label_strings(want_content))
+
+    # If we have an `any` whl with no abi constraints, then we should use it by
+    # default if `sdist` is not selected.  sdist should be only used for the python
+    # version that has the interpreter configuration, so we should just leave
+    # it with `is_python_3.1`.
+    want_content = """\
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
+package(default_visibility = ["//visibility:public"])
+
+alias(
+    name = "foo",
+    actual = ":pkg",
+)
+
+alias(
+    name = "pkg",
+    actual = selects.with_or(
+        {
+            (
+                "//:is_python_3.1_any",
+                "//:is_any",
+                "//conditions:default",
+            ): "@pypi_foo_0_0_1_py3_none_any//:pkg",
+            "//:is_python_3.1": "@pypi_foo_0_0_1_sdist//:pkg",
+        },
+    ),
+)
+
+alias(
+    name = "whl",
+    actual = selects.with_or(
+        {
+            (
+                "//:is_python_3.1_any",
+                "//:is_any",
+                "//conditions:default",
+            ): "@pypi_foo_0_0_1_py3_none_any//:whl",
+            "//:is_python_3.1": "@pypi_foo_0_0_1_sdist//:whl",
+        },
+    ),
+)
+
+alias(
+    name = "data",
+    actual = selects.with_or(
+        {
+            (
+                "//:is_python_3.1_any",
+                "//:is_any",
+                "//conditions:default",
+            ): "@pypi_foo_0_0_1_py3_none_any//:data",
+            "//:is_python_3.1": "@pypi_foo_0_0_1_sdist//:data",
+        },
+    ),
+)
+
+alias(
+    name = "dist_info",
+    actual = selects.with_or(
+        {
+            (
+                "//:is_python_3.1_any",
+                "//:is_any",
+                "//conditions:default",
+            ): "@pypi_foo_0_0_1_py3_none_any//:dist_info",
+            "//:is_python_3.1": "@pypi_foo_0_0_1_sdist//:dist_info",
+        },
+    ),
+)"""
+    env.expect.that_str(actual["foo/BUILD.bazel"]).equals(want_content)
+
+_tests.append(_test_single_any_whl_with_sdist_default_version)
+
 def _test_aliases_with_groups(env):
     actual = render_pkg_aliases(
         default_version = "3.2",
