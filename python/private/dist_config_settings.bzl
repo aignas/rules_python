@@ -150,17 +150,13 @@ def dist_config_settings(
         **kwargs,
     )
 
-    visibility = [
-        native.package_relative_label(":__subpackages__"),
-    ]
-
     unique_target_platforms = list({
         (p.os, p.cpu): None
         for target_platform in whl_platforms
         for p in whl_target_platforms(target_platform)
     })
     constraint_values = {
-        "": None
+        "": None,
     } | {
         "{}_{}".format(os, cpu): [
             "@platforms//os:" + os,
@@ -168,22 +164,27 @@ def dist_config_settings(
         ]
         for (os, cpu) in unique_target_platforms
     }
+    presets = {
+        name: {
+            "constraint_values": cvs,
+            "python_versions": python_versions,
+        }
+        for name, cvs in constraint_values.items()
+    }
 
     # Creating config_setting values so that we can
     # * sdist - use if this exists or disable usage of it.
     # * none-any.whl - use if this exists or use only these in case we need pure python whls.
     # * abi3-any.whl - use if this exists and prefer it over none whls
     # * cp3x-any.whl - use if this exists and prefer it over abi3 and none whls
-    for plat, cvs in constraint_values.items():
+    for plat, args in presets.items():
         for suffix, cfg in {
             "": {"use_dists": "auto"},
             "sdist": {"use_dists": "sdist"},
         }.items():
             _config_settings(
                 name = [suffix, plat],
-                python_versions = python_versions,
-                constraint_values = cvs,
-                visibility = visibility,
+                **args,
                 **cfg,
             )
 
@@ -195,20 +196,17 @@ def dist_config_settings(
         }.items(): # buildifier: disable=unsorted-dict-items as they have meaning
             _config_settings(
                 name = [suffix, plat],
-                python_versions = python_versions,
-                constraint_values = cvs,
-                visibility = visibility,
+                **args,
                 **cfg,
             )
+
+            cfg["whl_plat"] = "auto"
 
             if "windows" in plat:
                 # [none|abi3|cp]-plat.whl for windows
                 _config_settings(
                     name = [suffix, "plat", plat],
-                    python_versions = python_versions,
-                    whl_plat = "auto",
-                    constraint_values = cvs,
-                    visibility = visibility,
+                    **args,
                     **cfg,
                 )
             elif "linux" in plat:
@@ -220,11 +218,8 @@ def dist_config_settings(
                 }.items():
                     _config_settings(
                         name = [suffix, name, plat],
-                        python_versions = python_versions,
-                        whl_plat = "auto",
                         whl_linux_libc = whl_linux_libc,
-                        constraint_values = cvs,
-                        visibility = visibility,
+                        **args,
                         **cfg,
                     )
             else:
@@ -233,10 +228,7 @@ def dist_config_settings(
                     _config_settings(
                         name = [suffix, name, plat],
                         python_versions = python_versions,
-                        whl_plat = "auto",
-                        whl_osx_arch = whl_osx_arch,
-                        constraint_values = cvs,
-                        visibility = visibility,
+                        **args,
                         **cfg,
                     )
 
@@ -253,6 +245,11 @@ def _config_settings(
         whl_plat = None,
         constraint_values = None,
         **kwargs):
+
+    visibility = [
+        native.package_relative_label(":__subpackages__"),
+    ]
+
     name = "_".join([n for n in name if n and n != "auto"]) if type(name) == type([]) else name
     if name == "":
         name = "default"
@@ -275,6 +272,7 @@ def _config_settings(
         name = "is_" + name,
         flag_values = flag_values,
         constraint_values = constraint_values,
+        visibility = visibility,
         **kwargs
     )
     for python_version in python_versions:
@@ -283,6 +281,7 @@ def _config_settings(
             python_version = python_version,
             flag_values = flag_values,
             constraint_values = constraint_values,
+            visibility = visibility,
             **kwargs
         )
 
