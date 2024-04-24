@@ -197,6 +197,7 @@ def dist_config_settings(
                 name = [suffix, plat],
                 python_versions = python_versions,
                 constraint_values = cvs,
+                visibility = visibility,
                 **cfg,
             )
 
@@ -207,6 +208,7 @@ def dist_config_settings(
                     python_versions = python_versions,
                     whl_plat = "auto",
                     constraint_values = cvs,
+                    visibility = visibility,
                     **cfg,
                 )
             elif "linux" in plat:
@@ -222,6 +224,7 @@ def dist_config_settings(
                         whl_plat = "auto",
                         whl_linux_libc = whl_linux_libc,
                         constraint_values = cvs,
+                        visibility = visibility,
                         **cfg,
                     )
             else:
@@ -233,6 +236,7 @@ def dist_config_settings(
                         whl_plat = "auto",
                         whl_osx_arch = whl_osx_arch,
                         constraint_values = cvs,
+                        visibility = visibility,
                         **cfg,
                     )
 
