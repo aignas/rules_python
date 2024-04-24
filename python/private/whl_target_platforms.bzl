@@ -73,12 +73,6 @@ def select_whls(*, whls, want_pys = [], want_abis = [], want_platforms = []):
             # Filter out incompatible ABIs
             continue
 
-        # TODO @aignas 2024-04-09: add a test for this
-        if want_pys:
-            parsed_py = [py for py in parsed.python_tag.split(".") if py != "py2"][0]
-            if parsed_py not in want_pys:
-                continue
-
         if parsed.platform_tag == "any" or not want_platforms:
             candidates.append(whl)
             continue

@@ -32,6 +32,7 @@ load(
 )
 load(":normalize_name.bzl", "normalize_name")
 load(":parse_whl_name.bzl", "parse_whl_name")
+load(":whl_target_platforms.bzl", "whl_target_platforms")
 load(":text_util.bzl", "render")
 
 NO_MATCH_ERROR_MESSAGE_TEMPLATE = """\
@@ -108,8 +109,8 @@ def whl_library_aliases(
     if not has_default:
         # This is to avoid templating too much
         no_match_error = NO_MATCH_ERROR_MESSAGE_TEMPLATE.format(
-            versions = ", ".join([c[1] for c in versions]),
             # TODO @aignas 2024-04-22: use a proper thing
+            versions = "TODO",
             rules_python = "@rules_python",
         )
     else:
@@ -120,7 +121,7 @@ def whl_library_aliases(
             name = name,
             actual = selects.with_or(
                 {
-                    k: v.format(target_name = target_name)
+                    tuple(v): k.format(target_name = target_name)
                     for k, v in actual.items()
                 },
                 no_match_error = no_match_error,
@@ -198,8 +199,6 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, versio
             else:
                 repo = "{}_{}".format(hub_name, _get_repo_name(whl_defaults[0]))
                 config_settings[_DEFAULT_CONFIG_SETTING] = repo
-
-        print(config_settings)
 
     if len(config_settings) == 1 and _DEFAULT_CONFIG_SETTING in config_settings:
         return "@{repo}//:{target_name}".format(
@@ -350,10 +349,7 @@ def render_pkg_aliases(*, hub_name, aliases, default_version = None, requirement
             for whl_name in group_whls
         }
 
-    whl_platforms, _aliases = _get_aliases(
-        aliases = aliases,
-        default_version = default_version,
-    )
+    whl_platforms, _aliases = _get_aliases(aliases = aliases)
 
     files = {
         "{}/BUILD.bazel".format(normalize_name(name)): _render_common_aliases(
@@ -456,58 +452,81 @@ def _get_repo_name(filename):
 
 def _get_dist_config_setting_names(dists, default_version):
     config_settings = {}
-    seen_platforms = {}
 
-    for filename, target_platforms_ in sorted(dists.items(), key = lambda x: _more_specific_first(x[0])):
-        parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
+    for filename, target_platforms_ in dists.items():
         for (version, plat) in target_platforms_:
-            dist_types = ["", "whl" if parsed else "sdist"]
-            names = []
-            for dist_type in dist_types:
-                if version == default_version:
-                    if dist_type == "":
-                        name = ""
+            parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
+            if not parsed:
+                names = ["", "sdist"]
+            elif parsed.abi_tag == "none" and parsed.platform_tag == "any":
+                names = ["whl", "whl_none"]
+            elif parsed.abi_tag == "abi3" and parsed.platform_tag == "any":
+                names = ["whl_abi3"]
+            elif parsed.platform_tag == "any":
+                fail("TODO cpxy any: " + filename)
+            elif parsed.abi_tag == "none":
+                fail("TODO none: " + filename)
+            elif parsed.abi_tag == "abi3":
+                if parsed.python_tag.startswith("cp"):
+                    whl_minor_version = int(parsed.python_tag[len("cp3"):])
+                    minor_version = int(version.partition(".")[-1])
+                    if minor_version < whl_minor_version:
+                        print("Python '{}' does not support {}".format(version, filename))
+                        continue
                     else:
-                        name = "is_{}".format(dist_type)
-                    names.append(name)
-
-                if dist_type == "":
-                    name = "is_python_{}".format(version)
+                        names = ["whl_abi3"]
                 else:
-                    name = "is_python_{}_{}".format(version, dist_type)
-                names.append(name)
+                    fail("TODO abi3: " + filename)
+            else:
+                if "many" in parsed.platform_tag:
+                    prefix = "glibc"
+                elif "musl" in parsed.platform_tag:
+                    prefix = "musl"
+                elif "universal2" in parsed.platform_tag:
+                    prefix = "fat"
+                else:
+                    prefix = "plat"
 
-            for name in names:
-                config_settings.setdefault(name, []).append(filename)
+                names = [
+                    "whl_{}_{}".format(prefix, p.target_platform)
+                    for p in whl_target_platforms(parsed.platform_tag)
+                ]
+
+            candidates = []
+            for match in names:
+                if version == default_version:
+                    if match and plat:
+                        name = "is_{}_{}".format(match, plat)
+                    elif plat:
+                        name = "is_" + plat
+                    elif match:
+                        name = "is_" + match
+                    else:
+                        name = "is_default"
+
+                    candidates.append(name)
+
+                if match and plat:
+                    name = "is_python_{}_{}_{}".format(version, match, plat)
+                elif plat:
+                    name = "is_python_{}_{}".format(version, plat)
+                elif match:
+                    name = "is_python_{}_{}".format(version, match)
+                else:
+                    name = "is_python_{}".format(version)
+                candidates.append(name)
+
+        for name in candidates:
+            if name in config_settings:
+                fail("Potentially ambiguous config setting: {}".format(name))
+
+            config_settings[name] = filename
 
     ret = {}
-    for setting, filenames in config_settings.items():
-        filenames = sorted(filenames, key = _more_specific_first)
-        ret.setdefault(filenames[0], []).append(setting)
+    for setting, filename in config_settings.items():
+        ret.setdefault(filename, []).append(setting)
 
     return ret
-
-def _more_specific_first(filename):
-    if not filename.endswith(".whl"):
-        return (
-            True,
-        )
-
-    parsed = parse_whl_name(filename)
-
-    # This ensures that we get the correct priority for the `auto` value of the
-    # string flags
-    return (
-        False,
-        parsed.abi_tag == "none",
-        parsed.abi_tag == "abi3",
-        parsed.abi_tag not in ["none", "abi3"],
-        parsed.platform_tag == "any",
-        "musl" in parsed.platform_tag,
-        "many" in parsed.platform_tag,
-        "linux" in parsed.platform_tag,
-        "universal2" in parsed.platform_tag,
-    )
 
 def whl_alias(*, repo = None, version = None, filename = None, target_platforms = None):
     """The bzl_packages value used by by the render_pkg_aliases function.
