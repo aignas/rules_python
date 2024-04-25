@@ -152,7 +152,6 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, versio
                 config_settings["//:is_python_" + alias.version] = alias.repo
 
     if dists:
-        defaults = []
         for filename, cfgs in _get_dist_config_setting_names(dists, default_version).items():
             repo = "{}_{}".format(hub_name, _get_repo_name(filename))
             for plat_label in cfgs:
@@ -162,8 +161,7 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, versio
                         plat_label,
                     )
                 else:
-                    defaults.append(filename)
-                    continue
+                    plat_label = _DEFAULT_CONFIG_SETTING
 
                 if plat_label in config_settings:
                     fail(
@@ -174,19 +172,6 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, versio
                         "this is already configured for {}".format(config_settings[plat_label]),
                     )
                 config_settings[plat_label] = repo
-
-        # Select the only default if there is a single thing
-        if len(defaults) == 1:
-            repo = "{}_{}".format(hub_name, _get_repo_name(defaults[0]))
-            config_settings[_DEFAULT_CONFIG_SETTING] = repo
-        elif defaults:
-            # whl and sdist is in here, let's chose the whl
-            whl_defaults = [d for d in defaults if d.endswith(".whl")]
-            if len(whl_defaults) != 1:
-                fail("TODO")
-            else:
-                repo = "{}_{}".format(hub_name, _get_repo_name(whl_defaults[0]))
-                config_settings[_DEFAULT_CONFIG_SETTING] = repo
 
     if len(config_settings) == 1 and _DEFAULT_CONFIG_SETTING in config_settings:
         return "@{repo}//:{target_name}".format(
@@ -445,36 +430,45 @@ def _get_repo_name(filename):
 
 def _get_dist_config_setting_names(dists, default_version):
     config_settings = {}
+    defaults = []
 
     for filename, target_platforms_ in dists:
         parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
         if not parsed:
-            names = [""]
+            names = ["", "sdist"]
         else:
-            prefix = ""
-            suffix = ""
-            if "musl" in parsed.platform_tag:
-                prefix = "musl"
-            elif "many" in parsed.platform_tag:
-                prefix = "many"
-            elif "universal2" in parsed.platform_tag:
-                suffix = "_universal2"
-
-            if parsed.abi_tag == "none":
-                abis = ["none"]
-            elif parsed.abi_tag == "abi3":
-                abis = ["abi3"]
+            if parsed.abi_tag in ["none", "abi3"]:
+                abis = [parsed.abi_tag]
+                if parsed.platform_tag == "any":
+                    defaults.append(filename)
             elif parsed.abi_tag.startswith("cp3"):
                 abis = ["cpxy"]
             else:
                 fail("TODO: {}".format(filename))
 
-            platforms = ["any"] if parsed.platform_tag == "any" else [
-                p.target_platform for p in whl_target_platforms(parsed.platform_tag)
-            ]
+            if parsed.platform_tag == "any":
+                platforms = ["any"]
+            else:
+                platforms = []
+                for p in whl_target_platforms(parsed.platform_tag):
+                    head = p.flavor + p.os
+                    tail = p.cpu
+                    if "universal2" in parsed.platform_tag:
+                        tail = "{}_universal2".format(tail)
+
+                    platforms.append("{}_{}".format(head, tail))
+
+                    if not p.versions:
+                        continue
+                    if p.os != "linux":
+                        # TODO @aignas 2024-04-25: finish osx version handling
+                        continue
+
+                    for v in p.versions:
+                        platforms.append("{}_{}_{}_{}".format(head, v[0], v[1], tail))
 
             names = [
-                "whl_{}_{}{}{}".format(abi, prefix, target_platform, suffix)
+                "whl_{}_{}".format(abi, target_platform)
                 for target_platform in platforms
                 for abi in abis
             ]
@@ -505,11 +499,30 @@ def _get_dist_config_setting_names(dists, default_version):
                 candidates.append(name)
 
         for name in candidates:
-            if name in config_settings:
-                print("WARNING: Wanted to add '{}' to match '{}', but '{}' already matches".format(filename, name, config_settings[name]))
+            if not name:
+                defaults.append(filename)
+                continue
+            elif name in config_settings:
+                # NOTE @aignas 2024-04-25: cryptography is publishing multiple
+                # wheels that target different glibc versions (for older and
+                # newer OSes) and we don't know what the user of rules_python
+                # is gonna want, we have a way for the user to select the libc version
+                # by default we are just going to select the first match
+                # (alphabetically) until we figure a better strategy.
                 continue
 
             config_settings[name] = filename
+
+    # Select the only default if there is a single thing
+    defaults = sorted(
+        defaults,
+        key = lambda f: (
+            "-none-any.whl" not in f,
+            "-abi3-any.whl" not in f,
+            f,
+        ),
+    )
+    config_settings[""] = defaults[0]
 
     ret = {}
     for setting, filename in config_settings.items():

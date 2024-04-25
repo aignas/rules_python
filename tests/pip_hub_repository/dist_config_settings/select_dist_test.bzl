@@ -80,14 +80,12 @@ def _test_library_matching(name, test):
                 "foo-0.0.1-py2.py3-none-any.whl",
                 [
                     ("3.11", None),
-                    ("3.12", None),
                 ],
             ),
             (
                 "foo-0.0.1.tar.gz",
                 [
                     ("3.11", None),
-                    ("3.12", None),
                 ],
             ),
         ],
@@ -113,7 +111,7 @@ def _test_library_matching(name, test):
         if getattr(test, "debug", None):
             print("Value of the dict:\n" + render.dict(
                 select_value,
-                key_repr = lambda x: render.tuple(x) if type(x) != type("") else repr(x),
+                value_repr = render.list,
             ))
         select_values[attr] = {
             tuple(v) if len(v) > 1 else v[0]: k
@@ -161,7 +159,7 @@ def _test_library_matching(name, test):
             "//command_line_option:platforms": Label(":osx_aarch64"),
         },
         "osx_aarch64_multiarch": {
-            Label(":whl_osx_arch"): "multi",
+            Label(":whl_osx_arch"): "multiarch",
             "//command_line_option:platforms": Label(":osx_aarch64"),
         },
     }
@@ -324,6 +322,7 @@ def _test_new_version_of_python(name):
         name = name,
         test = struct(
             setting = "cp312_osx_aarch64",
+            debug = True,
             attrs = [
                 "any_match",
                 "all_dists_match",

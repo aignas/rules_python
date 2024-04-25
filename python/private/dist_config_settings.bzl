@@ -20,65 +20,31 @@ that matches the target platform. We can leverage this fact to ensure that the
 most specialized wheels are used by default with the users being able to
 configure string_flag values to select the less specialized ones.
 
-The list of the dists by specialization (from least specialized) goes like below.
+The list of specialization of the dists goes like follows:
+* sdist
+* -none-any.whl
+* -abi3-any.whl
+* -cpxy-any.whl
+* -none-plat.whl
+* -abi3-plat.whl
+* -cpxy-plat.whl
 
-The following are cross-platform wheels, which can be present in different
-versions for different configurations (e.g. linux_x86_64 has a different
-version from osx_aarch64) and the same is true for python versions. What is more
-we should be able to prefer an any whl for a particular platform (e.g. use platform-specific wheels for linux, but cross-platform for win_amd64)
-1. sdist
-    * Can be for a particular platform or python version because the dist version numbers may differ.
-    * should error out if we have dist_type = whl, hence we cannot have a `//conditions:default` here.
-    * only the following should be present:
-        * default
-        * py3x
-        * py3x_plat
-1. (none, any) whl, similar to sdist but should be preferred over it.
-        * default, none_abi=auto|yes
-        * py3x, none_abi=auto|yes
-        * py3x_plat, none_abi=auto|yes
-1. (abi3, any) whl, similar to sdist but should be preferred.
-        * default, abi=auto, abi3=auto|yes
-        * py3x, abi=auto, abi3=auto|yes
-        * py3x_plat, abi=auto, abi3=auto|yes
-1. (cp, any) whl, similar to sdist but should be preferred.
-        * default, abi=auto, abi3=auto, cpabi=auto|yes
-        * py3x, abi=auto, abi3=auto, cpabi=auto|yes
-        * py3x_plat, abi=auto, abi3=auto, cpabi=auto|yes
+Note, that here the specialization of musl vs manylinux wheels is the same in
+order to not match an incompatible version in case the user specifies the version
+of the libc to match. By default we do not match against the libc version and pick
+some whl.
 
-The following is for platform-specific wheels. We should not have plat that is not supported by the wheel in the constraints here. We should filter the incoming dist list based on the target platform:
-1. ([none|abi3|cp], plat) whl, similar to sdist but should be preferred.
-        * py3x_plat, none_abi=auto|yes, plat=auto
-        * py3x_plat, abi=auto, abi3=auto|yes, plat=auto
-        * py3x_plat, abi=auto, abi3=auto, cpabi=auto|yes, plat=auto
-1. ([none|abi3|cp], [manylinux|musllinux]) whl, similar to sdist but should be preferred.
-        * py3x_plat, none_abi=auto|yes, plat=auto, linux_whl=[manylinux|musllinux]
-        * py3x_plat, abi=auto, abi3=auto|yes, plat=auto, linux_whl=[manylinux|musllinux]
-        * py3x_plat, abi=auto, abi3=auto, plat=auto, cpabi=auto|yes, linux_whl=[manylinux|musllinux]
-1. ([none|abi3|cp], [os_arch|multiarch]) whl, similar to sdist but should be preferred.
-        * py3x_plat, none_abi=auto|yes, plat=auto, osx_whl=[|multiarch]
-        * py3x_plat, abi=auto, abi3=auto|yes, plat=auto, osx_whl=[|multiarch]
-        * py3x_plat, abi=auto, abi3=auto, cpabi=auto|yes, plat=auto, osx_whl=[|multiarch]
+That should cover the majority of cases as only a single `whl`.
 
-The flag_values:
-1. osx_flavor - os_arch, multiarch - default os_arch
-1. linux_whl - glibc, musl - default glibc
-1. plat:
-      * auto - Default - prefer platform available
-      * no - Do not include platform-specific wheels
-      * NOTE @aignas 2024-04-24: yes does not make senses because not all
-        wheels have plat specific wheel, but sometimes they do have
-        cross-platform alternatives that we should be able to configure.
-
-Not sure about the following three flags, but when we have tests, maybe we can simplify
-1. use_abi_none - auto, only
-1. use_abi_abi3 - auto, no
-1. use_abi_cpxy - auto, no
-
-Use cases:
-* sdist only - do not register wheels or have a separate select for that
-* whl only - do not register sdists or have a separate select for that
-* auto only - register all
+Use cases that this code strives to support:
+* sdist only - Setting the flag `:whl=no` should do the trick
+* whl only - Will be handled differently (i.e. filtering elsewhere). By default
+  we will give preference to whls, so this should not be necessary most of the
+  times.
+* select only pure python versions of wheels. This may not work all of the time
+  unless building from `sdist` is disabled.
+* select to target a particular libc version
+* select to target a particular osx version
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
@@ -131,10 +97,20 @@ def dist_config_settings(
 
     string_flag(
         name = "whl_osx_arch",
-        build_setting_default = "auto",
-        values = ["auto", "single", "multi"],
+        build_setting_default = "singlearch",
+        values = ["singlearch", "multiarch"],
         **kwargs
     )
+
+    osx_versions = {}
+    for p in sorted(whl_platforms):
+        if "macos" not in p:
+            continue
+
+        _, _, tail = p.partition("_")
+        major, _, tail = tail.partition("_")
+        minor, _, _ = tail.partition("_")
+        osx_versions[p] = "{}.{}".format(major, minor)
 
     string_flag(
         name = "whl_linux_libc",
@@ -143,24 +119,55 @@ def dist_config_settings(
         **kwargs
     )
 
-    # NOTE @aignas 2024-04-25: it should be theoretically possible to get the
-    # glibc and muslc versions from the `whl_platforms` variable, but how to
-    # make use of it requires further analysis.
-
     constraint_values = {
         "": None,
-    } | {
-        "{}_{}".format(os, cpu): [
-            "@platforms//os:" + os,
-            "@platforms//cpu:" + cpu,
-        ]
-        # Unique os, cpu tuples derived from whl_target_platforms
-        for (os, cpu) in {
-            (p.os, p.cpu): None
-            for target_platform in whl_platforms
-            for p in whl_target_platforms(target_platform)
-        }
     }
+    osx_versions = {}
+    libc_versions = {}
+    for target_platform in whl_platforms:
+        for p in whl_target_platforms(target_platform):
+            plat_label = "{}_{}".format(p.os, p.cpu)
+            constraint_values[plat_label] = [
+                "@platforms//os:" + p.os,
+                "@platforms//cpu:" + p.cpu,
+            ]
+
+            if not p.versions:
+                continue
+
+            if p.os == "linux":
+                for v in p.versions:
+                    libc_versions.setdefault("{}.{}".format(v[0], v[1]), []).append(
+                        p.flavor + plat_label
+                    )
+            elif p.os == "osx":
+                for v in p.versions:
+                    osx_versions.setdefault("{}.{}".format(v[0], v[1]), []).append(
+                        plat_label
+                    )
+
+    # FIXME @aignas 2024-04-25: if we target version `1.1`, then we should be OK
+    # to select versions that are lower, but we should not select versions that are
+    # higher.
+    #
+    # I have added these flags here so that the behaviour could be somewhat configurable
+    # as the majority of the wheels on PyPI are built against the earliest possible
+    # target platform that the CI provider supports, hence the list here is expected to
+    # be not too large.
+
+    string_flag(
+        name = "experimental_whl_osx_version",
+        build_setting_default = "",
+        values = [""] + sorted(osx_versions.keys()),
+        **kwargs
+    )
+
+    string_flag(
+        name = "experimental_whl_linux_libc_version",
+        build_setting_default = "",
+        values = [""] + sorted(libc_versions.keys()),
+        **kwargs
+    )
 
     presets = {
         name: {
@@ -184,7 +191,8 @@ def dist_config_settings(
         # - fallback to sdist (default)
         # - use only sdist (disable whls) (flag)
         for prefix, flag_values in {
-            "": {},  # fallback to sdist
+            "": {},
+            "sdist": {"whl": "no"},
         }.items():
             _config_settings(
                 name = [prefix, plat],
@@ -229,22 +237,39 @@ def dist_config_settings(
                 )
             elif "osx" in plat:
                 # [none|abi3|cp]-macosx-arch.whl
-                for suffix, whl_osx_arch in {
-                    plat: "auto",
-                    plat + "_slim": "single",
-                    plat + "_universal2": "multi",
+                for name, whl_osx_arch in {
+                    plat: "singlearch",
+                    plat + "_universal2": "multiarch",
                 }.items():
                     _config_settings(
-                        name = [prefix, suffix],
+                        name = [prefix, name],
                         flag_values = dict(
+                            experimental_whl_osx_version = "",
                             whl_osx_arch = whl_osx_arch,
                             whl_plat = "auto",
                             **flag_values
                         ),
                         **kwargs
                     )
+
+                    for version, plats in osx_versions.items():
+                        if plat not in plats:
+                            continue
+
+                        os, _, cpu = name.partition("_")
+
+                        _config_settings(
+                            name = [prefix, os, version.replace(".", "_"), cpu],
+                            flag_values = dict(
+                                experimental_whl_osx_version = version,
+                                whl_osx_arch = whl_osx_arch,
+                                whl_plat = "auto",
+                                **flag_values
+                            ),
+                            **kwargs
+                        )
+
             elif "linux" in plat:
-                # TODO @aignas 2024-04-25: register config settings for different libc versions
                 # [none|abi3|cp]-[|many|musl]linux_arch.whl
                 for name, whl_linux_libc in {
                     plat: None,
@@ -254,12 +279,30 @@ def dist_config_settings(
                     _config_settings(
                         name = [prefix, name],
                         flag_values = dict(
+                            experimental_whl_linux_libc_version = "",
                             whl_linux_libc = whl_linux_libc,
                             whl_plat = "auto",
                             **flag_values
                         ),
                         **kwargs
                     )
+
+                    for version, plats in libc_versions.items():
+                        if name not in plats:
+                            continue
+
+                        os, _, cpu = name.partition("_")
+
+                        _config_settings(
+                            name = [prefix, os, version.replace(".", "_"), cpu],
+                            flag_values = dict(
+                                whl_linux_libc = whl_linux_libc,
+                                experimental_whl_linux_libc_version = version,
+                                whl_plat = "auto",
+                                **flag_values
+                            ),
+                            **kwargs
+                        )
             else:
                 fail("unknown platform: '{}'".format(plat))
 
@@ -275,19 +318,23 @@ def _config_settings(
     flag_values = {
         k: v
         for k, v in flag_values.items()
-        if v
+        if v != None
     }
 
     if flag_values or constraint_values:
         native.config_setting(
             name = name,
-            # TODO @aignas 2024-04-25: the fact that we need to add this is fishy
+            # NOTE @aignas 2024-04-25: we need to add this so that we ensure that
+            # all config settings have the same number of flag values so that
+            # the different wheel arches are specializations of each other and
+            # so that the modelling works fully.
             flag_values = flag_values | {
                 str(Label("//python/config_settings:python_version")): "",
             },
             constraint_values = constraint_values,
             **kwargs
         )
+
     for python_version in python_versions:
         is_python_config_setting(
             name = "is_python_{}{}".format(python_version, name[len("is"):]),

@@ -16,7 +16,7 @@
 A starlark implementation of the wheel platform tag parsing to get the target platform.
 """
 
-load(":parse_whl_name.bzl", "parse_whl_name")
+load(":parse_whl_name.bzl", "parse_whl_name", "normalize_platform_tag")
 
 # The order of the dictionaries is to keep definitions with their aliases next to each
 # other
@@ -119,25 +119,36 @@ def whl_target_platforms(platform_tag, abi_tag = ""):
         * target_platform: str, the target_platform that can be given to the
           wheel_installer for parsing whl METADATA.
     """
+    platform_tag = normalize_platform_tag(platform_tag)
     cpus = _cpu_from_tag(platform_tag)
-    flavor = _get_flavor(platform_tag)
 
     abi = None
     if abi_tag not in ["", "none", "abi3"]:
         abi = abi_tag
 
     for prefix, os in _OS_PREFIXES.items():
-        if platform_tag.startswith(prefix):
-            return [
-                struct(
-                    os = os,
-                    cpu = cpu,
-                    abi = abi,
-                    target_platform = "_".join([abi, os, cpu] if abi else [os, cpu]),
-                    flavor = flavor,
-                )
-                for cpu in cpus
-            ]
+        if not platform_tag.startswith(prefix):
+            continue
+
+        versions = []
+        if prefix in ["manylinux", "musllinux", "macos"]:
+            for p in platform_tag.split("."):
+                _, _, tail = p.partition("_")
+                major, _, tail = tail.partition("_")
+                minor, _, tail = tail.partition("_")
+                versions.append((int(major), int(minor)))
+
+        return [
+            struct(
+                os = os,
+                cpu = cpu,
+                abi = abi,
+                target_platform = "_".join([abi, os, cpu] if abi else [os, cpu]),
+                flavor = _get_flavor(platform_tag),
+                versions = versions,
+            )
+            for cpu in cpus
+        ]
 
     print("WARNING: ignoring unknown platform_tag os: {}".format(platform_tag))  # buildifier: disable=print
     return []
@@ -146,9 +157,7 @@ def _get_flavor(tag):
     if "musl" in tag:
         return "musl"
     if "many" in tag:
-        return "glibc"
-    if "universal" in tag:
-        return "multiarch"
+        return "many"
     return ""
 
 def _cpu_from_tag(tag):

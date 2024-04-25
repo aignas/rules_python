@@ -31,6 +31,13 @@ _LEGACY_ALIASES = {
     "manylinux2014_x86_64": "manylinux_2_17_x86_64",
 }
 
+def normalize_platform_tag(tag):
+    """Resolve legacy aliases to modern equivalents for easier parsing elsewhere."""
+    return ".".join(list({
+        _LEGACY_ALIASES.get(p, p): None
+        for p in tag.split(".")
+    }))
+
 def parse_whl_name(file):
     """Parse whl file name into a struct of constituents.
 
@@ -84,8 +91,5 @@ def parse_whl_name(file):
         build_tag = build_tag,
         python_tag = python_tag,
         abi_tag = abi_tag,
-        platform_tag = ".".join(list({
-            _LEGACY_ALIASES.get(p, p): None
-            for p in platform_tag.split(".")
-        })),
+        platform_tag = normalize_platform_tag(platform_tag),
     )
