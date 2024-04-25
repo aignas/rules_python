@@ -50,15 +50,16 @@ _subject = rule(
 
 def _test_library_matching(name, test):
     select_values = {}
-    dists = {
-        "foo-0.0.1{}".format(suffix): [
-            ("3.11", None),
-            ("3.12", None),
-            (None, None),
-        ] if "-cp311-" not in suffix else [
-            ("3.11", None),
-            (None, None),
-        ]
+    dists = [
+        (
+            "foo-0.0.1{}".format(suffix),
+            [
+                ("3.11", None),
+                ("3.12", None),
+            ] if "-cp311-" not in suffix else [
+                ("3.11", None),
+            ],
+        )
         for suffix in [
             ".tar.gz",
             "-py3-none-any.whl",
@@ -70,26 +71,34 @@ def _test_library_matching(name, test):
             for abi_tag in ["none", "abi3", "cp311"]
             for platform in _PLATFORMS
         ]
-    }
+    ]
 
     attr_dists = {
         "all_dists_match": dists,
-        "any_match": {
-            "foo-0.0.1-py2.py3-none-any.whl": [
-                ("3.11", None),
-                (None, None),
-            ],
-            "foo-0.0.1.tar.gz": [
-                ("3.11", None),
-                (None, None),
-            ],
-        },
-        "sdist_match": {
-            "foo-0.0.1.tar.gz": [
-                ("3.11", None),
-                (None, None),
-            ],
-        },
+        "any_match": [
+            (
+                "foo-0.0.1-py2.py3-none-any.whl",
+                [
+                    ("3.11", None),
+                    ("3.12", None),
+                ],
+            ),
+            (
+                "foo-0.0.1.tar.gz",
+                [
+                    ("3.11", None),
+                    ("3.12", None),
+                ],
+            ),
+        ],
+        "sdist_match": [
+            (
+                "foo-0.0.1.tar.gz",
+                [
+                    ("3.11", None),
+                ],
+            ),
+        ],
     }
     for attr, dists in attr_dists.items():
         if attr not in test.attrs:
@@ -106,7 +115,10 @@ def _test_library_matching(name, test):
                 select_value,
                 key_repr = lambda x: render.tuple(x) if type(x) != type("") else repr(x),
             ))
-        select_values[attr] = select_value
+        select_values[attr] = {
+            tuple(v) if len(v) > 1 else v[0]: k
+            for k, v in select_value.items()
+        }
 
     rt_util.helper_target(
         _subject,
@@ -123,7 +135,7 @@ def _test_library_matching(name, test):
             "//command_line_option:platforms": Label(":linux_aarch64"),
         },
         "cp311_linux_aarch64_sdist": {
-            Label(":dist_type"): "sdist",
+            Label(":whl"): "no",
             Label("//python/config_settings:python_version"): "3.11.1",
             "//command_line_option:platforms": Label(":linux_aarch64"),
         },
@@ -135,20 +147,21 @@ def _test_library_matching(name, test):
             "//command_line_option:platforms": Label(":linux_aarch64"),
         },
         "linux_aarch64_musl": {
-            Label(":whl_flavor"): "musl",
+            Label(":whl_linux_libc"): "musl",
             "//command_line_option:platforms": Label(":linux_aarch64"),
         },
         "osx_aarch64_any": {
-            Label(":whl_flavor"): "any",
+            Label(":whl_plat"): "no",
             "//command_line_option:platforms": Label(":osx_aarch64"),
         },
         "osx_aarch64_any_abi_none": {
-            Label(":whl_abi"): "none",
-            Label(":whl_flavor"): "any",
+            Label(":whl_abi3"): "no",
+            Label(":whl_cpxy"): "no",
+            Label(":whl_plat"): "no",
             "//command_line_option:platforms": Label(":osx_aarch64"),
         },
         "osx_aarch64_multiarch": {
-            Label(":whl_flavor"): "multiarch",
+            Label(":whl_osx_arch"): "multi",
             "//command_line_option:platforms": Label(":osx_aarch64"),
         },
     }
@@ -333,7 +346,7 @@ def select_dist_test_suite(name):  # buildifier: disable=function-docstring
     )
     dist_config_settings(
         name = "config",
-        python_versions = [None, "3.11", "3.12"],
+        python_versions = ["3.11", "3.12"],
         whl_platforms = _PLATFORMS,
     )
 

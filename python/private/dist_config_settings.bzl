@@ -105,43 +105,47 @@ def dist_config_settings(
         name = "whl",
         build_setting_default = "auto",
         values = ["auto", "no"],
-        **kwargs,
+        **kwargs
     )
 
     string_flag(
         name = "whl_abi3",
         build_setting_default = "auto",
         values = ["auto", "no"],
-        **kwargs,
+        **kwargs
     )
 
     string_flag(
         name = "whl_cpxy",
         build_setting_default = "auto",
         values = ["auto", "no"],
-        **kwargs,
+        **kwargs
     )
 
     string_flag(
         name = "whl_plat",
         build_setting_default = "auto",
         values = ["auto", "no"],
-        **kwargs,
+        **kwargs
     )
 
     string_flag(
         name = "whl_osx_arch",
         build_setting_default = "auto",
         values = ["auto", "single", "multi"],
-        **kwargs,
+        **kwargs
     )
 
     string_flag(
         name = "whl_linux_libc",
         build_setting_default = "glibc",
         values = ["glibc", "musl"],
-        **kwargs,
+        **kwargs
     )
+
+    # NOTE @aignas 2024-04-25: it should be theoretically possible to get the
+    # glibc and muslc versions from the `whl_platforms` variable, but how to
+    # make use of it requires further analysis.
 
     constraint_values = {
         "": None,
@@ -157,13 +161,14 @@ def dist_config_settings(
             for p in whl_target_platforms(target_platform)
         }
     }
+
     presets = {
         name: {
             "constraint_values": cvs,
             "python_versions": python_versions,
             "visibility": [
                 native.package_relative_label(":__subpackages__"),
-            ]
+            ],
         }
         for name, cvs in constraint_values.items()
     }
@@ -179,7 +184,7 @@ def dist_config_settings(
         # - fallback to sdist (default)
         # - use only sdist (disable whls) (flag)
         for prefix, flag_values in {
-            "": {}, # fallback to sdist
+            "": {},  # fallback to sdist
         }.items():
             _config_settings(
                 name = [prefix, plat],
@@ -190,7 +195,7 @@ def dist_config_settings(
                 # the `constraint_values` on os and arch to support the case
                 # where we have different versions on different platforms,
                 # because we are supplying different requirement files.
-                **kwargs,
+                **kwargs
             )
 
         for prefix, flag_values in {
@@ -198,15 +203,14 @@ def dist_config_settings(
             "whl_none": {"whl": "auto"},
             "whl_abi3": {"whl": "auto", "whl_abi3": "auto"},
             "whl_cpxy": {"whl": "auto", "whl_abi3": "auto", "whl_cpxy": "auto"},
-        }.items(): # buildifier: disable=unsorted-dict-items as they have meaning
-
+        }.items():  # buildifier: disable=unsorted-dict-items as they have meaning
             # [none|abi3|cp]-any.whl
             # the platform suffix is for the cases when we have different dists
             # on different platforms.
             _config_settings(
                 name = [prefix, "any", plat],
                 flag_values = flag_values,
-                **kwargs,
+                **kwargs
             )
 
             if plat == "":
@@ -218,27 +222,29 @@ def dist_config_settings(
                 _config_settings(
                     name = [prefix, plat],
                     flag_values = dict(
-                        whl_plat="auto",
-                        **flag_values,
+                        whl_plat = "auto",
+                        **flag_values
                     ),
-                    **kwargs,
+                    **kwargs
                 )
             elif "osx" in plat:
                 # [none|abi3|cp]-macosx-arch.whl
                 for suffix, whl_osx_arch in {
-                    plat: "single",
-                    plat + "_universal2": "auto",
+                    plat: "auto",
+                    plat + "_slim": "single",
+                    plat + "_universal2": "multi",
                 }.items():
                     _config_settings(
                         name = [prefix, suffix],
                         flag_values = dict(
                             whl_osx_arch = whl_osx_arch,
-                            whl_plat="auto",
-                            **flag_values,
+                            whl_plat = "auto",
+                            **flag_values
                         ),
-                        **kwargs,
+                        **kwargs
                     )
             elif "linux" in plat:
+                # TODO @aignas 2024-04-25: register config settings for different libc versions
                 # [none|abi3|cp]-[|many|musl]linux_arch.whl
                 for name, whl_linux_libc in {
                     plat: None,
@@ -249,10 +255,10 @@ def dist_config_settings(
                         name = [prefix, name],
                         flag_values = dict(
                             whl_linux_libc = whl_linux_libc,
-                            whl_plat="auto",
-                            **flag_values,
+                            whl_plat = "auto",
+                            **flag_values
                         ),
-                        **kwargs,
+                        **kwargs
                     )
             else:
                 fail("unknown platform: '{}'".format(plat))
@@ -264,19 +270,23 @@ def _config_settings(
         flag_values,
         constraint_values = None,
         **kwargs):
-
     name = "_".join(["is"] + [n for n in name if n and n != "auto"])
 
     flag_values = {
-        k: v for k,v in flag_values.items() if v
+        k: v
+        for k, v in flag_values.items()
+        if v
     }
 
     if flag_values or constraint_values:
         native.config_setting(
             name = name,
-            flag_values = flag_values,
+            # TODO @aignas 2024-04-25: the fact that we need to add this is fishy
+            flag_values = flag_values | {
+                str(Label("//python/config_settings:python_version")): "",
+            },
             constraint_values = constraint_values,
-            **kwargs,
+            **kwargs
         )
     for python_version in python_versions:
         is_python_config_setting(
@@ -284,5 +294,5 @@ def _config_settings(
             python_version = python_version,
             flag_values = flag_values,
             constraint_values = constraint_values,
-            **kwargs,
+            **kwargs
         )
