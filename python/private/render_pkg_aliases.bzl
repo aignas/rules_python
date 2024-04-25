@@ -60,10 +60,8 @@ _DEFAULT_CONFIG_SETTING = "//conditions:default"
 def whl_library_aliases(
         name,
         aliases,
-        default_version = None,
-        versions = None,
-        hub_name = None,
-        dists = None,
+        actual,
+        has_default,
         **kwargs):
     """Create all macros for a given package.
 
@@ -78,23 +76,13 @@ def whl_library_aliases(
         name: str, the name of the whl package, normalized.
         aliases: the dictinoary of aliases that need to be created for the
             target whl.
-        default_version: the default python version, if any.
-        hub_name: the hub name that the dists are located in.
-        dists: the dist filenames and the target platforms.
-        versions: TODO
+        actual: TODO
+        has_default: TODO
         **kwargs: Any extra kwargs to pass to `native.alias`.
     """
     native.alias(
         name = name,
         actual = ":pkg",
-    )
-
-    actual, has_default = whl_select_dict(
-        target_name = "{target_name}",  # So that we can use this as a template later
-        hub_name = hub_name,
-        default_version = default_version,
-        versions = versions,
-        dists = dists,
     )
 
     if type(actual) == type(""):
@@ -230,17 +218,22 @@ def _render_whl_library_aliases(
         aliases,
         dists = None,
         visibility = None):
+
     lines = [
         "name = \"{}\"".format(name),
         "aliases = {}".format(render.dict(aliases)),
-        "default_version = \"{}\"".format(default_version),
     ]
-    if versions:
-        lines.append("versions = {}".format(render.list(versions)))
-    elif dists:
-        lines.append("hub_name = \"{}\"".format(hub_name))
-        lines.append("dists = {}".format(
-            render.dict(dists, value_repr = render.list),
+    if dists:
+        actual, has_default = whl_select_dict(
+            target_name = "{target_name}",  # So that we can use this as a template later
+            hub_name = hub_name,
+            default_version = default_version,
+            versions = versions,
+            dists = dists,
+        )
+        lines.append("has_default = {}".format(has_default))
+        lines.append("actual = {}".format(
+            render.dict(actual, value_repr = render.list),
         ))
 
     if visibility:
@@ -267,11 +260,11 @@ def _render_common_aliases(*, name, hub_name, aliases, default_version, group_na
                 for alias in aliases
                 if not alias.filename
             ],
-            dists = {
-                alias.filename: alias.target_platforms
+            dists = [
+                (alias.filename, alias.target_platforms)
                 for alias in aliases
                 if alias.filename
-            },
+            ],
             aliases = {
                 PY_LIBRARY_PUBLIC_LABEL: PY_LIBRARY_IMPL_LABEL if group_name else PY_LIBRARY_PUBLIC_LABEL,
                 WHEEL_FILE_PUBLIC_LABEL: WHEEL_FILE_IMPL_LABEL if group_name else WHEEL_FILE_PUBLIC_LABEL,
@@ -453,46 +446,41 @@ def _get_repo_name(filename):
 def _get_dist_config_setting_names(dists, default_version):
     config_settings = {}
 
-    for filename, target_platforms_ in dists.items():
-        for (version, plat) in target_platforms_:
-            parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
-            if not parsed:
-                names = ["", "sdist"]
-            elif parsed.abi_tag == "none" and parsed.platform_tag == "any":
-                names = ["whl", "whl_none"]
-            elif parsed.abi_tag == "abi3" and parsed.platform_tag == "any":
-                names = ["whl_abi3"]
-            elif parsed.platform_tag == "any":
-                fail("TODO cpxy any: " + filename)
-            elif parsed.abi_tag == "none":
-                fail("TODO none: " + filename)
+    for filename, target_platforms_ in dists:
+        parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
+        if not parsed:
+            names = [""]
+        else:
+            prefix = ""
+            suffix = ""
+            if "musl" in parsed.platform_tag:
+                prefix = "musl"
+            elif "many" in parsed.platform_tag:
+                prefix = "many"
+            elif "universal2" in parsed.platform_tag:
+                suffix = "_universal2"
+
+            if parsed.abi_tag == "none":
+                abis = ["none"]
             elif parsed.abi_tag == "abi3":
-                if parsed.python_tag.startswith("cp"):
-                    whl_minor_version = int(parsed.python_tag[len("cp3"):])
-                    minor_version = int(version.partition(".")[-1])
-                    if minor_version < whl_minor_version:
-                        print("Python '{}' does not support {}".format(version, filename))
-                        continue
-                    else:
-                        names = ["whl_abi3"]
-                else:
-                    fail("TODO abi3: " + filename)
+                abis = ["abi3"]
+            elif parsed.abi_tag.startswith("cp3"):
+                abis = ["cpxy"]
             else:
-                if "many" in parsed.platform_tag:
-                    prefix = "glibc"
-                elif "musl" in parsed.platform_tag:
-                    prefix = "musl"
-                elif "universal2" in parsed.platform_tag:
-                    prefix = "fat"
-                else:
-                    prefix = "plat"
+                fail("TODO: {}".format(filename))
 
-                names = [
-                    "whl_{}_{}".format(prefix, p.target_platform)
-                    for p in whl_target_platforms(parsed.platform_tag)
-                ]
+            platforms = ["any"] if parsed.platform_tag == "any" else [
+                p.target_platform for p in whl_target_platforms(parsed.platform_tag)
+            ]
 
-            candidates = []
+            names = [
+                "whl_{}_{}{}{}".format(abi, prefix, target_platform, suffix)
+                for target_platform in platforms
+                for abi in abis
+            ]
+
+        candidates = []
+        for (version, plat) in target_platforms_:
             for match in names:
                 if version == default_version:
                     if match and plat:
@@ -502,7 +490,7 @@ def _get_dist_config_setting_names(dists, default_version):
                     elif match:
                         name = "is_" + match
                     else:
-                        name = "is_default"
+                        name = ""
 
                     candidates.append(name)
 
@@ -518,7 +506,8 @@ def _get_dist_config_setting_names(dists, default_version):
 
         for name in candidates:
             if name in config_settings:
-                fail("Potentially ambiguous config setting: {}".format(name))
+                print("WARNING: Wanted to add '{}' to match '{}', but '{}' already matches".format(filename, name, config_settings[name]))
+                continue
 
             config_settings[name] = filename
 

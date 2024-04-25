@@ -102,9 +102,30 @@ def dist_config_settings(
     """
 
     string_flag(
-        name = "use_dists",
+        name = "whl",
         build_setting_default = "auto",
-        values = ["auto", "whl", "sdist"],
+        values = ["auto", "no"],
+        **kwargs,
+    )
+
+    string_flag(
+        name = "whl_abi3",
+        build_setting_default = "auto",
+        values = ["auto", "no"],
+        **kwargs,
+    )
+
+    string_flag(
+        name = "whl_cpxy",
+        build_setting_default = "auto",
+        values = ["auto", "no"],
+        **kwargs,
+    )
+
+    string_flag(
+        name = "whl_plat",
+        build_setting_default = "auto",
+        values = ["auto", "no"],
         **kwargs,
     )
 
@@ -122,39 +143,6 @@ def dist_config_settings(
         **kwargs,
     )
 
-    string_flag(
-        name = "whl_plat",
-        build_setting_default = "auto",
-        values = ["auto", "no"],
-        **kwargs,
-    )
-
-    string_flag(
-        name = "whl_abi_none",
-        build_setting_default = "auto",
-        values = ["auto", "only"],
-        **kwargs,
-    )
-
-    string_flag(
-        name = "whl_abi_abi3",
-        build_setting_default = "auto",
-        values = ["auto", "no"],
-        **kwargs,
-    )
-
-    string_flag(
-        name = "whl_abi_cp",
-        build_setting_default = "auto",
-        values = ["auto", "no"],
-        **kwargs,
-    )
-
-    unique_target_platforms = list({
-        (p.os, p.cpu): None
-        for target_platform in whl_platforms
-        for p in whl_target_platforms(target_platform)
-    })
     constraint_values = {
         "": None,
     } | {
@@ -162,12 +150,20 @@ def dist_config_settings(
             "@platforms//os:" + os,
             "@platforms//cpu:" + cpu,
         ]
-        for (os, cpu) in unique_target_platforms
+        # Unique os, cpu tuples derived from whl_target_platforms
+        for (os, cpu) in {
+            (p.os, p.cpu): None
+            for target_platform in whl_platforms
+            for p in whl_target_platforms(target_platform)
+        }
     }
     presets = {
         name: {
             "constraint_values": cvs,
             "python_versions": python_versions,
+            "visibility": [
+                native.package_relative_label(":__subpackages__"),
+            ]
         }
         for name, cvs in constraint_values.items()
     }
@@ -177,116 +173,116 @@ def dist_config_settings(
     # * none-any.whl - use if this exists or use only these in case we need pure python whls.
     # * abi3-any.whl - use if this exists and prefer it over none whls
     # * cp3x-any.whl - use if this exists and prefer it over abi3 and none whls
-    for plat, args in presets.items():
-        for suffix, cfg in {
-            "": {"use_dists": "auto"},
-            "sdist": {"use_dists": "sdist"},
+    for plat, kwargs in presets.items():
+        # A different way to model this would be to ask the user to explicitly allow sdists
+        # - use only whls (do not register sdist, should be a flag to pip.parse)
+        # - fallback to sdist (default)
+        # - use only sdist (disable whls) (flag)
+        for prefix, flag_values in {
+            "": {}, # fallback to sdist
         }.items():
             _config_settings(
-                name = [suffix, plat],
-                **args,
-                **cfg,
+                name = [prefix, plat],
+                flag_values = flag_values,
+                # in theory this can only work with the host platform as we
+                # don't support cross-building the wheels from sdist. If we did
+                # support that, then it could be different. However, we need
+                # the `constraint_values` on os and arch to support the case
+                # where we have different versions on different platforms,
+                # because we are supplying different requirement files.
+                **kwargs,
             )
 
-        for suffix, cfg in {
-            "whl": {"whl_abi_none": "auto"},
-            "whl_none": {"whl_abi_none": "only"},
-            "whl_abi3": {"whl_abi_none": "auto", "whl_abi_abi3": "auto"},
-            "whl_cpxy": {"whl_abi_none": "auto", "whl_abi_abi3": "auto", "whl_abi_cp": "auto"},
+        for prefix, flag_values in {
+            # All of these fallback to sdist
+            "whl_none": {"whl": "auto"},
+            "whl_abi3": {"whl": "auto", "whl_abi3": "auto"},
+            "whl_cpxy": {"whl": "auto", "whl_abi3": "auto", "whl_cpxy": "auto"},
         }.items(): # buildifier: disable=unsorted-dict-items as they have meaning
+
+            # [none|abi3|cp]-any.whl
+            # the platform suffix is for the cases when we have different dists
+            # on different platforms.
             _config_settings(
-                name = [suffix, plat],
-                **args,
-                **cfg,
+                name = [prefix, "any", plat],
+                flag_values = flag_values,
+                **kwargs,
             )
 
-            cfg["whl_plat"] = "auto"
-
-            if "windows" in plat:
-                # [none|abi3|cp]-plat.whl for windows
+            if plat == "":
+                # We are dealing with platform-specific wheels, so the default
+                # platform does not make sense here.
+                continue
+            elif "windows" in plat:
+                # [none|abi3|cp]-plat.whl
                 _config_settings(
-                    name = [suffix, "plat", plat],
-                    **args,
-                    **cfg,
+                    name = [prefix, plat],
+                    flag_values = dict(
+                        whl_plat="auto",
+                        **flag_values,
+                    ),
+                    **kwargs,
                 )
+            elif "osx" in plat:
+                # [none|abi3|cp]-macosx-arch.whl
+                for suffix, whl_osx_arch in {
+                    plat: "single",
+                    plat + "_universal2": "auto",
+                }.items():
+                    _config_settings(
+                        name = [prefix, suffix],
+                        flag_values = dict(
+                            whl_osx_arch = whl_osx_arch,
+                            whl_plat="auto",
+                            **flag_values,
+                        ),
+                        **kwargs,
+                    )
             elif "linux" in plat:
                 # [none|abi3|cp]-[|many|musl]linux_arch.whl
                 for name, whl_linux_libc in {
-                    "plat": None,
-                    "glibc": "glibc",
-                    "musl": "musl",
+                    plat: None,
+                    "many" + plat: "glibc",
+                    "musl" + plat: "musl",
                 }.items():
                     _config_settings(
-                        name = [suffix, name, plat],
-                        whl_linux_libc = whl_linux_libc,
-                        **args,
-                        **cfg,
+                        name = [prefix, name],
+                        flag_values = dict(
+                            whl_linux_libc = whl_linux_libc,
+                            whl_plat="auto",
+                            **flag_values,
+                        ),
+                        **kwargs,
                     )
             else:
-                # [none|abi3|cp]-macosx-arch.whl
-                for name, whl_osx_arch in {"fat": "auto", "plat": "single"}.items():
-                    _config_settings(
-                        name = [suffix, name, plat],
-                        python_versions = python_versions,
-                        **args,
-                        **cfg,
-                    )
+                fail("unknown platform: '{}'".format(plat))
 
 def _config_settings(
         *,
         name,
         python_versions,
-        use_dists = "auto",
-        whl_abi_abi3 = None,
-        whl_abi_cp = None,
-        whl_abi_none = None,
-        whl_linux_libc = None,
-        whl_osx_arch = None,
-        whl_plat = None,
+        flag_values,
         constraint_values = None,
         **kwargs):
 
-    visibility = [
-        native.package_relative_label(":__subpackages__"),
-    ]
-
-    name = "_".join([n for n in name if n and n != "auto"]) if type(name) == type([]) else name
-    if name == "":
-        name = "default"
+    name = "_".join(["is"] + [n for n in name if n and n != "auto"])
 
     flag_values = {
-        k: v
-        for k, v in {
-            ":use_dists": use_dists,
-            ":whl_abi_abi3": whl_abi_abi3,
-            ":whl_abi_cp": whl_abi_cp,
-            ":whl_abi_none": whl_abi_none,
-            ":whl_linux_libc": whl_linux_libc,
-            ":whl_osx_arch": whl_osx_arch,
-            ":whl_plat": whl_plat,
-        }.items()
-        if v
+        k: v for k,v in flag_values.items() if v
     }
 
-    native.config_setting(
-        name = "is_" + name,
-        flag_values = flag_values,
-        constraint_values = constraint_values,
-        visibility = visibility,
-        **kwargs
-    )
+    if flag_values or constraint_values:
+        native.config_setting(
+            name = name,
+            flag_values = flag_values,
+            constraint_values = constraint_values,
+            **kwargs,
+        )
     for python_version in python_versions:
         is_python_config_setting(
-            name = "is_python_{}_{}".format(python_version, name),
+            name = "is_python_{}{}".format(python_version, name[len("is"):]),
             python_version = python_version,
             flag_values = flag_values,
             constraint_values = constraint_values,
-            visibility = visibility,
-            **kwargs
+            **kwargs,
         )
-
-    if not flag_values and not constraint_values:
-       fail(
-           "At least one of 'constraint_values' or 'flag_values' needs " +
-           "to be specified, '{}' did not specify them".format(name),
-       )
