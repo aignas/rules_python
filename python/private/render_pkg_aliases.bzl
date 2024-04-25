@@ -208,18 +208,17 @@ def _render_whl_library_aliases(
         "name = \"{}\"".format(name),
         "aliases = {}".format(render.dict(aliases)),
     ]
-    if dists:
-        actual, has_default = whl_select_dict(
-            target_name = "{target_name}",  # So that we can use this as a template later
-            hub_name = hub_name,
-            default_version = default_version,
-            versions = versions,
-            dists = dists,
-        )
-        lines.append("has_default = {}".format(has_default))
-        lines.append("actual = {}".format(
-            render.dict(actual, value_repr = render.list),
-        ))
+    actual, has_default = whl_select_dict(
+        target_name = "{target_name}",  # So that we can use this as a template later
+        hub_name = hub_name,
+        default_version = default_version,
+        versions = versions,
+        dists = dists,
+    )
+    lines.append("has_default = {}".format(has_default))
+    lines.append("actual = {}".format(
+        render.dict(actual, value_repr = render.list),
+    ))
 
     if visibility:
         lines.append("visibility = {}".format(render.list(visibility)))
@@ -241,7 +240,7 @@ def _render_common_aliases(*, name, hub_name, aliases, default_version, group_na
             hub_name = hub_name,
             default_version = default_version,
             versions = [
-                (alias.repo, alias.version)
+                alias
                 for alias in aliases
                 if not alias.filename
             ],
@@ -327,7 +326,7 @@ def render_pkg_aliases(*, hub_name, aliases, default_version = None, requirement
             for whl_name in group_whls
         }
 
-    whl_platforms, _aliases = _get_aliases(aliases = aliases)
+    versions, whl_platforms, _aliases = _get_aliases(aliases = aliases)
 
     files = {
         "{}/BUILD.bazel".format(normalize_name(name)): _render_common_aliases(
@@ -341,7 +340,7 @@ def render_pkg_aliases(*, hub_name, aliases, default_version = None, requirement
     }
     if requirement_cycles:
         files["_groups/BUILD.bazel"] = generate_group_library_build_bazel("", requirement_cycles)
-    if whl_platforms:
+    if whl_platforms or versions:
         rules_python, _, _ = str(Label("//:unused")).partition("//")
         loads = [
             """load("{}//python/private:dist_config_settings.bzl", "dist_config_settings")""".format(rules_python),
@@ -351,11 +350,7 @@ def render_pkg_aliases(*, hub_name, aliases, default_version = None, requirement
                 "\n".join(sorted(loads)),
                 _render_dist_config_settings(
                     name = "dist_config_settings",
-                    python_versions = sorted({
-                        v[0]: None
-                        for version_platforms in whl_platforms.values()
-                        for v in version_platforms
-                    }),
+                    python_versions = versions,
                     whl_platforms = sorted([
                         p
                         for p in whl_platforms
@@ -370,6 +365,7 @@ def render_pkg_aliases(*, hub_name, aliases, default_version = None, requirement
 
 def _get_aliases(*, aliases):
     ret = {}
+    versions = {}
     whl_platforms = {}
     for whl_name, pkg_aliases in aliases.items():
         alias_target_platforms = {}
@@ -377,13 +373,17 @@ def _get_aliases(*, aliases):
         for alias in pkg_aliases:
             if not alias.filename:
                 ret[whl_name].append(alias)
+                if alias.version:
+                    versions[alias.version] = None
                 continue
 
             _target_plats = alias_target_platforms.setdefault(alias.filename, [])
             if alias.target_platforms:
                 _target_plats.extend([(alias.version, p) for p in alias.target_platforms])
+                versions[alias.version] = None
             else:
                 _target_plats.append((alias.version, None))
+                versions[alias.version] = None
 
         for filename, target_platforms in alias_target_platforms.items():
             ret[whl_name].append(
@@ -398,7 +398,7 @@ def _get_aliases(*, aliases):
                 for version, p in target_platforms:
                     whl_platforms.setdefault(whl_platform, {})[(version, p)] = None
 
-    return whl_platforms, ret
+    return sorted(versions), whl_platforms, ret
 
 def _get_repo_name(filename):
     filename = filename.lower()
