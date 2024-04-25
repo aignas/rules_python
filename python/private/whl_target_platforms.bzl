@@ -16,7 +16,7 @@
 A starlark implementation of the wheel platform tag parsing to get the target platform.
 """
 
-load(":parse_whl_name.bzl", "parse_whl_name", "normalize_platform_tag")
+load(":parse_whl_name.bzl", "normalize_platform_tag", "parse_whl_name")
 
 # The order of the dictionaries is to keep definitions with their aliases next to each
 # other
@@ -45,12 +45,11 @@ _OS_PREFIXES = {
     "win": "windows",
 }  # buildifier: disable=unsorted-dict-items
 
-def select_whls(*, whls, want_pys = [], want_abis = [], want_platforms = []):
+def select_whls(*, whls, want_abis = [], want_platforms = []):
     """Select a subset of wheels suitable for target platforms from a list.
 
     Args:
         whls(list[struct]): A list of candidates.
-        want_pys(list[str]): A list of Python versions that we should care about.
         want_abis(list[str]): A list of ABIs that are supported.
         want_platforms(str): The platforms
 

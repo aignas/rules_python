@@ -31,6 +31,7 @@ load("//python/private:pypi_index.bzl", "get_simpleapi_sources", "simpleapi_down
 load("//python/private:render_pkg_aliases.bzl", "whl_alias")
 load("//python/private:text_util.bzl", "render")
 load("//python/private:version_label.bzl", "version_label")
+load("//python/private:whl_repo_name.bzl", "whl_repo_name")
 load("//python/private:whl_target_platforms.bzl", "select_whls")
 load(":pip_repository.bzl", "pip_repository")
 
@@ -215,7 +216,7 @@ def _parse_requirements(ctx, pip_attr):
 
     return requirements_by_platform, pip_attr.extra_pip_args + options
 
-def _get_dists(*, whl_name, requirements, want_pys, want_abis, index_urls):
+def _get_dists(*, whl_name, requirements, want_abis, index_urls):
     dists = {}
 
     if not index_urls:
@@ -243,7 +244,6 @@ def _get_dists(*, whl_name, requirements, want_pys, want_abis, index_urls):
         # Filter out whls that are not compatible with the target abis and add the sdist
         dists[key] = select_whls(
             whls = dists[key],
-            want_pys = want_pys,
             want_abis = want_abis,
             want_platforms = req.target_platforms,
         )
@@ -251,34 +251,6 @@ def _get_dists(*, whl_name, requirements, want_pys, want_abis, index_urls):
             dists[key].append(sdist)
 
     return dists
-
-def _get_repo_name(filename):
-    filename = filename.lower()
-
-    if filename.endswith(".whl"):
-        whl = parse_whl_name(filename)
-
-        # This uses all of the present components and emits a few for shorter
-        # paths. In particular, we use a single platform_tag and python_tag as
-        # they don't add extra value in partitioning the whl repos.
-        return "_".join([
-            normalize_name(whl.distribution),
-            normalize_name("{}_{}".format(whl.version, whl.build_tag) if whl.build_tag else whl.version),
-            whl.python_tag.rpartition(".")[-1],  # just pick the last one
-            whl.abi_tag,
-            whl.platform_tag.partition(".")[0],
-        ])
-
-    filename_no_ext = filename.lower()
-    for ext in [".tar.gz", ".zip", ".tar"]:
-        if filename_no_ext.endswith(ext):
-            filename_no_ext = filename_no_ext[:-len(ext)]
-            break
-
-    if filename_no_ext == filename.lower():
-        fail("unknown sdist extension: {}".format(filename_no_ext))
-
-    return normalize_name(filename_no_ext) + "_sdist"
 
 def _get_registrations(*, dists, reqs, extra_pip_args):
     """Convert the sdists and whls into select statements and whl_library registrations.
@@ -313,7 +285,7 @@ def _get_registrations(*, dists, reqs, extra_pip_args):
                 # Add the args back for when we are building a wheel
                 whl_library_args["extra_pip_args"] = extra_pip_args
 
-            repo_name = _get_repo_name(dist.filename)
+            repo_name = whl_repo_name(dist.filename)
             if repo_name in registrations:
                 fail("attempting to register '(name={name}, {args})' whilst '(name={name}, {have}) already exists".format(
                     name = repo_name,
@@ -464,10 +436,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
             dists = _get_dists(
                 whl_name = whl_name,
                 requirements = reqs,
-                want_pys = [
-                    "py3",
-                    "cp" + major_minor.replace(".", ""),
-                ],
                 want_abis = [
                     "none",
                     "abi3",
