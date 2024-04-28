@@ -75,7 +75,7 @@ def select_whls(*, whls, want_version = None, want_abis = [], want_platforms = [
     for whl in whls:
         parsed = parse_whl_name(whl.filename)
 
-        if parsed.abi_tag not in want_abis or not want_abis:
+        if want_abis and parsed.abi_tag not in want_abis:
             # Filter out incompatible ABIs
             continue
 
@@ -89,6 +89,7 @@ def select_whls(*, whls, want_version = None, want_abis = [], want_platforms = [
             elif version_limit != -1 and parsed.abi_tag in ["none", "abi3"]:
                 # We want to prefer by version and then we want to prefer abi3 over none
                 any_whls.append((whl_version_min, parsed.abi_tag == "abi3", whl))
+                continue
 
             candidates.append(whl)
             continue
@@ -102,18 +103,9 @@ def select_whls(*, whls, want_version = None, want_abis = [], want_platforms = [
         if compatible:
             candidates.append(whl)
 
-    if len(any_whls) > 1:
-        any_whls = sorted(any_whls)
-        remove = {
-            whl.filename: None
-            for (_, _, whl) in sorted(any_whls)[:-1]
-        }
-
-        candidates = [
-            c
-            for c in candidates
-            if c.filename not in remove
-        ]
+    if any_whls:
+        _, _, whl = sorted(any_whls)[-1]
+        candidates.append(whl)
 
     return candidates
 
