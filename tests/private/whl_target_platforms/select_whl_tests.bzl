@@ -118,6 +118,76 @@ def _test_selecting(env):
         "pkg-0.0.1-cp39-cp39-musllinux_1_1_i686.whl",
     )
 
+    got = select_whls(
+        whls = [
+            struct(
+                filename = f,
+                url = "https://" + f,
+                sha256 = "sha256://" + f,
+            )
+            for f in [
+                "pkg-0.0.1-cp310-abi3-any.whl",
+                "pkg-0.0.1-cp39-none-any.whl",
+                "pkg-0.0.1-cp38-none-any.whl",
+                "pkg-0.0.1-cp37-none-any.whl",
+                "pkg-0.0.1-cp37-abi3-any.whl",
+            ]
+        ],
+        want_version = "3.9",
+        want_abis = ["none", "abi3"],
+        want_platforms = [],
+    )
+    _match(
+        env,
+        got,
+        "pkg-0.0.1-cp39-none-any.whl",
+    )
+
+    got = select_whls(
+        whls = [
+            struct(
+                filename = f,
+                url = "https://" + f,
+                sha256 = "sha256://" + f,
+            )
+            for f in [
+                "pkg-0.0.1-py3-none-any.whl",
+                "pkg-0.0.1-cp37-abi3-any.whl",
+            ]
+        ],
+        want_version = "3.9",
+        want_abis = ["none", "abi3"],
+        want_platforms = [],
+    )
+    _match(
+        env,
+        got,
+        "pkg-0.0.1-cp37-abi3-any.whl",
+    )
+
+    got = select_whls(
+        whls = [
+            struct(
+                filename = f,
+                url = "https://" + f,
+                sha256 = "sha256://" + f,
+            )
+            for f in [
+                "pkg-0.0.1-py3-none-any.whl",
+                "pkg-0.0.1-cp37-none-any.whl",
+                "pkg-0.0.1-cp37-abi3-any.whl",
+            ]
+        ],
+        want_version = "3.9",
+        want_abis = ["none", "abi3"],
+        want_platforms = [],
+    )
+    _match(
+        env,
+        got,
+        "pkg-0.0.1-cp37-abi3-any.whl",
+    )
+
 _tests.append(_test_selecting)
 
 def select_whl_test_suite(name):

@@ -36,6 +36,13 @@ some whl.
 
 That should cover the majority of cases as only a single `whl`.
 
+We also would like to ensure that we match the python version tag, it can be:
+- py2.py3 - all python 3 versions
+- py3 - all python 3 versions
+- cp38 - all CPython 3.8 and above
+- cp39 - all CPython 3.9 and above
+- cp310 - all CPython 3.10 and above
+
 Use cases that this code strives to support:
 * sdist only - Setting the flag `:whl=no` should do the trick
 * whl only - Will be handled differently (i.e. filtering elsewhere). By default
@@ -123,7 +130,8 @@ def dist_config_settings(
         "": None,
     }
     osx_versions = {}
-    libc_versions = {}
+    glibc_versions = {}
+    muslc_versions = {}
     for target_platform in whl_platforms:
         for p in whl_target_platforms(target_platform):
             plat_label = "{}_{}".format(p.os, p.cpu)
@@ -135,15 +143,16 @@ def dist_config_settings(
             if not p.versions:
                 continue
 
-            if p.os == "linux":
+            if p.flavor == "many":
                 for v in p.versions:
-                    libc_versions.setdefault("{}.{}".format(v[0], v[1]), []).append(
-                        p.flavor + plat_label
-                    )
+                    glibc_versions["{}.{}".format(v[0], v[1])] = None
+            elif p.flavor == "musl":
+                for v in p.versions:
+                    muslc_versions["{}.{}".format(v[0], v[1])] = None
             elif p.os == "osx":
                 for v in p.versions:
                     osx_versions.setdefault("{}.{}".format(v[0], v[1]), []).append(
-                        plat_label
+                        plat_label,
                     )
 
     # FIXME @aignas 2024-04-25: if we target version `1.1`, then we should be OK
@@ -154,6 +163,12 @@ def dist_config_settings(
     # as the majority of the wheels on PyPI are built against the earliest possible
     # target platform that the CI provider supports, hence the list here is expected to
     # be not too large.
+    #
+    # We can use a linked-list to implement such a behaviour, e.g. if we target
+    # version 1.0 and it is the lowest version, then that is it, if we target
+    # 1.1, then anything that targets 1.0 *or* 1.1 fit the bill. And we can go
+    # up until we reach the end. That means that it would be easiest to
+    # separate the flags to `glibc` and `muslc` version.
 
     string_flag(
         name = "experimental_whl_osx_version",
@@ -163,9 +178,16 @@ def dist_config_settings(
     )
 
     string_flag(
-        name = "experimental_whl_linux_libc_version",
+        name = "experimental_whl_linux_glibc_version",
         build_setting_default = "",
-        values = [""] + sorted(libc_versions.keys()),
+        values = [""] + sorted(glibc_versions.keys()),
+        **kwargs
+    )
+
+    string_flag(
+        name = "experimental_whl_linux_muslc_version",
+        build_setting_default = "",
+        values = [""] + sorted(muslc_versions.keys()),
         **kwargs
     )
 
@@ -279,7 +301,9 @@ def dist_config_settings(
                     _config_settings(
                         name = [prefix, name],
                         flag_values = dict(
-                            experimental_whl_linux_libc_version = "",
+                            # TODO @aignas 2024-04-25:
+                            experimental_whl_linux_glibc_version = "",
+                            experimental_whl_linux_muslc_version = "",
                             whl_linux_libc = whl_linux_libc,
                             whl_plat = "auto",
                             **flag_values
@@ -287,22 +311,40 @@ def dist_config_settings(
                         **kwargs
                     )
 
-                    for version, plats in libc_versions.items():
-                        if name not in plats:
-                            continue
+                    os, _, cpu = name.partition("_")
 
-                        os, _, cpu = name.partition("_")
+                    if whl_linux_libc == "glibc":
+                        for version, plats in glibc_versions.items():
+                            if name not in plats:
+                                continue
 
-                        _config_settings(
-                            name = [prefix, os, version.replace(".", "_"), cpu],
-                            flag_values = dict(
-                                whl_linux_libc = whl_linux_libc,
-                                experimental_whl_linux_libc_version = version,
-                                whl_plat = "auto",
-                                **flag_values
-                            ),
-                            **kwargs
-                        )
+                            _config_settings(
+                                name = [prefix, os, version.replace(".", "_"), cpu],
+                                flag_values = dict(
+                                    whl_linux_libc = whl_linux_libc,
+                                    experimental_whl_linux_glibc_version = version,
+                                    experimental_whl_linux_muslc_version = "",
+                                    whl_plat = "auto",
+                                    **flag_values
+                                ),
+                                **kwargs
+                            )
+                    elif whl_linux_libc == "musl":
+                        for version, plats in muslc_versions.items():
+                            if name not in plats:
+                                continue
+
+                            _config_settings(
+                                name = [prefix, os, version.replace(".", "_"), cpu],
+                                flag_values = dict(
+                                    whl_linux_libc = whl_linux_libc,
+                                    experimental_whl_linux_glibc_version = "",
+                                    experimental_whl_linux_muslc_version = version,
+                                    whl_plat = "auto",
+                                    **flag_values
+                                ),
+                                **kwargs
+                            )
             else:
                 fail("unknown platform: '{}'".format(plat))
 

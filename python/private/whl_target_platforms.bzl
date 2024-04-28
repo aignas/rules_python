@@ -45,11 +45,12 @@ _OS_PREFIXES = {
     "win": "windows",
 }  # buildifier: disable=unsorted-dict-items
 
-def select_whls(*, whls, want_abis = [], want_platforms = []):
+def select_whls(*, whls, want_version = None, want_abis = [], want_platforms = []):
     """Select a subset of wheels suitable for target platforms from a list.
 
     Args:
         whls(list[struct]): A list of candidates.
+        want_version(str, optional): An optional parameter to filter whls by version.
         want_abis(list[str]): A list of ABIs that are supported.
         want_platforms(str): The platforms
 
@@ -65,14 +66,30 @@ def select_whls(*, whls, want_abis = [], want_platforms = []):
         for p in want_platforms
     ]
 
+    version_limit = -1
+    if want_version:
+        version_limit = int(want_version.split(".")[1])
+
     candidates = []
+    any_whls = []
     for whl in whls:
         parsed = parse_whl_name(whl.filename)
+
         if parsed.abi_tag not in want_abis or not want_abis:
             # Filter out incompatible ABIs
             continue
 
         if parsed.platform_tag == "any" or not want_platforms:
+            whl_version_min = 0
+            if parsed.python_tag.startswith("cp3"):
+                whl_version_min = int(parsed.python_tag[len("cp3"):])
+
+            if version_limit != -1 and whl_version_min > version_limit:
+                continue
+            elif version_limit != -1 and parsed.abi_tag in ["none", "abi3"]:
+                # We want to prefer by version and then we want to prefer abi3 over none
+                any_whls.append((whl_version_min, parsed.abi_tag == "abi3", whl))
+
             candidates.append(whl)
             continue
 
@@ -84,6 +101,19 @@ def select_whls(*, whls, want_abis = [], want_platforms = []):
 
         if compatible:
             candidates.append(whl)
+
+    if len(any_whls) > 1:
+        any_whls = sorted(any_whls)
+        remove = {
+            whl.filename: None
+            for (_, _, whl) in sorted(any_whls)[:-1]
+        }
+
+        candidates = [
+            c
+            for c in candidates
+            if c.filename not in remove
+        ]
 
     return candidates
 
