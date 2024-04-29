@@ -109,16 +109,6 @@ def dist_config_settings(
         **kwargs
     )
 
-    osx_versions = {}
-    for p in sorted(whl_platforms):
-        if "macos" not in p:
-            continue
-
-        _, _, tail = p.partition("_")
-        major, _, tail = tail.partition("_")
-        minor, _, _ = tail.partition("_")
-        osx_versions[p] = "{}.{}".format(major, minor)
-
     string_flag(
         name = "whl_linux_libc",
         build_setting_default = "glibc",
@@ -145,51 +135,13 @@ def dist_config_settings(
 
             if p.flavor == "many":
                 for v in p.versions:
-                    glibc_versions["{}.{}".format(v[0], v[1])] = None
+                    glibc_versions[(int(v[0]), int(v[1]))] = None
             elif p.flavor == "musl":
                 for v in p.versions:
-                    muslc_versions["{}.{}".format(v[0], v[1])] = None
+                    muslc_versions[(int(v[0]), int(v[1]))] = None
             elif p.os == "osx":
                 for v in p.versions:
-                    osx_versions.setdefault("{}.{}".format(v[0], v[1]), []).append(
-                        plat_label,
-                    )
-
-    # FIXME @aignas 2024-04-25: if we target version `1.1`, then we should be OK
-    # to select versions that are lower, but we should not select versions that are
-    # higher.
-    #
-    # I have added these flags here so that the behaviour could be somewhat configurable
-    # as the majority of the wheels on PyPI are built against the earliest possible
-    # target platform that the CI provider supports, hence the list here is expected to
-    # be not too large.
-    #
-    # We can use a linked-list to implement such a behaviour, e.g. if we target
-    # version 1.0 and it is the lowest version, then that is it, if we target
-    # 1.1, then anything that targets 1.0 *or* 1.1 fit the bill. And we can go
-    # up until we reach the end. That means that it would be easiest to
-    # separate the flags to `glibc` and `muslc` version.
-
-    string_flag(
-        name = "experimental_whl_osx_version",
-        build_setting_default = "",
-        values = [""] + sorted(osx_versions.keys()),
-        **kwargs
-    )
-
-    string_flag(
-        name = "experimental_whl_linux_glibc_version",
-        build_setting_default = "",
-        values = [""] + sorted(glibc_versions.keys()),
-        **kwargs
-    )
-
-    string_flag(
-        name = "experimental_whl_linux_muslc_version",
-        build_setting_default = "",
-        values = [""] + sorted(muslc_versions.keys()),
-        **kwargs
-    )
+                    osx_versions[(int(v[0]), int(v[1]))] = None
 
     presets = {
         name: {
@@ -207,7 +159,7 @@ def dist_config_settings(
     # * none-any.whl - use if this exists or use only these in case we need pure python whls.
     # * abi3-any.whl - use if this exists and prefer it over none whls
     # * cp3x-any.whl - use if this exists and prefer it over abi3 and none whls
-    for plat, kwargs in presets.items():
+    for plat, config_settings_args in presets.items():
         # A different way to model this would be to ask the user to explicitly allow sdists
         # - use only whls (do not register sdist, should be a flag to pip.parse)
         # - fallback to sdist (default)
@@ -225,7 +177,7 @@ def dist_config_settings(
                 # the `constraint_values` on os and arch to support the case
                 # where we have different versions on different platforms,
                 # because we are supplying different requirement files.
-                **kwargs
+                **config_settings_args
             )
 
         for prefix, flag_values in {
@@ -240,7 +192,7 @@ def dist_config_settings(
             _config_settings(
                 name = [prefix, "any", plat],
                 flag_values = flag_values,
-                **kwargs
+                **config_settings_args
             )
 
             if plat == "":
@@ -255,7 +207,7 @@ def dist_config_settings(
                         whl_plat = "auto",
                         **flag_values
                     ),
-                    **kwargs
+                    **config_settings_args
                 )
             elif "osx" in plat:
                 # [none|abi3|cp]-macosx-arch.whl
@@ -266,31 +218,12 @@ def dist_config_settings(
                     _config_settings(
                         name = [prefix, name],
                         flag_values = dict(
-                            experimental_whl_osx_version = "",
                             whl_osx_arch = whl_osx_arch,
                             whl_plat = "auto",
                             **flag_values
                         ),
-                        **kwargs
+                        **config_settings_args
                     )
-
-                    for version, plats in osx_versions.items():
-                        if plat not in plats:
-                            continue
-
-                        os, _, cpu = name.partition("_")
-
-                        _config_settings(
-                            name = [prefix, os, version.replace(".", "_"), cpu],
-                            flag_values = dict(
-                                experimental_whl_osx_version = version,
-                                whl_osx_arch = whl_osx_arch,
-                                whl_plat = "auto",
-                                **flag_values
-                            ),
-                            **kwargs
-                        )
-
             elif "linux" in plat:
                 # [none|abi3|cp]-[|many|musl]linux_arch.whl
                 for name, whl_linux_libc in {
@@ -301,52 +234,129 @@ def dist_config_settings(
                     _config_settings(
                         name = [prefix, name],
                         flag_values = dict(
-                            # TODO @aignas 2024-04-25:
-                            experimental_whl_linux_glibc_version = "",
-                            experimental_whl_linux_muslc_version = "",
                             whl_linux_libc = whl_linux_libc,
                             whl_plat = "auto",
                             **flag_values
                         ),
-                        **kwargs
+                        **config_settings_args
                     )
-
-                    os, _, cpu = name.partition("_")
-
-                    if whl_linux_libc == "glibc":
-                        for version, plats in glibc_versions.items():
-                            if name not in plats:
-                                continue
-
-                            _config_settings(
-                                name = [prefix, os, version.replace(".", "_"), cpu],
-                                flag_values = dict(
-                                    whl_linux_libc = whl_linux_libc,
-                                    experimental_whl_linux_glibc_version = version,
-                                    experimental_whl_linux_muslc_version = "",
-                                    whl_plat = "auto",
-                                    **flag_values
-                                ),
-                                **kwargs
-                            )
-                    elif whl_linux_libc == "musl":
-                        for version, plats in muslc_versions.items():
-                            if name not in plats:
-                                continue
-
-                            _config_settings(
-                                name = [prefix, os, version.replace(".", "_"), cpu],
-                                flag_values = dict(
-                                    whl_linux_libc = whl_linux_libc,
-                                    experimental_whl_linux_glibc_version = "",
-                                    experimental_whl_linux_muslc_version = version,
-                                    whl_plat = "auto",
-                                    **flag_values
-                                ),
-                                **kwargs
-                            )
             else:
                 fail("unknown platform: '{}'".format(plat))
+
+    # TODO @aignas 2024-04-25: if we target a libc version `1.1`, then that
+    # means that the target application has to be compatible with the libc
+    # version of 1.1 or above, which means that our wheels need to be built for
+    # 1.1 or lower.
+    #
+    # This means that a binary with 1.1 libc (or osx version) should match when
+    # the `experimental_whl_foo_version` is set to 1.1 and above, but not when
+    # the flag is set to 1.0. This means that for versions 1.2, 1.1, 1.0 we
+    # have to have a config_setting group layout of something similar to:
+    #   * whl_foo_version_1.2 - matches 1.2
+    #   * whl_foo_version_1.1 - matches 1.2 or 1.1
+    #   * whl_foo_version_1.0 - matches 1.2 or 1.1 or 1.0
+    #
+    # And if we have multiple artifacts matched, I think that the one with the closest
+    # match should take precedence, i.e. if we set the flag value to version 1.3, we 
+    # should get whl_foo_version_1.2. Note, that all three wheels are
+    # compatible, but we should somehow get the precedence correct.
+    #
+    # All of the inspiration is coming from the selects.config_setting_group
+    # [1], where they have a select statement, which we can adapt to our
+    # situation like follows:
+    #
+    # alias(
+    #   name = "whl_matching_1.2_or_lower"
+    #   actual = select({
+    #      "flag_eq_1.2": "actual_whl_1.2",
+    #      ":default": "whl_matching_1.1_or_lower",
+    #   })
+    # )
+    #
+    # alias(
+    #   name = "whl_matching_1.1_or_lower"
+    #   actual = select({
+    #      "flag_eq_1.1": "actual_whl_1.1",
+    #      ":default": "whl_matching_1.0",
+    #   })
+    # )
+    #
+    # alias(
+    #   name = "whl_matching_1.0",
+    #   actual = select(
+    #      {
+    #          "flag_eq_1.0": "actual_whl_1.0",
+    #      },
+    #      no_match_error = "Could not match, the target supports versions 1.2, 1.1 and 1.0", but you have selected something outside this range.
+    #   )
+    # )
+    #
+    # alias(
+    #   name = "whl_matching_2.27_or_lower"
+    #   actual = select({
+    #      "flag_eq_2.28": "actual_whl_2.27",  # The highest libc version value as noted
+    #                                          # in the string_flag.
+    #      "flag_eq_2.27": "actual_whl_2.27",
+    #      ":default": "whl_matching_2.22_or_lower",
+    #   })
+    # )
+    #
+    # alias(
+    #   name = "whl_matching_1.1_or_lower"
+    #   actual = select({
+    #      "flag_eq_2.26": "actual_whl_2.22",
+    #      "flag_eq_2.25": "actual_whl_2.22",
+    #      "flag_eq_2.24": "actual_whl_2.22",
+    #      "flag_eq_2.23": "actual_whl_2.22",
+    #      "flag_eq_2.22": "actual_whl_2.22",
+    #      ":default": "whl_matching_2.5",
+    #   })
+    # )
+    #
+    # alias(
+    #   name = "whl_matching_1.0",
+    #   actual = select(
+    #      {
+    #          ...
+    #          "flag_eq_2.5": "actual_whl_2.5",
+    #      },
+    #      no_match_error = "Could not match, the lowest value of libc that is supported is 2.5 (this is the whls property), please select something higher for your target.".
+    #   )
+    # )
+    #
+    # This requires the hub repo to create these extra alias for the special flags, but
+    # it makes the config settings for those special flags independent of python_version,
+    # which is a nice simplification.
+    #
+    # [1]: https://github.com/bazelbuild/bazel-skylib/blob/main/lib/selects.bzl
+
+    # FIXME @aignas 2024-04-28: what to do when we cross multiple major versions?
+    # maybe there is nothing to be done?
+    for version_name, versions in {
+        "whl_glibc_version": _stringify_versions(glibc_versions.keys()),
+        "whl_muslc_version": _stringify_versions(muslc_versions.keys()),
+        "whl_osx_version": _stringify_versions(osx_versions.keys()),
+    }.items():
+        string_flag(
+            name = version_name,
+            build_setting_default = versions[0],
+            values = versions,
+            **kwargs
+        )
+
+        for version in versions:
+            native.config_setting(
+                name = "is_{}_{}".format(version_name, version),
+                flag_values = {
+                    ":{}".format(version_name): version,
+                },
+                visibility = [
+                    native.package_relative_label(":__subpackages__"),
+                ],
+            )
+
+def _stringify_versions(versions):
+    return ["{}.{}".format(major, minor) for major, minor in sorted(versions)]
 
 def _config_settings(
         *,

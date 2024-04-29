@@ -62,6 +62,7 @@ def whl_library_aliases(
         aliases,
         actual,
         no_match_error = "",
+        extra_aliases = {},
         **kwargs):
     """Create all macros for a given package.
 
@@ -79,6 +80,8 @@ def whl_library_aliases(
         actual: The value that is going to be interpolated and passed to alias
             actual attribute.
         no_match_error: The error to be forwarded to the select. Optional.
+        extra_aliases: The dictionary of extra aliases to render that are needed
+            for libc and osx matching.
         **kwargs: Any extra kwargs to pass to `native.alias`.
     """
     native.alias(
@@ -96,6 +99,20 @@ def whl_library_aliases(
         return
 
     for target_name, name in aliases.items():
+        for alias_name, select in extra_aliases.items():
+            native.alias(
+                name = alias_name.format(target_name = target_name),
+                actual = native.select(
+                    {
+                        k: v.format(target_name = target_name)
+                        for k, v in select.items()
+                        if k != "no_match_error"
+                    },
+                    no_match_error = select.get("no_match_error"),
+                ),
+                visibility = ["//visibility:private"],
+            )
+
         native.alias(
             name = name,
             actual = selects.with_or(
@@ -118,7 +135,7 @@ def _render_whl_library_aliases(
         "name = \"{}\"".format(name),
         "aliases = {}".format(render.dict(aliases)),
     ]
-    actual, has_default = whl_select_dict(
+    actual, has_default, extra_aliases = whl_select_dict(
         target_name = "{target_name}",  # So that we can use this as a template later
         hub_name = hub_name,
         default_version = default_version,
@@ -128,6 +145,10 @@ def _render_whl_library_aliases(
     lines.append("actual = {}".format(
         render.dict(actual, key_repr = render.tuple),
     ))
+    if extra_aliases:
+        lines.append("extra_aliases = {}".format(
+            render.dict(extra_aliases, value_repr = render.dict)
+        ))
     if not has_default:
         lines.append("no_match_error = \"{}\"".format("TODO"))
 
@@ -370,6 +391,7 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
         fail("At most one of 'dists' and 'repo_aliases' can be specified")
 
     config_settings = {}
+    extra_aliases = {}
     if repo_aliases:
         for alias in repo_aliases:
             if not alias.version or alias.version == default_version:
@@ -378,8 +400,16 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
                 config_settings["//:is_python_" + alias.version] = alias.repo
 
     if dists:
-        for filename, cfgs in _get_dist_config_setting_names(dists, default_version).items():
-            repo = "{}_{}".format(hub_name, whl_repo_name(filename))
+        result = _get_dist_config_setting_names(
+            dists,
+            default_version,
+        )
+        for prefix, cfgs in result.config_settings.items():
+            if prefix.startswith(":"):
+                prefix = prefix + "_"
+            else:
+                prefix = "@{}_{}//:".format(hub_name, whl_repo_name(prefix))
+
             for plat_label in cfgs:
                 if plat_label:
                     plat_label = "//{}:{}".format(condition_package, plat_label)
@@ -390,17 +420,26 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
                     fail(
                         "Adding '{}' for the second time for {}, ".format(
                             plat_label,
-                            repo,
+                            prefix,
                         ) +
                         "this is already configured for {}".format(config_settings[plat_label]),
                     )
-                config_settings[plat_label] = repo
+                config_settings[plat_label] = prefix
+
+        if result.aliases:
+            extra_aliases = {
+                "{}_{}".format(prefix, target_name): _version_select(
+                    values = values,
+                )
+                for prefix, values in result.aliases.items()
+            }
+            fail(extra_aliases)
 
     if len(config_settings) == 1 and _DEFAULT_CONFIG_SETTING in config_settings:
-        return "@{repo}//:{target_name}".format(
-            repo = config_settings[_DEFAULT_CONFIG_SETTING],
+        return "{prefix}{target_name}".format(
+            prefix = config_settings[_DEFAULT_CONFIG_SETTING],
             target_name = target_name,
-        ), True
+        ), True, extra_aliases
 
     # Create the alias repositories which contains different select
     # statements  These select statements point to the different pip
@@ -415,15 +454,24 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
             target_name = target_name,
         )
         for repo, v in sorted(items.items())
-    }, _DEFAULT_CONFIG_SETTING in config_settings
+    }, _DEFAULT_CONFIG_SETTING in config_settings, extra_aliases
+
+def _version_select(*, values):
+    fail(values)
 
 def _get_dist_config_setting_names(dists, default_version):
     config_settings = {}
     defaults = {}
+    discarded = {}
+    extras = {}
 
-    for filename, target_platforms_ in dists:
-        parsed = parse_whl_name(filename) if filename.endswith(".whl") else None
-        if parsed:
+    # sort the incoming dists for deterministic output
+    for filename, target_platforms_ in sorted(dists):
+        extra_aliases = {}
+        target = filename
+        if filename.endswith(".whl"):
+            version_aliases = {}
+            parsed = parse_whl_name(filename)
             if parsed.abi_tag in ["none", "abi3"]:
                 abis = [parsed.abi_tag]
                 if parsed.platform_tag == "any":
@@ -431,7 +479,7 @@ def _get_dist_config_setting_names(dists, default_version):
             elif parsed.abi_tag.startswith("cp3"):
                 abis = ["cpxy"]
             else:
-                fail("TODO: {}".format(filename))
+                fail("BUG: the `select_whls` has returned an incompatible wheel: {}".format(filename))
 
             if parsed.platform_tag == "any":
                 platforms = ["any"]
@@ -443,56 +491,71 @@ def _get_dist_config_setting_names(dists, default_version):
                     if "universal2" in parsed.platform_tag:
                         tail = "{}_universal2".format(tail)
 
-                    platforms.append("{}_{}".format(head, tail))
-
                     if not p.versions or p.os not in ["linux", "osx"]:
+                        platforms.append("{}_{}".format(head, tail))
                         continue
 
+                    # TODO @aignas 2024-04-29: use an alias label instead
+                    platforms.append("{}_{}".format(head, tail))
                     for v in p.versions:
-                        platforms.append("{}_{}_{}_{}".format(head, v[0], v[1], tail))
+                        version_aliases.setdefault("{}_{}".format(head,tail), {})[v] = filename
 
             names = [
                 "whl_{}_{}".format(abi, target_platform)
                 for target_platform in platforms
                 for abi in abis
             ]
+
+            for abi in abis:
+                for target_platform, versions in version_aliases.items():
+                    for v in versions:
+                        extra_aliases.setdefault("whl_{}_{}".format(abi, target_platform), {})[v] = filename
+
         else:
-            names = ["", "sdist"]
+            names = ["sdist"]
             defaults[filename] = None
 
-        candidates = []
         for (version, plat) in target_platforms_:
             for match in names:
                 if match and plat:
-                    name = "is_python_{}_{}_{}".format(version, match, plat)
-                elif plat:
-                    name = "is_python_{}_{}".format(version, plat)
-                elif match:
-                    name = "is_python_{}_{}".format(version, match)
+                    tail = "{}_{}".format(match, plat)
                 else:
-                    name = "is_python_{}".format(version)
-                candidates.append(name)
+                    tail = plat or match
 
-                if version != default_version:
-                    continue
+                is_python = "is_python_{}_{}".format(version, tail)
+                if match in extra_aliases:
+                    target = ":py_{}_{}_whl".format(version, match)
+                else:
+                    target = filename
 
-                _, _, tail = name.partition(version)
-                if not tail:
-                    continue
+                config_settings[is_python] = target
+                if match in extra_aliases:
+                    extras["py_{}_{}_whl".format(version, match)] = extra_aliases[match]
 
-                candidates.append("is" + tail)
+                if version == default_version:
+                    is_ = "is_{}".format(tail)
+                    config_settings[is_] = target
 
-        for name in candidates:
-            if not name or name in config_settings:
-                # NOTE @aignas 2024-04-25: cryptography is publishing multiple
-                # wheels that target different glibc versions (for older and
-                # newer OSes) and we don't know what the user of rules_python
-                # is gonna want, we have a way for the user to select the libc version
-                # by default we are just going to select the first match
-                # (alphabetically) until we figure a better strategy.
-                continue
-
-            config_settings[name] = filename
+    if discarded:
+        # NOTE @aignas 2024-04-25: cryptography is publishing multiple
+        # wheels that target different glibc versions (for older and
+        # newer OSes) and we don't know what the user of rules_python
+        # is gonna want, we have a way for the user to select the libc version
+        # by default we are just going to select the first match
+        # (alphabetically) until we figure a better strategy.
+        #
+        # Right now we print a warning in case the user is interested in knowing
+        # this information.
+        # buildifier: disable=print
+        print("WARNING: some filenames had clashing config_settings and you will need to configure the default values the string flags if you want to select them:\n  {}".format(
+            "  \n".join([
+                "{}:\n    default is{}:\n    dropped: {}".format(
+                    config_setting, default, sorted(dropped.keys())
+                )
+                for config_setting, files in discarded.items()
+                for default, dropped in files.items()
+            ])
+        ))
 
     # TODO @aignas 2024-04-25: what to do with defaults by python version
     defaults = sorted(
@@ -509,4 +572,7 @@ def _get_dist_config_setting_names(dists, default_version):
     for setting, filename in config_settings.items():
         ret.setdefault(filename, []).append(setting)
 
-    return ret
+    return struct(
+        config_settings = ret,
+        aliases = extras,
+    )

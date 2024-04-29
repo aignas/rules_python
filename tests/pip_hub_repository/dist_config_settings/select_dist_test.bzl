@@ -108,15 +108,7 @@ def _test_library_matching(name, test):
             dists = dists,
             condition_package = Label(":unused").package,
         )
-        if getattr(test, "debug", None):
-            print("Value of the dict:\n" + render.dict(
-                select_value,
-                value_repr = render.list,
-            ))
-        select_values[attr] = {
-            tuple(v) if len(v) > 1 else v[0]: k
-            for k, v in select_value.items()
-        }
+        select_values[attr] = select_value
 
     rt_util.helper_target(
         _subject,
