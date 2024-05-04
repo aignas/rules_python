@@ -34,7 +34,7 @@ load(":normalize_name.bzl", "normalize_name")
 load(":parse_whl_name.bzl", "parse_whl_name")
 load(":text_util.bzl", "render")
 load(":whl_repo_name.bzl", "whl_repo_name")
-load(":whl_target_platforms.bzl", "whl_target_platforms")
+load(":whl_target_platforms.bzl", "whl_platform_constraints_and_versions", "whl_target_platforms")
 
 NO_MATCH_ERROR_MESSAGE_TEMPLATE = """\
 No matching wheel for current configuration's Python version.
@@ -130,6 +130,7 @@ def _render_whl_library_aliases(
         repo_aliases,
         aliases,
         dists = None,
+        whl_constraints_and_versions = None,
         visibility = None):
     lines = [
         "name = \"{}\"".format(name),
@@ -141,13 +142,14 @@ def _render_whl_library_aliases(
         default_version = default_version,
         repo_aliases = repo_aliases,
         dists = dists,
+        whl_constraints_and_versions = whl_constraints_and_versions,
     )
     lines.append("actual = {}".format(
         render.dict(actual, key_repr = render.tuple),
     ))
     if extra_aliases:
         lines.append("extra_aliases = {}".format(
-            render.dict(extra_aliases, value_repr = render.dict)
+            render.dict(extra_aliases, value_repr = render.dict),
         ))
     if not has_default:
         lines.append("no_match_error = \"{}\"".format("TODO"))
@@ -161,7 +163,7 @@ def _render_whl_library_aliases(
         ")",
     ])
 
-def _render_common_aliases(*, name, hub_name, aliases, default_version, group_name = None):
+def _render_common_aliases(*, name, hub_name, aliases, default_version, group_name = None, whl_constraints_and_versions = None):
     lines = [
         """load("{}", "whl_library_aliases")""".format(
             str(Label("//python/private:render_pkg_aliases.bzl")),
@@ -188,6 +190,7 @@ def _render_common_aliases(*, name, hub_name, aliases, default_version, group_na
                 DIST_INFO_LABEL: DIST_INFO_LABEL,
             },
             visibility = ["//_groups:__subpackages__"] if name.startswith("_") else None,
+            whl_constraints_and_versions = whl_constraints_and_versions,
         ),
     ]
 
@@ -207,13 +210,25 @@ def _render_common_aliases(*, name, hub_name, aliases, default_version, group_na
 
     return "\n\n".join(lines)
 
-def _render_dist_config_settings(*, name, python_versions, whl_platforms, visibility):
+def _render_dist_config_settings(*, name, python_versions, whl_constraints_and_versions, visibility):
     lines = [
         "name = \"{}\"".format(name),
         "python_versions = {}".format(render.list(python_versions)),
-        "whl_platforms = {}".format(render.list(whl_platforms)),
-        "visibility = {}".format(render.list(visibility)),
     ]
+
+    if whl_constraints_and_versions:
+        for key, (value, value_repr) in {
+            "constraint_values": (whl_constraints_and_versions.constraint_values, render.dict),
+            "glibc_versions": (whl_constraints_and_versions.glibc_versions.keys(), render.list),
+            "muslc_versions": (whl_constraints_and_versions.muslc_versions.keys(), render.list),
+            "osx_versions": (whl_constraints_and_versions.osx_versions.keys(), render.list),
+        }.items():
+            if not value:
+                continue
+
+            lines.append("{} = {}".format(key, value_repr(value)))
+
+    lines.append("visibility = {}".format(render.list(visibility)))
     return "\n".join([
         "dist_config_settings(",
     ] + [
@@ -259,7 +274,7 @@ def render_pkg_aliases(*, hub_name, aliases, default_version = None, requirement
             for whl_name in group_whls
         }
 
-    versions, whl_platforms, _aliases = _get_aliases(aliases = aliases)
+    versions, whl_constraints_and_versions, _aliases = _get_aliases(aliases = aliases)
 
     files = {}
     for name, pkg_aliases in _aliases.items():
@@ -271,13 +286,14 @@ def render_pkg_aliases(*, hub_name, aliases, default_version = None, requirement
             aliases = pkg_aliases,
             default_version = default_version,
             group_name = whl_group_mapping.get(name),
+            whl_constraints_and_versions = whl_constraints_and_versions,
         )
         files[filename] = contents.strip()
 
     if requirement_cycles:
         files["_groups/BUILD.bazel"] = generate_group_library_build_bazel("", requirement_cycles)
 
-    if whl_platforms or versions:
+    if whl_constraints_and_versions or versions:
         rules_python, _, _ = str(Label("//:unused")).partition("//")
         loads = [
             """load("{}//python/private:dist_config_settings.bzl", "dist_config_settings")""".format(rules_python),
@@ -288,11 +304,7 @@ def render_pkg_aliases(*, hub_name, aliases, default_version = None, requirement
                 _render_dist_config_settings(
                     name = "dist_config_settings",
                     python_versions = versions,
-                    whl_platforms = sorted([
-                        p
-                        for p in whl_platforms
-                        if p != "any"
-                    ]),
+                    whl_constraints_and_versions = whl_constraints_and_versions,
                     visibility = ["//:__subpackages__"],
                 ),
             ],
@@ -332,7 +344,14 @@ def _get_aliases(*, aliases):
                 for version, p in target_platforms:
                     whl_platforms.setdefault(whl_platform, {})[(version, p)] = None
 
-    return sorted(versions), whl_platforms, ret
+    if whl_platforms:
+        whl_constraints_and_versions = whl_platform_constraints_and_versions(
+            whl_platform_tags = whl_platforms,
+        )
+    else:
+        whl_constraints_and_versions = None
+
+    return sorted(versions), whl_constraints_and_versions, ret
 
 def whl_alias(*, repo = None, version = None, filename = None, target_platforms = None):
     """The bzl_packages value used by by the render_pkg_aliases function.
@@ -364,7 +383,7 @@ def whl_alias(*, repo = None, version = None, filename = None, target_platforms 
 
     return struct(**attrs)
 
-def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_aliases = None, condition_package = ""):
+def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_aliases = None, whl_constraints_and_versions = None, condition_package = ""):
     """Return an actual label value (or a dict that can be used in a select).
 
     Args:
@@ -403,6 +422,7 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
         result = _get_dist_config_setting_names(
             dists,
             default_version,
+            whl_constraints_and_versions = whl_constraints_and_versions,
         )
         for prefix, cfgs in result.config_settings.items():
             if prefix.startswith(":"):
@@ -429,7 +449,7 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
         if result.aliases:
             extra_aliases = {
                 "{}_{}".format(prefix, target_name): _version_select(
-                    values = values,
+                    **values
                 )
                 for prefix, values in result.aliases.items()
             }
@@ -456,13 +476,12 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
         for repo, v in sorted(items.items())
     }, _DEFAULT_CONFIG_SETTING in config_settings, extra_aliases
 
-def _version_select(*, values):
-    fail(values)
+def _version_select(*, all_versions, config_setting, filename, version):
+    fail(all_versions, config_setting, filename, version)
 
-def _get_dist_config_setting_names(dists, default_version):
+def _get_dist_config_setting_names(dists, default_version, whl_constraints_and_versions):
     config_settings = {}
     defaults = {}
-    discarded = {}
     extras = {}
 
     # sort the incoming dists for deterministic output
@@ -497,8 +516,21 @@ def _get_dist_config_setting_names(dists, default_version):
 
                     # TODO @aignas 2024-04-29: use an alias label instead
                     platforms.append("{}_{}".format(head, tail))
+
+                    # TODO @aignas 2024-04-30: naming
+                    foo = {
+                        "": ("whl_osx_version", whl_constraints_and_versions.osx_versions),
+                        "many": ("whl_glibc_version", whl_constraints_and_versions.glibc_versions),
+                        "musl": ("whl_muslc_version", whl_constraints_and_versions.muslc_versions),
+                    }
                     for v in p.versions:
-                        version_aliases.setdefault("{}_{}".format(head,tail), {})[v] = filename
+                        config_setting_name, all_versions = foo[p.flavor]
+                        version_aliases.setdefault("{}_{}".format(head, tail), {
+                            "all_versions": all_versions,
+                            "config_setting": config_setting_name,
+                            "filename": filename,
+                            "version": "unknown",
+                        })["version"] = "{}.{}".format(*v)
 
             names = [
                 "whl_{}_{}".format(abi, target_platform)
@@ -508,8 +540,7 @@ def _get_dist_config_setting_names(dists, default_version):
 
             for abi in abis:
                 for target_platform, versions in version_aliases.items():
-                    for v in versions:
-                        extra_aliases.setdefault("whl_{}_{}".format(abi, target_platform), {})[v] = filename
+                    extra_aliases["whl_{}_{}".format(abi, target_platform)] = versions
 
         else:
             names = ["sdist"]
@@ -524,38 +555,17 @@ def _get_dist_config_setting_names(dists, default_version):
 
                 is_python = "is_python_{}_{}".format(version, tail)
                 if match in extra_aliases:
-                    target = ":py_{}_{}_whl".format(version, match)
+                    target = match.replace("whl_", ":whl_cp{}_".format(version.replace(".", "")))
                 else:
                     target = filename
 
                 config_settings[is_python] = target
                 if match in extra_aliases:
-                    extras["py_{}_{}_whl".format(version, match)] = extra_aliases[match]
+                    extras[target.replace(":", "")] = extra_aliases[match]
 
                 if version == default_version:
                     is_ = "is_{}".format(tail)
                     config_settings[is_] = target
-
-    if discarded:
-        # NOTE @aignas 2024-04-25: cryptography is publishing multiple
-        # wheels that target different glibc versions (for older and
-        # newer OSes) and we don't know what the user of rules_python
-        # is gonna want, we have a way for the user to select the libc version
-        # by default we are just going to select the first match
-        # (alphabetically) until we figure a better strategy.
-        #
-        # Right now we print a warning in case the user is interested in knowing
-        # this information.
-        # buildifier: disable=print
-        print("WARNING: some filenames had clashing config_settings and you will need to configure the default values the string flags if you want to select them:\n  {}".format(
-            "  \n".join([
-                "{}:\n    default is{}:\n    dropped: {}".format(
-                    config_setting, default, sorted(dropped.keys())
-                )
-                for config_setting, files in discarded.items()
-                for default, dropped in files.items()
-            ])
-        ))
 
     # TODO @aignas 2024-04-25: what to do with defaults by python version
     defaults = sorted(

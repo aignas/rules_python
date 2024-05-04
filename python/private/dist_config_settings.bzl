@@ -56,12 +56,14 @@ Use cases that this code strives to support:
 
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load(":config_settings.bzl", "is_python_config_setting")
-load(":whl_target_platforms.bzl", "whl_target_platforms")
 
 def dist_config_settings(
         name,
         python_versions,
-        whl_platforms,
+        constraint_values,
+        glibc_versions = None,
+        muslc_versions = None,
+        osx_versions = None,
         **kwargs):
     """Create string flags for dist configuration.
 
@@ -69,8 +71,11 @@ def dist_config_settings(
         name: Currently unused.
         python_versions: list[str] A list of python version to generate
             config_setting targets for.
-        whl_platforms: list[str] A list of whl platforms that should be used
-            to generate the config_setting targets.
+        constraint_values: The dict[str, list[Label]] mapping platform labels
+            to constraint_values passed to the `config_setting`.
+        osx_versions: The list of osx versions that we need to support.
+        glibc_versions: The list of glibc versions that we need to support.
+        muslc_versions: The list of muslc versions that we need to support.
         **kwargs: Extra args passed to string_flags.
     """
 
@@ -116,33 +121,6 @@ def dist_config_settings(
         **kwargs
     )
 
-    constraint_values = {
-        "": None,
-    }
-    osx_versions = {}
-    glibc_versions = {}
-    muslc_versions = {}
-    for target_platform in whl_platforms:
-        for p in whl_target_platforms(target_platform):
-            plat_label = "{}_{}".format(p.os, p.cpu)
-            constraint_values[plat_label] = [
-                "@platforms//os:" + p.os,
-                "@platforms//cpu:" + p.cpu,
-            ]
-
-            if not p.versions:
-                continue
-
-            if p.flavor == "many":
-                for v in p.versions:
-                    glibc_versions[(int(v[0]), int(v[1]))] = None
-            elif p.flavor == "musl":
-                for v in p.versions:
-                    muslc_versions[(int(v[0]), int(v[1]))] = None
-            elif p.os == "osx":
-                for v in p.versions:
-                    osx_versions[(int(v[0]), int(v[1]))] = None
-
     presets = {
         name: {
             "constraint_values": cvs,
@@ -151,7 +129,7 @@ def dist_config_settings(
                 native.package_relative_label(":__subpackages__"),
             ],
         }
-        for name, cvs in constraint_values.items()
+        for name, cvs in ({"": None} | (constraint_values or {})).items()
     }
 
     # Creating config_setting values so that we can
@@ -257,7 +235,7 @@ def dist_config_settings(
     #   * whl_foo_version_1.0 - matches 1.2 or 1.1 or 1.0
     #
     # And if we have multiple artifacts matched, I think that the one with the closest
-    # match should take precedence, i.e. if we set the flag value to version 1.3, we 
+    # match should take precedence, i.e. if we set the flag value to version 1.3, we
     # should get whl_foo_version_1.2. Note, that all three wheels are
     # compatible, but we should somehow get the precedence correct.
     #
@@ -333,10 +311,13 @@ def dist_config_settings(
     # FIXME @aignas 2024-04-28: what to do when we cross multiple major versions?
     # maybe there is nothing to be done?
     for version_name, versions in {
-        "whl_glibc_version": _stringify_versions(glibc_versions.keys()),
-        "whl_muslc_version": _stringify_versions(muslc_versions.keys()),
-        "whl_osx_version": _stringify_versions(osx_versions.keys()),
+        "whl_glibc_version": glibc_versions,
+        "whl_muslc_version": muslc_versions,
+        "whl_osx_version": osx_versions,
     }.items():
+        if not versions:
+            continue
+
         string_flag(
             name = version_name,
             build_setting_default = versions[0],
@@ -354,9 +335,6 @@ def dist_config_settings(
                     native.package_relative_label(":__subpackages__"),
                 ],
             )
-
-def _stringify_versions(versions):
-    return ["{}.{}".format(major, minor) for major, minor in sorted(versions)]
 
 def _config_settings(
         *,

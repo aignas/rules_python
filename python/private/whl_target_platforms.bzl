@@ -199,3 +199,59 @@ def _cpu_from_tag(tag):
             return ["x86_32"]
 
     return []
+
+def whl_platform_constraints_and_versions(whl_platform_tags):
+    """Return whl platform constraints and versions.
+
+    The is used for constructing the select statements and for constructing the dist config values.
+
+    Args:
+        whl_platform_tags: A list of platform tags that are used in a hub repo.
+
+    Returns:
+        A struct with attributes:
+          constraint_values: The dict[str, list[Label]] mapping platform labels
+              to constraint_values passed to the `config_setting`.
+          osx_versions: The list of osx versions that we need to support.
+          glibc_versions: The list of glibc versions that we need to support.
+          muslc_versions: The list of muslc versions that we need to support.
+    """
+    constraint_values = {}
+    osx_versions = {}
+    glibc_versions = {}
+    muslc_versions = {}
+    for target_platform in sorted(whl_platform_tags):
+        if target_platform == "any":
+            continue
+        for p in whl_target_platforms(target_platform):
+            plat_label = "{}_{}".format(p.os, p.cpu)
+            constraint_values[plat_label] = [
+                "@platforms//os:" + p.os,
+                "@platforms//cpu:" + p.cpu,
+            ]
+
+            if not p.versions:
+                continue
+
+            if p.flavor == "many":
+                for v in p.versions:
+                    glibc_versions[(int(v[0]), int(v[1]))] = None
+            elif p.flavor == "musl":
+                for v in p.versions:
+                    muslc_versions[(int(v[0]), int(v[1]))] = None
+            elif p.os == "osx":
+                for v in p.versions:
+                    osx_versions[(int(v[0]), int(v[1]))] = None
+
+    return struct(
+        constraint_values = constraint_values,
+        osx_versions = _stringify_versions(osx_versions.keys()),
+        glibc_versions = _stringify_versions(glibc_versions.keys()),
+        muslc_versions = _stringify_versions(muslc_versions.keys()),
+    )
+
+def _stringify_versions(versions):
+    return {
+        "{}.{}".format(major, minor): (major, minor)
+        for major, minor in sorted(versions)
+    }
