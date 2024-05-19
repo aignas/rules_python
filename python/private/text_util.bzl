@@ -80,17 +80,17 @@ def _render_list(items):
         "]",
     ])
 
-def _render_tuple(items):
+def _render_tuple(items, *, value_repr = repr):
     if not items:
         return "tuple()"
 
     if len(items) == 1:
-        return "({},)".format(repr(items[0]))
+        return "({},)".format(value_repr(items[0]))
 
     return "\n".join([
         "(",
         _indent("\n".join([
-            "{},".format(repr(item))
+            "{},".format(value_repr(item))
             for item in items
         ])),
         ")",
@@ -150,11 +150,11 @@ def _is_python_config_setting(name, *, python_version, flag_values = None, const
 
 render = struct(
     alias = _render_alias,
+    config_setting = _config_setting,
     dict = _render_dict,
     indent = _indent,
-    list = _render_list,
-    tuple = _render_tuple,
-    select = _render_select,
-    config_setting = _config_setting,
     is_python_config_setting = _is_python_config_setting,
+    list = _render_list,
+    select = _render_select,
+    tuple = _render_tuple,
 )

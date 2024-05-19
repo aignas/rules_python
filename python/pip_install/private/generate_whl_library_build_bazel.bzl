@@ -92,12 +92,14 @@ py_library(
 """
 
 def _plat_label(plat):
+    if plat.endswith("default"):
+        return plat
     if plat.startswith("@//"):
         return "@@" + str(Label("//:BUILD.bazel")).partition("//")[0].strip("@") + plat.strip("@")
     elif plat.startswith("@"):
         return str(Label(plat))
     else:
-        return ":is_" + plat
+        return ":is_" + plat.replace("cp3", "python_3.")
 
 def _render_list_and_select(deps, deps_by_platform, tmpl):
     deps = render.list([tmpl.format(d) for d in sorted(deps)])
@@ -115,14 +117,7 @@ def _render_list_and_select(deps, deps_by_platform, tmpl):
 
     # Add the default, which means that we will be just using the dependencies in
     # `deps` for platforms that are not handled in a special way by the packages
-    #
-    # FIXME @aignas 2024-01-24: This currently works as expected only if the default
-    # value of the @rules_python//python/config_settings:python_version is set in
-    # the `.bazelrc`. If it is unset, then the we don't get the expected behaviour
-    # in cases where we are using a simple `py_binary` using the default toolchain
-    # without forcing any transitions. If the `python_version` config setting is set
-    # via .bazelrc, then everything works correctly.
-    deps_by_platform["//conditions:default"] = []
+    deps_by_platform.setdefault("//conditions:default", [])
     deps_by_platform = render.select(deps_by_platform, value_repr = render.list)
 
     if deps == "[]":
@@ -135,18 +130,20 @@ def _render_config_settings(dependencies_by_platform):
     additional_content = []
     for p in dependencies_by_platform:
         # p can be one of the following formats:
+        # * //conditions:default
         # * @platforms//os:{value}
         # * @platforms//cpu:{value}
         # * @//python/config_settings:is_python_3.{minor_version}
         # * {os}_{cpu}
         # * cp3{minor_version}_{os}_{cpu}
-        if p.startswith("@"):
+        if p.startswith("@") or p.endswith("default"):
             continue
 
         abi, _, tail = p.partition("_")
         if not abi.startswith("cp"):
             tail = p
             abi = ""
+
         os, _, arch = tail.partition("_")
         os = "" if os == "anyos" else os
         arch = "" if arch == "anyarch" else arch
@@ -157,34 +154,37 @@ def _render_config_settings(dependencies_by_platform):
         if os:
             constraint_values.append("@platforms//os:{}".format(os))
 
-        os_arch = (os or "anyos") + "_" + (arch or "anyarch")
-        if not abi:
+        constraint_values_str = render.indent(render.list(constraint_values)).lstrip()
+
+        if abi:
+            if not loads:
+                loads.append("""load("@rules_python//python/config_settings:config_settings.bzl", "is_python_config_setting")""")
+
             additional_content.append(
-                render.config_setting(
-                    name = "is_{}".format(os_arch),
-                    constraint_values = constraint_values,
-                    visibility = ["//visibility:private"],
+                """\
+is_python_config_setting(
+    name = "is_{name}",
+    python_version = "3.{minor_version}",
+    constraint_values = {constraint_values},
+    visibility = ["//visibility:private"],
+)""".format(
+                    name = p.replace("cp3", "python_3."),
+                    minor_version = abi[len("cp3"):],
+                    constraint_values = constraint_values_str,
                 ),
             )
-            continue
-
-        minor_version = int(abi[len("cp3"):])
-
-        if not loads:
-            loads.append(
-                """load("@rules_python//python/config_settings:config_settings.bzl", "is_python_config_setting")""",
+        else:
+            additional_content.append(
+                """\
+config_setting(
+    name = "is_{name}",
+    constraint_values = {constraint_values},
+    visibility = ["//visibility:private"],
+)""".format(
+                    name = p.replace("cp3", "python_3."),
+                    constraint_values = constraint_values_str,
+                ),
             )
-        additional_content.append(
-            render.is_python_config_setting(
-                name = "is_{}_{}".format(abi, os_arch),
-                python_version = "3." + str(minor_version),
-                constraint_values = constraint_values,
-                visibility = ["//visibility:private"],
-            ),
-        )
-
-    if not loads and not additional_content:
-        return None, None
 
     return loads, "\n\n".join(additional_content)
 

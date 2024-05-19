@@ -47,8 +47,7 @@ def simpleapi_download(ctx, *, attr, cache, parallel_download = True):
             undesirable because additions to the PyPI index would not be
             reflected when re-evaluating the extension unless we do
             `bazel clean --expunge`.
-        parallel_download: A boolean to change whether we want to use the parallel
-            download if it is available.
+        parallel_download: A boolean to enable usage of bazel 7.1 non-blocking downloads.
 
     Returns:
         dict of pkg name to the parsed HTML contents - a list of structs.
@@ -62,15 +61,6 @@ def simpleapi_download(ctx, *, attr, cache, parallel_download = True):
     if bazel_features.external_deps.download_has_block_param:
         download_kwargs["block"] = not parallel_download
 
-    # Download in parallel if possible. This will download (potentially
-    # duplicate) data for multiple packages if there is more than one index
-    # available, but that is the price of convenience. However, that price
-    # should be mostly negligible because the simple API calls are very cheap
-    # and the user should not notice any extra overhead.
-    #
-    # If we are in synchronous mode, then we will use the first result that we
-    # find.
-    #
     # NOTE @aignas 2024-03-31: we are not merging results from multiple indexes
     # to replicate how `pip` would handle this case.
     async_downloads = {}
@@ -212,42 +202,6 @@ def _read_index_result(ctx, result, output, url, cache, cache_key):
         return struct(success = True, output = output, cache_key = cache_key)
     else:
         return struct(success = False)
-
-def get_simpleapi_sources(line):
-    """Get PyPI sources from a requirements.txt line.
-
-    We interpret the spec described in
-    https://pip.pypa.io/en/stable/reference/requirement-specifiers/#requirement-specifiers
-
-    Args:
-        line(str): The requirements.txt entry.
-
-    Returns:
-        A struct with shas attribute containing a list of shas to download from pypi_index.
-    """
-    head, _, maybe_hashes = line.partition(";")
-    _, _, version = head.partition("==")
-    version = version.partition(" ")[0].strip()
-
-    if "@" in head:
-        shas = []
-    else:
-        maybe_hashes = maybe_hashes or line
-        shas = [
-            sha.strip()
-            for sha in maybe_hashes.split("--hash=sha256:")[1:]
-        ]
-
-    if head == line:
-        head = line.partition("--hash=")[0].strip()
-    else:
-        head = head + ";" + maybe_hashes.partition("--hash=")[0].strip()
-
-    return struct(
-        requirement = line if not shas else head,
-        version = version,
-        shas = sorted(shas),
-    )
 
 def parse_simple_api_html(*, url, content):
     """Get the package URLs for given shas by parsing the Simple API HTML.

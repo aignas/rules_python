@@ -15,7 +15,6 @@
 ""
 
 load("@rules_testing//lib:test_suite.bzl", "test_suite")
-load("//python/private:whl_target_platforms.bzl", "select_whls")  # buildifier: disable=bzl-visibility
 
 WHL_LIST = [
     struct(
@@ -86,107 +85,38 @@ def _match(env, got, *want_filenames):
 _tests = []
 
 def _test_selecting(env):
-    got = select_whls(whls = WHL_LIST, want_abis = ["none"])
+    got = select_whl(whls = WHL_LIST, want_abis = ["none"], want_platform = "ignored")
     _match(env, got, "pkg-0.0.1-py3-none-any.whl")
 
-    got = select_whls(whls = WHL_LIST, want_abis = ["abi3"])
+    got = select_whl(whls = WHL_LIST, want_abis = ["abi3"], want_platform = "ignored")
     _match(env, got, "pkg-0.0.1-py3-abi3-any.whl")
 
-    # # Check the selection failure
-    got = select_whls(whls = WHL_LIST, want_abis = ["cp39"], want_platforms = ["fancy_exotic"])
-    _match(env, got)
+    # Check the selection failure
+    got = select_whl(whls = WHL_LIST, want_abis = ["cp39"], want_platform = "fancy_exotic")
+    _match(env, got, None)
 
-    # # Check we match the ABI and not the py version
-    got = select_whls(whls = WHL_LIST, want_abis = ["cp37m"], want_platforms = ["linux_x86_64"])
-    _match(
-        env,
-        got,
-        "pkg-0.0.1-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-        "pkg-0.0.1-cp37-cp37m-musllinux_1_1_x86_64.whl",
-    )
+    # Check we match the ABI and not the py version
+    got = select_whl(whls = WHL_LIST, want_abis = ["cp37m"], want_platform = "linux_x86_64")
+    _match(env, got, "pkg-0.0.1-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl")
 
     # Check we can select a filename with many platform tags
-    got = select_whls(
-        whls = WHL_LIST,
-        want_abis = ["cp39"],
-        want_platforms = ["linux_i686"],
-    )
-    _match(
-        env,
-        got,
-        "pkg-0.0.1-cp39-cp39-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl",
-        "pkg-0.0.1-cp39-cp39-musllinux_1_1_i686.whl",
-    )
+    got = select_whl(whls = WHL_LIST, want_abis = ["cp39"], want_platform = "linux_x86_32")
+    _match(env, got, "pkg-0.0.1-cp39-cp39-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl")
 
-    got = select_whls(
-        whls = [
-            struct(
-                filename = f,
-                url = "https://" + f,
-                sha256 = "sha256://" + f,
-            )
-            for f in [
-                "pkg-0.0.1-cp310-abi3-any.whl",
-                "pkg-0.0.1-cp39-none-any.whl",
-                "pkg-0.0.1-cp38-none-any.whl",
-                "pkg-0.0.1-cp37-none-any.whl",
-                "pkg-0.0.1-cp37-abi3-any.whl",
-            ]
-        ],
-        want_version = "3.9",
-        want_abis = ["none", "abi3"],
-        want_platforms = [],
-    )
-    _match(
-        env,
-        got,
-        "pkg-0.0.1-cp39-none-any.whl",
-    )
+    # Check that we prefer the specific wheel
+    got = select_whl(whls = WHL_LIST, want_abis = ["cp311"], want_platform = "osx_x86_64")
+    _match(env, got, "pkg-0.0.1-cp311-cp311-macosx_10_9_x86_64.whl")
 
-    got = select_whls(
-        whls = [
-            struct(
-                filename = f,
-                url = "https://" + f,
-                sha256 = "sha256://" + f,
-            )
-            for f in [
-                "pkg-0.0.1-py3-none-any.whl",
-                "pkg-0.0.1-cp37-abi3-any.whl",
-            ]
-        ],
-        want_version = "3.9",
-        want_abis = ["none", "abi3"],
-        want_platforms = [],
-    )
-    _match(
-        env,
-        got,
-        "pkg-0.0.1-cp37-abi3-any.whl",
-    )
+    got = select_whl(whls = WHL_LIST, want_abis = ["cp311"], want_platform = "osx_aarch64")
+    _match(env, got, "pkg-0.0.1-cp311-cp311-macosx_11_0_arm64.whl")
 
-    got = select_whls(
-        whls = [
-            struct(
-                filename = f,
-                url = "https://" + f,
-                sha256 = "sha256://" + f,
-            )
-            for f in [
-                "pkg-0.0.1-py3-none-any.whl",
-                "pkg-0.0.1-cp37-none-any.whl",
-                "pkg-0.0.1-cp37-abi3-any.whl",
-            ]
-        ],
-        want_version = "3.9",
-        want_abis = ["none", "abi3"],
-        want_platforms = [],
-    )
-    _match(
-        env,
-        got,
-        "pkg-0.0.1-cp37-abi3-any.whl",
-    )
+    # Check that we can use the universal2 if the arm wheel is not available
+    got = select_whl(whls = [w for w in WHL_LIST if "arm64" not in w.filename], want_abis = ["cp311"], want_platform = "osx_aarch64")
+    _match(env, got, "pkg-0.0.1-cp311-cp311-macosx_10_9_universal2.whl")
+
+    # Check we prefer platform specific wheels
+    got = select_whl(whls = WHL_LIST, want_abis = ["none", "abi3", "cp39"], want_platform = "linux_x86_64")
+    _match(env, got, "pkg-0.0.1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl")
 
 _tests.append(_test_selecting)
 

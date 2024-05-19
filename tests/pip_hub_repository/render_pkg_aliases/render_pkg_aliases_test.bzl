@@ -118,6 +118,7 @@ whl_library_aliases(
     },
     config_settings = [
         ("pypi_32_bar_baz", "//:is_python_3.2"),
+        ("pypi_32_bar_baz", "//conditions:default"),
         ("pypi_31_bar_baz", "//:is_python_3.1"),
     ],
 )"""

@@ -23,11 +23,11 @@ load(
     "use_isolated",
     "whl_library",
 )
-load("//python/pip_install:requirements_parser.bzl", parse_requirements = "parse")
 load("//python/private:auth.bzl", "AUTH_ATTRS")
 load("//python/private:normalize_name.bzl", "normalize_name")
+load("//python/private:parse_requirements.bzl", "host_platform", "parse_requirements", "select_requirement")
 load("//python/private:parse_whl_name.bzl", "parse_whl_name")
-load("//python/private:pypi_index.bzl", "get_simpleapi_sources", "simpleapi_download")
+load("//python/private:pypi_index.bzl", "simpleapi_download")
 load("//python/private:render_pkg_aliases.bzl", "whl_alias")
 load("//python/private:text_util.bzl", "render")
 load("//python/private:version_label.bzl", "version_label")
@@ -102,120 +102,6 @@ You cannot use both the additive_build_content and additive_build_content_file a
             whl_mods = whl_mods,
         )
 
-def _parse_requirements(ctx, pip_attr):
-    """Get the requirements with platforms that the requirements apply to.
-
-    Args:
-        ctx: A context that has .read function that would read contents from a label.
-        pip_attr: A struct that should have all of the attributes:
-          * experimental_requirements_by_platform (label_keyed_string_dict)
-          * requirements_darwin (label)
-          * requirements_linux (label)
-          * requirements_lock (label)
-          * requirements_windows (label)
-          * experimental_target_platforms (string_list)
-          * extra_pip_args (string_list)
-
-    Returns:
-        A tuple where the first element a dict of dicts where the first key is
-        the normalized distribution name (with underscores) and the second key
-        is the requirement_line, then value and the keys are structs with the
-        following attributes:
-         * distribution: The non-normalized distribution name.
-         * srcs: The Simple API downloadable source list.
-         * requirement_line: The original requirement line.
-         * target_platforms: The list of target platforms that this package is for.
-
-        The second element is extra_pip_args value to be passed to `whl_library`.
-    """
-    files_by_platform = {
-        file: p.split(",")
-        for file, p in pip_attr.experimental_requirements_by_platform.items()
-    }.items() or [
-        # If the users need a greater span of the platforms, they should consider
-        # using the 'experimental_requirements_by_platform' attribute.
-        (pip_attr.requirements_windows, pip_attr.experimental_target_platforms or ("windows_x86_64",)),
-        (pip_attr.requirements_darwin, pip_attr.experimental_target_platforms or (
-            "osx_x86_64",
-            "osx_aarch64",
-        )),
-        (pip_attr.requirements_linux, pip_attr.experimental_target_platforms or (
-            "linux_x86_64",
-            "linux_aarch64",
-            "linux_ppc",
-            "linux_s390x",
-        )),
-        (pip_attr.requirements_lock, None),
-    ]
-
-    # NOTE @aignas 2024-04-08: default_platforms will be added to only in the legacy case
-    default_platforms = []
-
-    options = None
-    requirements = {}
-    for file, plats in files_by_platform:
-        if not file and plats:
-            for p in plats:
-                if "host" in p:
-                    fail("The host platform is not allowed")
-
-                if "*" in p:
-                    fail("Wildcards are not allowed in platform")
-
-                if p in default_platforms:
-                    continue
-
-                default_platforms.append(p)
-            continue
-
-        contents = ctx.read(file)
-
-        parse_result = parse_requirements(contents)
-
-        # Ensure that we have consistent options across the lock files.
-        if options == None:
-            options = parse_result.options
-        elif "".join(parse_result.options) != "".join(options):
-            # buildifier: disable=print
-            fail("WARNING: The pip args for each lock file must be the same, will use '{}'".format(options))
-
-        # Replicate a surprising behavior that WORKSPACE builds allowed:
-        # Defining a repo with the same name multiple times, but only the last
-        # definition is respected.
-        # The requirement lines might have duplicate names because lines for extras
-        # are returned as just the base package name. e.g., `foo[bar]` results
-        # in an entry like `("foo", "foo[bar] == 1.0 ...")`.
-        requirements_dict = {
-            normalize_name(entry[0]): entry
-            # The WORKSPACE pip_parse sorted entries, so mimic that ordering.
-            for entry in sorted(parse_result.requirements)
-        }.values()
-
-        plats = default_platforms if plats == None else plats
-        for p in plats:
-            requirements[p] = requirements_dict
-
-    requirements_by_platform = {}
-    for target_platform, reqs_ in requirements.items():
-        for distribution, requirement_line in reqs_:
-            for_whl = requirements_by_platform.setdefault(
-                normalize_name(distribution),
-                {},
-            )
-
-            for_req = for_whl.setdefault(
-                requirement_line,
-                struct(
-                    distribution = distribution,
-                    srcs = get_simpleapi_sources(requirement_line),
-                    requirement_line = requirement_line,
-                    target_platforms = [],
-                ),
-            )
-            for_req.target_platforms.append(target_platform)
-
-    return requirements_by_platform, pip_attr.extra_pip_args + options
-
 def _get_dists(*, whl_name, requirements, want_abis, index_urls):
     dists = {}
 
@@ -252,14 +138,13 @@ def _get_dists(*, whl_name, requirements, want_abis, index_urls):
 
     return dists
 
-def _get_registrations(*, dists, reqs, extra_pip_args):
+def _get_registrations(*, dists, reqs):
     """Convert the sdists and whls into select statements and whl_library registrations.
 
     Args:
         dists: The whl and sdist sources. There can be many of them, different for
             different platforms.
         reqs: The requirements for each platform.
-        extra_pip_args: Extra pip args that are needed when building wheels from sdist.
     """
     registrations = {}  # repo_name -> args
     found_many = len(reqs) != 1
@@ -276,14 +161,14 @@ def _get_registrations(*, dists, reqs, extra_pip_args):
                 "urls": [dist.url],
             }
 
-            if not dist.filename.endswith(".whl") and extra_pip_args:
+            if not dist.filename.endswith(".whl") and req.extra_pip_args:
                 # TODO @aignas 2024-04-06: If the resultant whl from the sdist is
                 # platform specific, we would get into trouble. I think we should
                 # ensure that we set `target_compatible_with` for the py_library if
                 # that is the case.
 
                 # Add the args back for when we are building a wheel
-                whl_library_args["extra_pip_args"] = extra_pip_args
+                whl_library_args["extra_pip_args"] = req.extra_pip_args
 
             repo_name = whl_repo_name(dist.filename)
             if repo_name in registrations:
@@ -354,10 +239,15 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
 
     # Create a new wheel library for each of the different whls
 
-    # Parse the requirements file directly in starlark to get the information
-    # needed for the whl_libary declarations below.
-
-    requirements_with_target_platforms, extra_pip_args = _parse_requirements(module_ctx, pip_attr)
+    requirements_by_platform = parse_requirements(
+        module_ctx,
+        requirements_by_platform = pip_attr.requirements_by_platform,
+        requirements_linux = pip_attr.requirements_linux,
+        requirements_lock = pip_attr.requirements_lock,
+        requirements_osx = pip_attr.requirements_darwin,
+        requirements_windows = pip_attr.requirements_windows,
+        extra_pip_args = pip_attr.extra_pip_args,
+    )
 
     index_urls = {}
     if pip_attr.experimental_index_url:
@@ -371,9 +261,9 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 extra_index_urls = pip_attr.experimental_extra_index_urls or [],
                 index_url_overrides = pip_attr.experimental_index_url_overrides or {},
                 sources = list({
-                    line.distribution: None
-                    for req in requirements_with_target_platforms.values()
-                    for line in req.values()
+                    req.distribution: None
+                    for reqs in requirements_by_platform.values()
+                    for req in reqs
                 }),
                 envsubst = pip_attr.envsubst,
                 # Auth related info
@@ -381,10 +271,11 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 auth_patterns = pip_attr.auth_patterns,
             ),
             cache = simpleapi_cache,
-            parallel_download = pip_attr.experimental_parallel_download,
+            parallel_download = pip_attr.parallel_download,
         )
 
-    for whl_name, reqs in requirements_with_target_platforms.items():
+    repository_platform = host_platform(module_ctx.os)
+    for whl_name, requirements in requirements_by_platform.items():
         # We are not using the "sanitized name" because the user
         # would need to guess what name we modified the whl name
         # to.
@@ -407,7 +298,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
             enable_implicit_namespace_pkgs = pip_attr.enable_implicit_namespace_pkgs,
             environment = pip_attr.environment,
             envsubst = pip_attr.envsubst,
-            extra_pip_args = extra_pip_args,
             group_deps = group_deps,
             group_name = group_name,
             pip_data_exclude = pip_attr.pip_data_exclude,
@@ -435,7 +325,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
         if index_urls:
             dists = _get_dists(
                 whl_name = whl_name,
-                requirements = reqs,
+                requirements = requirements,
                 want_abis = [
                     "none",
                     "abi3",
@@ -463,8 +353,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
 
             registrations = _get_registrations(
                 dists = dists,
-                reqs = reqs,
-                extra_pip_args = extra_pip_args,
+                reqs = requirements,
             )
             for suffix, args in registrations.items():
                 repo_name = "{}_{}".format(hub_name, suffix)
@@ -514,38 +403,39 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                     whl_registrations[repo_name] = all_whl_library_args
 
             continue
-        else:
-            os_name = module_ctx.os.name.lower()
-            if os_name.startswith("win"):
-                host_platform_os = "windows"
-            elif os_name.startswith("mac"):
-                host_platform_os = "osx"
-            elif os_name.startswith("linux"):
-                host_platform_os = "linux"
-            else:
-                fail("unsupported host platform: {}".format(os_name))
 
-            requirement_line = [
-                req.requirement_line
-                for req in reqs.values()
-                if len([p for p in req.target_platforms if p.startswith(host_platform_os)]) > 0
-            ][0]
+        requirement = select_requirement(
+            requirements,
+            platform = repository_platform,
+        )
+        if not requirement:
+            # Sometimes the package is not present for host platform if there
+            # are whls specified only in particular requirements files, in that
+            # case just continue, however, if the download_only flag is set up,
+            # then the user can also specify the target platform of the wheel
+            # packages they want to download, in that case there will be always
+            # a requirement here, so we will not be in this code branch.
+            continue
 
-            if index_urls:
-                print("WARNING: falling back to pip for installing the right file for {}".format(requirement_line))  # buildifier: disable=print
+        if index_urls:
+            print("WARNING: falling back to pip for installing the right file for {}".format(requirement.requirement_line))  # buildifier: disable=print
 
-            repo_name = "{}_{}".format(pip_name, whl_name)
-            whl_library_args["requirement"] = requirement_line
-            whl_library(
-                name = repo_name,
-                **dict(sorted(whl_library_args.items()))
-            )
-            whl_map.setdefault(whl_name, []).append(
-                whl_alias(
-                    repo = repo_name,
-                    version = major_minor,
-                ),
-            )
+        repo_name = "{}_{}".format(pip_name, whl_name)
+        whl_library_args["requirement"] = requirement.requirement_line
+        if pip_attr.experimental_target_platforms:
+            # TODO @aignas 2024-05-19: potentially remove this line
+            whl_library_args["experimental_target_platforms"] = pip_attr.experimental_target_platforms
+
+        whl_library(
+            name = repo_name,
+            **dict(sorted(whl_library_args.items()))
+        )
+        whl_map.setdefault(whl_name, []).append(
+            whl_alias(
+                repo = repo_name,
+                version = major_minor,
+            ),
+        )
 
 def _pip_impl(module_ctx):
     """Implementation of a class tag that creates the pip hub and corresponding pip spoke whl repositories.
@@ -807,6 +697,23 @@ means if different programs need different versions of some library, separate
 hubs can be created, and each program can use its respective hub's targets.
 Targets from different hubs should not be used together.
 """,
+        ),
+        "parallel_download": attr.bool(
+            doc = """\
+The flag allows to make use of parallel downloading feature in bazel 7.1 and above
+when the bazel downloader is used. This is by default enabled as it improves the
+performance by a lot, but in case the queries to the simple API are very expensive
+or when debugging authentication issues one may want to disable this feature.
+
+NOTE, This will download (potentially duplicate) data for multiple packages if
+there is more than one index available, but in general this should be negligible
+because the simple API calls are very cheap and the user should not notice any
+extra overhead.
+
+If we are in synchronous mode, then we will use the first result that we
+find in case extra indexes are specified.
+""",
+            default = True,
         ),
         "python_version": attr.string(
             mandatory = True,

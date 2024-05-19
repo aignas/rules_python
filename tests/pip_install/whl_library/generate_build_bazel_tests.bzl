@@ -113,9 +113,9 @@ filegroup(
             "@//python/config_settings:is_python_3.9": ["@pypi_py39_dep//:whl"],
             "@platforms//cpu:aarch64": ["@pypi_arm_dep//:whl"],
             "@platforms//os:windows": ["@pypi_win_dep//:whl"],
-            ":is_cp310_linux_ppc": ["@pypi_py310_linux_ppc_dep//:whl"],
-            ":is_cp39_anyos_aarch64": ["@pypi_py39_arm_dep//:whl"],
-            ":is_cp39_linux_anyarch": ["@pypi_py39_linux_dep//:whl"],
+            ":is_python_3.10_linux_ppc": ["@pypi_py310_linux_ppc_dep//:whl"],
+            ":is_python_3.9_anyos_aarch64": ["@pypi_py39_arm_dep//:whl"],
+            ":is_python_3.9_linux_anyarch": ["@pypi_py39_linux_dep//:whl"],
             ":is_linux_x86_64": ["@pypi_linux_intel_dep//:whl"],
             "//conditions:default": [],
         },
@@ -147,9 +147,9 @@ py_library(
             "@//python/config_settings:is_python_3.9": ["@pypi_py39_dep//:pkg"],
             "@platforms//cpu:aarch64": ["@pypi_arm_dep//:pkg"],
             "@platforms//os:windows": ["@pypi_win_dep//:pkg"],
-            ":is_cp310_linux_ppc": ["@pypi_py310_linux_ppc_dep//:pkg"],
-            ":is_cp39_anyos_aarch64": ["@pypi_py39_arm_dep//:pkg"],
-            ":is_cp39_linux_anyarch": ["@pypi_py39_linux_dep//:pkg"],
+            ":is_python_3.10_linux_ppc": ["@pypi_py310_linux_ppc_dep//:pkg"],
+            ":is_python_3.9_anyos_aarch64": ["@pypi_py39_arm_dep//:pkg"],
+            ":is_python_3.9_linux_anyarch": ["@pypi_py39_linux_dep//:pkg"],
             ":is_linux_x86_64": ["@pypi_linux_intel_dep//:pkg"],
             "//conditions:default": [],
         },
@@ -159,7 +159,7 @@ py_library(
 )
 
 is_python_config_setting(
-    name = "is_cp310_linux_ppc",
+    name = "is_python_3.10_linux_ppc",
     python_version = "3.10",
     constraint_values = [
         "@platforms//cpu:ppc",
@@ -169,14 +169,14 @@ is_python_config_setting(
 )
 
 is_python_config_setting(
-    name = "is_cp39_anyos_aarch64",
+    name = "is_python_3.9_anyos_aarch64",
     python_version = "3.9",
     constraint_values = ["@platforms//cpu:aarch64"],
     visibility = ["//visibility:private"],
 )
 
 is_python_config_setting(
-    name = "is_cp39_linux_anyarch",
+    name = "is_python_3.9_linux_anyarch",
     python_version = "3.9",
     constraint_values = ["@platforms//os:linux"],
     visibility = ["//visibility:private"],

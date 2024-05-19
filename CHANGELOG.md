@@ -19,19 +19,95 @@ A brief description of the categories of changes:
 
 ## Unreleased
 
+[x.x.x]: https://github.com/bazelbuild/rules_python/releases/tag/x.x.x
+
+### Changed
+* (toolchains) Optional toolchain dependency: `py_binary`, `py_test`, and
+  `py_library` now depend on the `//python:exec_tools_toolchain_type` for build
+  tools.
+
+* (deps): Bumped `bazel_skylib` to 1.6.1.
+* (bzlmod): The `python` and internal `rules_python` extensions have been
+  marked as `reproducible` and will not include any lock file entries from now
+  on.
+
+### Fixed
+
+* (gazelle) Remove `visibility` from `NonEmptyAttr`.
+  Now empty(have no `deps/main/srcs/imports` attr) `py_library/test/binary` rules will
+  be automatically deleted correctly. For example, if `python_generation_mode`
+  is set to package, when `__init__.py` is deleted, the `py_library` generated
+  for this package before will be deleted automatically.
+* (whl_library): Use `is_python_config_setting` to correctly handle multi-python
+  version dependency select statements when the `experimental_target_platforms`
+  includes the Python ABI. The default python version case within the select is
+  also now handled correctly, stabilizing the implementation.
+
+### Added
+* (rules) Precompiling Python source at build time is available. but is
+  disabled by default, for now. Set
+  `@rules_python//python/config_settings:precompile=enabled` to enable it
+  by default. A subsequent release will enable it by default. See the
+  [Precompiling docs][precompile-docs] and API reference docs for more
+  information on precompiling. Note this requires Bazel 7+ and the Pystar rule
+  implementation enabled.
+  ([#1761](https://github.com/bazelbuild/rules_python/issues/1761))
+* (rules) Attributes and flags to control precompile behavior: `precompile`,
+  `precompile_optimize_level`, `precompile_source_retention`,
+  `precompile_invalidation_mode`, and `pyc_collection`
+* (toolchains) The target runtime toolchain (`//python:toolchain_type`) has
+  two new optional attributes: `pyc_tag` (tells the pyc filename infix to use) and
+  `implementation_name` (tells the Python implementation name).
+* (toolchains) A toolchain type for build tools has been added:
+  `//python:exec_tools_toolchain_type`.
+* (providers) `PyInfo` has two new attributes: `direct_pyc_files` and
+  `transitive_pyc_files`, which tell the pyc files a target makes available
+  directly and transitively, respectively.
+* `//python:features.bzl` added to allow easy feature-detection in the future.
+
+[precompile-docs]: /precompiling
+
+## [0.32.2] - 2024-05-14
+
+[0.32.2]: https://github.com/bazelbuild/rules_python/releases/tag/0.32.2
+
+### Fixed
+
+* Workaround existence of infinite symlink loops on case insensitive filesystems when targeting linux platforms with recent Python toolchains. Works around an upstream [issue][indygreg-231]. Fixes [#1800][rules_python_1800].
+
+[indygreg-231]: https://github.com/indygreg/python-build-standalone/issues/231
+[rules_python_1800]: https://github.com/bazelbuild/rules_python/issues/1800
+
+## [0.32.0] - 2024-05-12
+
+[0.32.0]: https://github.com/bazelbuild/rules_python/releases/tag/0.32.0
+
 ### Changed
 
 * (bzlmod): The `MODULE.bazel.lock` `whl_library` rule attributes are now
   sorted in the attributes section. We are also removing values that are not
   default in order to reduce the size of the lock file.
-* (deps): Bumped bazel_features to 1.9.1 to detect optional support
+* (coverage) Bump `coverage.py` to [7.4.3](https://github.com/nedbat/coveragepy/blob/master/CHANGES.rst#version-743--2024-02-23).
+* (deps): Bumped `bazel_features` to 1.9.1 to detect optional support
   non-blocking downloads.
+* (deps): Updated `pip_tools` to >= 7.4.0
+* (toolchains): Change some old toolchain versions to use [20240224] release to
+  include security fixes `3.8.18`, `3.9.18` and `3.10.13`
+* (toolchains): Bump default toolchain versions to:
+    * `3.8 -> 3.8.19`
+    * `3.9 -> 3.9.19`
+    * `3.10 -> 3.10.14`
+    * `3.11 -> 3.11.9`
+    * `3.12 -> 3.12.3`
 
 ### Fixed
 
 * (whl_library): Fix the experimental_target_platforms overriding for platform
   specific wheels when the wheels are for any python interpreter version. Fixes
   [#1810](https://github.com/bazelbuild/rules_python/issues/1810).
+* (whl_library): Stop generating duplicate dependencies when encountering
+  duplicates in the METADATA. Fixes
+  [#1873](https://github.com/bazelbuild/rules_python/issues/1873).
 * (gazelle) In `project` or `package` generation modes, do not generate `py_test`
   rules when there are no test files and do not set `main = "__test__.py"` when
   that file doesn't exist.
@@ -42,13 +118,15 @@ A brief description of the categories of changes:
   `pip.parse` extension is now possible, see the
   `examples/pip_parse/MODULE.bazel` for how to do it.
   See [#1371](https://github.com/bazelbuild/rules_python/issues/1371).
+* (refactor) The pre-commit developer workflow should now pass `isort` and `black`
+  checks (see [#1674](https://github.com/bazelbuild/rules_python/issues/1674)).
 
 ### Added
 
 * (toolchains) Added armv7 platform definition for python toolchains.
-
-* New Python versions available: `3.11.8`, `3.12.2` using
-  https://github.com/indygreg/python-build-standalone/releases/tag/20240224.
+* (toolchains) New Python versions available: `3.11.8`, `3.12.2` using the [20240224] release.
+* (toolchains) New Python versions available: `3.8.19`, `3.9.19`, `3.10.14`, `3.11.9`, `3.12.3` using
+  the [20240415] release.
 * (gazelle) Added a new `python_visibility` directive to control visibility
   of generated targets by appending additional visibility labels.
 * (gazelle) Added a new `python_default_visibility` directive to control the
@@ -66,35 +144,26 @@ A brief description of the categories of changes:
   `experimental_index_url_overrides` to `pip.parse` for using the bazel
   downloader. If you see any issues, report in
   [#1357](https://github.com/bazelbuild/rules_python/issues/1357). The URLs for
-  the whl and sdist files will be written to the lock file.
-* (bzlmod) When using `experimental_index_url` whls for all compatible platforms
-  will be added to the hub repository. With this come a few new experimental
-  `string_flags` that can be used to configure which targets are selected at
-  build time:
-    * @rules_python//python/config_settings:whl_linux_libc controls whether
-      `musllinux` or `manylinux` wheels are chosen. Chose one of `glibc` or
-      `musl` values in your `.bazelrc`.
-    * @rules_python//python/config_settings:whl_osx controls whether
-      `universal2` or the architecture specific wheels are used when targeting
-      OSX.
-    * @rules_python//python/config_settings:use_sdist controls whether `sdist`
-      targets should be selected.
-* (bzlmod) A new `experimental_requirements_by_platform` has been added which
-  allows the users to specify specific requirements files for different os_arch
-  combinations. This will require the user to use the `experimental_index_url`
-  feature for now.
-* (bzlmod) A new `RULES_PYTHON_ENABLE_BZLMOD_LOCKFILE` env var that can be set to `1`
-  to ensure that the `MODULE.bazel.lock` is created for all os/arch tuples at once.
-  The default is `0` and it is backwards compatible with the previous behaviour.
+  the whl and sdist files will be written to the lock file. Controlling whether
+  the downloading of metadata is done in parallel can be done using
+  `parallel_download` attribute.
+* (gazelle) Add a new annotation `include_dep`. Also add documentation for
+  annotations to `gazelle/README.md`.
+* (deps): `rules_python` depends now on `rules_cc` 0.0.9
+* (pip_parse): A new flag `use_hub_alias_dependencies` has been added that is going
+  to become default in the next release. This makes use of `dep_template` flag
+  in the `whl_library` rule. This also affects the
+  `experimental_requirement_cycles` feature where the dependencies that are in
+  a group would be only accessible via the hub repo aliases. If you still
+  depend on legacy labels instead of the hub repo aliases and you use the
+  `experimental_requirement_cycles`, now is a good time to migrate.
 
-[0.XX.0]: https://github.com/bazelbuild/rules_python/releases/tag/0.XX.0
 [python_default_visibility]: gazelle/README.md#directive-python_default_visibility
 [test_file_pattern_issue]: https://github.com/bazelbuild/rules_python/issues/1816
 [test_file_pattern_docs]: gazelle/README.md#directive-python_test_file_pattern
+[20240224]: https://github.com/indygreg/python-build-standalone/releases/tag/20240224.
+[20240415]: https://github.com/indygreg/python-build-standalone/releases/tag/20240415.
 
-### Changed
-
-* (coverage) Bump `coverage.py` to [7.4.3](https://github.com/nedbat/coveragepy/blob/master/CHANGES.rst#version-743--2024-02-23).
 
 ## [0.31.0] - 2024-02-12
 
