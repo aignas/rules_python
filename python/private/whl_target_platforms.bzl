@@ -33,6 +33,7 @@ _CPU_ALIASES = {
     "ppc64": "ppc",
     "ppc64le": "ppc",
     "s390x": "s390x",
+    "arm": "arm",
     "armv6l": "arm",
     "armv7l": "arm",
 }  # buildifier: disable=unsorted-dict-items
@@ -111,8 +112,8 @@ def select_whls(*, whls, want_version = None, want_abis = [], want_platforms = [
 
 def _normalize_platform(platform):
     cpus = _cpu_from_tag(platform)
-    if len(cpus) > 1:
-        fail("Expected the '{}' to only map to a single CPU, but got: {}".format(
+    if len(cpus) != 1:
+        fail("Expected the '{}' platform to only map to a single CPU, but got: {}".format(
             platform,
             cpus,
         ))

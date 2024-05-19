@@ -321,6 +321,8 @@ def parse_requirements(
                 target_platforms = sorted(r.target_platforms),
                 extra_pip_args = r.extra_pip_args,
                 download = r.download,
+                # Add a field that may be populated by other code
+                dists = [],
             )
             for r in sorted(reqs.values(), key = lambda r: r.requirement_line)
         ]

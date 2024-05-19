@@ -102,14 +102,14 @@ You cannot use both the additive_build_content and additive_build_content_file a
             whl_mods = whl_mods,
         )
 
-def _get_dists(*, whl_name, requirements, want_abis, index_urls):
-    dists = {}
-
+def _add_dists(*, whl_name, requirements, want_abis, index_urls):
     if not index_urls:
-        return dists
+        return False
 
-    for key, req in requirements.items():
+    found_dists = False
+    for req in requirements:
         sdist = None
+        dists = []
         for sha256 in req.srcs.shas:
             # For now if the artifact is marked as yanked we just ignore it.
             #
@@ -117,7 +117,7 @@ def _get_dists(*, whl_name, requirements, want_abis, index_urls):
 
             maybe_whl = index_urls[whl_name].whls.get(sha256)
             if maybe_whl and not maybe_whl.yanked:
-                dists.setdefault(key, []).append(maybe_whl)
+                dists.append(maybe_whl)
                 continue
 
             maybe_sdist = index_urls[whl_name].sdists.get(sha256)
@@ -128,31 +128,31 @@ def _get_dists(*, whl_name, requirements, want_abis, index_urls):
             print("WARNING: Could not find a whl or an sdist with sha256={}".format(sha256))  # buildifier: disable=print
 
         # Filter out whls that are not compatible with the target abis and add the sdist
-        dists[key] = select_whls(
-            whls = dists[key],
+        dists = select_whls(
+            whls = dists,
             want_abis = want_abis,
             want_platforms = req.target_platforms,
         )
         if sdist:
-            dists[key].append(sdist)
+            dists.append(sdist)
 
-    return dists
+        if dists:
+            found_dists = True
+        req.dists.extend(dists)
 
-def _get_registrations(*, dists, reqs):
+    return found_dists
+
+def _get_registrations(*, reqs):
     """Convert the sdists and whls into select statements and whl_library registrations.
 
     Args:
-        dists: The whl and sdist sources. There can be many of them, different for
-            different platforms.
         reqs: The requirements for each platform.
     """
     registrations = {}  # repo_name -> args
     found_many = len(reqs) != 1
 
-    dists_ = dists
-    for key, dists in dists_.items():
-        req = reqs[key]
-        for dist in dists:
+    for req in reqs:
+        for dist in req.dists:
             whl_library_args = {
                 "experimental_target_platforms": req.target_platforms,
                 "filename": dist.filename,
@@ -321,9 +321,9 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
             if v == default
         })
 
-        dists = []
+        have_dists = False
         if index_urls:
-            dists = _get_dists(
+            have_dists = _add_dists(
                 whl_name = whl_name,
                 requirements = requirements,
                 want_abis = [
@@ -336,7 +336,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 index_urls = index_urls,
             )
 
-        if dists:
+        if have_dists:
             # pip is not used to download wheels and the python `whl_library` helpers are only extracting things
             whl_library_args.pop("extra_pip_args", None)
 
@@ -352,7 +352,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 whl_library_args["auth_patterns"] = pip_attr.auth_patterns
 
             registrations = _get_registrations(
-                dists = dists,
                 reqs = requirements,
             )
             for suffix, args in registrations.items():
