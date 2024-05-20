@@ -99,16 +99,17 @@ def whl_library_aliases(
         return
 
     for target_name, name in aliases.items():
-        for alias_name, select in extra_aliases.items():
+        for alias_name, s in extra_aliases.items():
+            actual = {
+                k: v.format(target_name = target_name)
+                for k, v in s.items()
+                if k != "no_match_error"
+            }
             native.alias(
                 name = alias_name.format(target_name = target_name),
-                actual = native.select(
-                    {
-                        k: v.format(target_name = target_name)
-                        for k, v in select.items()
-                        if k != "no_match_error"
-                    },
-                    no_match_error = select.get("no_match_error"),
+                actual = select(
+                    actual,
+                    no_match_error = s.get("no_match_error", ""),
                 ),
                 visibility = ["//visibility:private"],
             )
@@ -149,7 +150,7 @@ def _render_whl_library_aliases(
     ))
     if extra_aliases:
         lines.append("extra_aliases = {}".format(
-            render.dict(extra_aliases, value_repr = render.dict),
+            render.dict({k: render.dict(v) for k, v in extra_aliases.items()}, value_repr = lambda x: x),
         ))
     if not has_default:
         lines.append("no_match_error = \"{}\"".format("TODO"))
@@ -428,7 +429,7 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
             if prefix.startswith(":"):
                 prefix = prefix + "_"
             else:
-                prefix = "@{}_{}//:".format(hub_name, whl_repo_name(prefix))
+                prefix = "{}_{}".format(hub_name, whl_repo_name(prefix))
 
             for plat_label in cfgs:
                 if plat_label:
@@ -449,11 +450,12 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
         if result.aliases:
             extra_aliases = {
                 "{}_{}".format(prefix, target_name): _version_select(
+                    hub_name = hub_name,
+                    target_name = target_name,
                     **values
                 )
                 for prefix, values in result.aliases.items()
             }
-            fail(extra_aliases)
 
     if len(config_settings) == 1 and _DEFAULT_CONFIG_SETTING in config_settings:
         return "{prefix}{target_name}".format(
@@ -476,8 +478,17 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
         for repo, v in sorted(items.items())
     }, _DEFAULT_CONFIG_SETTING in config_settings, extra_aliases
 
-def _version_select(*, all_versions, config_setting, filename, version):
-    fail(all_versions, config_setting, filename, version)
+def _version_select(*, hub_name, target_name, all_versions, config_setting, filename, version):
+    # TODO @aignas 2024-05-20: handle: using a version that is higher than the whl version
+    aliases = {
+        "//:is_{}_{}".format(config_setting, config_setting_value): "@{}_{}//:{}".format(
+            hub_name,
+            whl_repo_name(filename),
+            target_name,
+        )
+        for config_setting_value, version in all_versions.items()
+    }
+    return aliases
 
 def _get_dist_config_setting_names(dists, default_version, whl_constraints_and_versions):
     config_settings = {}
