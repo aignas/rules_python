@@ -486,7 +486,8 @@ def _version_select(*, hub_name, target_name, all_versions, config_setting, file
             whl_repo_name(filename),
             target_name,
         )
-        for config_setting_value, version in all_versions.items()
+        for config_setting_value, v in all_versions.items()
+        if all_versions[version] >= v
     }
     return aliases
 
