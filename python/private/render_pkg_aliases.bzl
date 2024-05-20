@@ -100,7 +100,7 @@ def whl_library_aliases(
 
     for target_name, name in aliases.items():
         for alias_name, s in extra_aliases.items():
-            actual = {
+            _actual = {
                 k: v.format(target_name = target_name)
                 for k, v in s.items()
                 if k != "no_match_error"
@@ -108,7 +108,7 @@ def whl_library_aliases(
             native.alias(
                 name = alias_name.format(target_name = target_name),
                 actual = select(
-                    actual,
+                    _actual,
                     no_match_error = s.get("no_match_error", ""),
                 ),
                 visibility = ["//visibility:private"],
@@ -317,6 +317,7 @@ def _get_aliases(*, aliases):
     ret = {}
     versions = {}
     whl_platforms = {}
+    extra_platforms = {}
     for whl_name, pkg_aliases in aliases.items():
         alias_target_platforms = {}
         ret[whl_name] = []
@@ -343,11 +344,14 @@ def _get_aliases(*, aliases):
             whl_platform = parse_whl_name(filename).platform_tag if filename.endswith(".whl") else None
             if whl_platform:
                 for version, p in target_platforms:
+                    if p:
+                        extra_platforms[p] = None
                     whl_platforms.setdefault(whl_platform, {})[(version, p)] = None
 
     if whl_platforms:
         whl_constraints_and_versions = whl_platform_constraints_and_versions(
             whl_platform_tags = whl_platforms,
+            extra_platforms = extra_platforms,
         )
     else:
         whl_constraints_and_versions = None
@@ -429,7 +433,7 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
             if prefix.startswith(":"):
                 prefix = prefix + "_"
             else:
-                prefix = "{}_{}".format(hub_name, whl_repo_name(prefix))
+                prefix = "@{}_{}//:".format(hub_name, whl_repo_name(prefix))
 
             for plat_label in cfgs:
                 if plat_label:
@@ -467,27 +471,28 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
     # statements  These select statements point to the different pip
     # whls that are based on a specific version of Python.
     items = {}
-    for config_setting, repo in config_settings.items():
-        items.setdefault(repo, []).append(config_setting)
+    for config_setting, prefix in config_settings.items():
+        items.setdefault(prefix, []).append(config_setting)
 
     return {
-        tuple(sorted(v)): "@{repo}//:{target_name}".format(
-            repo = repo,
+        tuple(sorted(v)): "{prefix}{target_name}".format(
+            prefix = prefix,
             target_name = target_name,
         )
-        for repo, v in sorted(items.items())
+        for prefix, v in sorted(items.items())
     }, _DEFAULT_CONFIG_SETTING in config_settings, extra_aliases
 
 def _version_select(*, hub_name, target_name, all_versions, config_setting, filename, version):
     # TODO @aignas 2024-05-20: handle: using a version that is higher than the whl version
+    filename_version = all_versions[version]
     aliases = {
         "//:is_{}_{}".format(config_setting, config_setting_value): "@{}_{}//:{}".format(
             hub_name,
             whl_repo_name(filename),
             target_name,
         )
-        for config_setting_value, v in all_versions.items()
-        if all_versions[version] >= v
+        for config_setting_value, version in all_versions.items()
+        if filename_version <= version
     }
     return aliases
 

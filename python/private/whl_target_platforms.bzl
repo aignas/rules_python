@@ -201,13 +201,14 @@ def _cpu_from_tag(tag):
 
     return []
 
-def whl_platform_constraints_and_versions(whl_platform_tags):
+def whl_platform_constraints_and_versions(whl_platform_tags, extra_platforms):
     """Return whl platform constraints and versions.
 
     The is used for constructing the select statements and for constructing the dist config values.
 
     Args:
         whl_platform_tags: A list of platform tags that are used in a hub repo.
+        extra_platforms: extra platforms to add for multi-platform wheels.
 
     Returns:
         A struct with attributes:
@@ -224,6 +225,7 @@ def whl_platform_constraints_and_versions(whl_platform_tags):
     for target_platform in sorted(whl_platform_tags):
         if target_platform == "any":
             continue
+
         for p in whl_target_platforms(target_platform):
             plat_label = "{}_{}".format(p.os, p.cpu)
             constraint_values[plat_label] = [
@@ -244,8 +246,15 @@ def whl_platform_constraints_and_versions(whl_platform_tags):
                 for v in p.versions:
                     osx_versions[(int(v[0]), int(v[1]))] = None
 
+    for plat_label in extra_platforms:
+        os, _, cpu = plat_label.partition("_")
+        constraint_values[plat_label] = [
+            "@platforms//os:" + os,
+            "@platforms//cpu:" + cpu,
+        ]
+
     return struct(
-        constraint_values = constraint_values,
+        constraint_values = dict(sorted(constraint_values.items())),
         osx_versions = _stringify_versions(osx_versions.keys()),
         glibc_versions = _stringify_versions(glibc_versions.keys()),
         muslc_versions = _stringify_versions(muslc_versions.keys()),

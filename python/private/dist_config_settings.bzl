@@ -320,7 +320,7 @@ def dist_config_settings(
 
         string_flag(
             name = version_name,
-            build_setting_default = versions[0],
+            build_setting_default = versions[-1],
             values = versions,
             **kwargs
         )
