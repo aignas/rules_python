@@ -30,6 +30,10 @@ A brief description of the categories of changes:
   marked as `reproducible` and will not include any lock file entries from now
   on.
 
+* (gazelle): Remove gazelle plugin's python deps and make it hermetic. 
+  Introduced a new Go-based helper leveraging tree-sitter for syntax analysis.
+  Implemented the use of `pypi/stdlib-list` for standard library module verification.
+
 ### Fixed
 * (gazelle) Remove `visibility` from `NonEmptyAttr`.
   Now empty(have no `deps/main/srcs/imports` attr) `py_library/test/binary` rules will
@@ -42,6 +46,8 @@ A brief description of the categories of changes:
   also now handled correctly, stabilizing the implementation.
 * (gazelle) Fix Gazelle failing on Windows with
   "panic: runtime error: invalid memory address or nil pointer dereference"
+* (bzlmod) remove `pip.parse(annotations)` attribute as it is unused and has been
+  replaced by whl_modifications.
 
 ### Added
 * (rules) Precompiling Python source at build time is available. but is
@@ -70,9 +76,9 @@ A brief description of the categories of changes:
   with `extra_pip_args = ["--platform=manylinux_2_4_x86_64"]`, that was an
   invalid usage previously but we were not failing the build. From now on this
   is explicitly disallowed.
+* (toolchains) Added riscv64 platform definition for python toolchains.
 
 [precompile-docs]: /precompiling
-
 
 ## [0.32.2] - 2024-05-14
 
