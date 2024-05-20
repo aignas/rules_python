@@ -48,9 +48,10 @@ class OS(Enum):
 class Arch(Enum):
     x86_64 = 1
     x86_32 = 2
-    aarch64 = 3
-    ppc = 4
-    s390x = 5
+    arm = 3
+    aarch64 = 4
+    ppc = 5
+    s390x = 6
     amd64 = x86_64
     arm64 = aarch64
     i386 = x86_32
