@@ -483,7 +483,6 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
     }, _DEFAULT_CONFIG_SETTING in config_settings, extra_aliases
 
 def _version_select(*, hub_name, target_name, all_versions, config_setting, filenames):
-    # TODO @aignas 2024-05-20: handle: using a version that is higher than the whl version
     alias = {}
     for filename, version in sorted(filenames.items(), key = lambda x: all_versions[x[1]]):
         filename_version = all_versions[version]

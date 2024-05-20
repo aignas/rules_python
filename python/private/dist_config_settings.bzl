@@ -164,6 +164,7 @@ def dist_config_settings(
             "whl_abi3": {"whl": "auto", "whl_abi3": "auto"},
             "whl_cpxy": {"whl": "auto", "whl_abi3": "auto", "whl_cpxy": "auto"},
         }.items():  # buildifier: disable=unsorted-dict-items as they have meaning
+
             # [none|abi3|cp]-any.whl
             # the platform suffix is for the cases when we have different dists
             # on different platforms.
@@ -221,92 +222,23 @@ def dist_config_settings(
             else:
                 fail("unknown platform: '{}'".format(plat))
 
-    # TODO @aignas 2024-04-25: if we target a libc version `1.1`, then that
-    # means that the target application has to be compatible with the libc
-    # version of 1.1 or above, which means that our wheels need to be built for
-    # 1.1 or lower.
-    #
-    # This means that a binary with 1.1 libc (or osx version) should match when
-    # the `experimental_whl_foo_version` is set to 1.1 and above, but not when
-    # the flag is set to 1.0. This means that for versions 1.2, 1.1, 1.0 we
-    # have to have a config_setting group layout of something similar to:
-    #   * whl_foo_version_1.2 - matches 1.2
-    #   * whl_foo_version_1.1 - matches 1.2 or 1.1
-    #   * whl_foo_version_1.0 - matches 1.2 or 1.1 or 1.0
-    #
-    # And if we have multiple artifacts matched, I think that the one with the closest
-    # match should take precedence, i.e. if we set the flag value to version 1.3, we
-    # should get whl_foo_version_1.2. Note, that all three wheels are
-    # compatible, but we should somehow get the precedence correct.
-    #
-    # All of the inspiration is coming from the selects.config_setting_group
-    # [1], where they have a select statement, which we can adapt to our
-    # situation like follows:
+    # If we select a whl that is with a platform tag including `1.1`, that
+    # means that the whl will work on a platform where the libc is 1.1 or later
+    # (https://peps.python.org/pep-0600/#core-definition). As such, if the user
+    # wants to target a platform that is 1.3, then a whl with `1.1` version
+    # should be selected if there is no higher version. This means that the
+    # alias can be like:
     #
     # alias(
     #   name = "whl_matching_1.2_or_lower"
-    #   actual = select({
-    #      "flag_eq_1.2": "actual_whl_1.2",
-    #      ":default": "whl_matching_1.1_or_lower",
-    #   })
-    # )
-    #
-    # alias(
-    #   name = "whl_matching_1.1_or_lower"
-    #   actual = select({
-    #      "flag_eq_1.1": "actual_whl_1.1",
-    #      ":default": "whl_matching_1.0",
-    #   })
-    # )
-    #
-    # alias(
-    #   name = "whl_matching_1.0",
     #   actual = select(
-    #      {
+    #       {
+    #          "flag_eq_1.2_or_above": "actual_whl_1.1",
+    #          "flag_eq_1.1": "actual_whl_1.1",
     #          "flag_eq_1.0": "actual_whl_1.0",
-    #      },
-    #      no_match_error = "Could not match, the target supports versions 1.2, 1.1 and 1.0", but you have selected something outside this range.
-    #   )
+    #       },
+    #       no_match_error = "Could not match, the target supports versions 1.2, 1.1 and 1.0", but you have selected something outside this range.
     # )
-    #
-    # alias(
-    #   name = "whl_matching_2.27_or_lower"
-    #   actual = select({
-    #      "flag_eq_2.28": "actual_whl_2.27",  # The highest libc version value as noted
-    #                                          # in the string_flag.
-    #      "flag_eq_2.27": "actual_whl_2.27",
-    #      ":default": "whl_matching_2.22_or_lower",
-    #   })
-    # )
-    #
-    # alias(
-    #   name = "whl_matching_1.1_or_lower"
-    #   actual = select({
-    #      "flag_eq_2.26": "actual_whl_2.22",
-    #      "flag_eq_2.25": "actual_whl_2.22",
-    #      "flag_eq_2.24": "actual_whl_2.22",
-    #      "flag_eq_2.23": "actual_whl_2.22",
-    #      "flag_eq_2.22": "actual_whl_2.22",
-    #      ":default": "whl_matching_2.5",
-    #   })
-    # )
-    #
-    # alias(
-    #   name = "whl_matching_1.0",
-    #   actual = select(
-    #      {
-    #          ...
-    #          "flag_eq_2.5": "actual_whl_2.5",
-    #      },
-    #      no_match_error = "Could not match, the lowest value of libc that is supported is 2.5 (this is the whls property), please select something higher for your target.".
-    #   )
-    # )
-    #
-    # This requires the hub repo to create these extra alias for the special flags, but
-    # it makes the config settings for those special flags independent of python_version,
-    # which is a nice simplification.
-    #
-    # [1]: https://github.com/bazelbuild/bazel-skylib/blob/main/lib/selects.bzl
 
     # FIXME @aignas 2024-04-28: what to do when we cross multiple major versions?
     # maybe there is nothing to be done?
@@ -320,11 +252,13 @@ def dist_config_settings(
 
         string_flag(
             name = version_name,
-            build_setting_default = versions[0],
+            # We chose the latest available version as a default, because lowest version does not work in general
+            build_setting_default = versions[-1],
             values = versions,
             **kwargs
         )
 
+        # Because we want to have a no-match error, this has to be separate from other constraints.
         for version in versions:
             native.config_setting(
                 name = "is_{}_{}".format(version_name, version),
