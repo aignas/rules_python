@@ -54,7 +54,6 @@ Use cases that this code strives to support:
 * select to target a particular osx version
 """
 
-load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load(":config_settings.bzl", "is_python_config_setting")
 
 def dist_config_settings(
@@ -63,8 +62,7 @@ def dist_config_settings(
         constraint_values,
         glibc_versions = None,
         muslc_versions = None,
-        osx_versions = None,
-        **kwargs):
+        osx_versions = None):
     """Create string flags for dist configuration.
 
     Args:
@@ -76,51 +74,7 @@ def dist_config_settings(
         osx_versions: The list of osx versions that we need to support.
         glibc_versions: The list of glibc versions that we need to support.
         muslc_versions: The list of muslc versions that we need to support.
-        **kwargs: Extra args passed to string_flags.
     """
-
-    string_flag(
-        name = "whl",
-        build_setting_default = "auto",
-        values = ["auto", "no"],
-        **kwargs
-    )
-
-    string_flag(
-        name = "whl_abi3",
-        build_setting_default = "auto",
-        values = ["auto", "no"],
-        **kwargs
-    )
-
-    string_flag(
-        name = "whl_cpxy",
-        build_setting_default = "auto",
-        values = ["auto", "no"],
-        **kwargs
-    )
-
-    string_flag(
-        name = "whl_plat",
-        build_setting_default = "auto",
-        values = ["auto", "no"],
-        **kwargs
-    )
-
-    string_flag(
-        name = "whl_osx_arch",
-        build_setting_default = "singlearch",
-        values = ["singlearch", "multiarch"],
-        **kwargs
-    )
-
-    string_flag(
-        name = "whl_linux_libc",
-        build_setting_default = "glibc",
-        values = ["glibc", "musl"],
-        **kwargs
-    )
-
     presets = {
         name: {
             "constraint_values": cvs,
@@ -164,7 +118,6 @@ def dist_config_settings(
             "whl_abi3": {"whl": "auto", "whl_abi3": "auto"},
             "whl_cpxy": {"whl": "auto", "whl_abi3": "auto", "whl_cpxy": "auto"},
         }.items():  # buildifier: disable=unsorted-dict-items as they have meaning
-
             # [none|abi3|cp]-any.whl
             # the platform suffix is for the cases when we have different dists
             # on different platforms.
@@ -250,20 +203,21 @@ def dist_config_settings(
         if not versions:
             continue
 
-        string_flag(
-            name = version_name,
-            # We chose the latest available version as a default, because lowest version does not work in general
-            build_setting_default = versions[-1],
-            values = versions,
-            **kwargs
-        )
-
         # Because we want to have a no-match error, this has to be separate from other constraints.
+        native.config_setting(
+            name = "is_{}_default".format(version_name),
+            flag_values = {
+                Label("//python/config_settings:pypi_{}".format(version_name)): "",
+            },
+            visibility = [
+                native.package_relative_label(":__subpackages__"),
+            ],
+        )
         for version in versions:
             native.config_setting(
                 name = "is_{}_{}".format(version_name, version),
                 flag_values = {
-                    ":{}".format(version_name): version,
+                    Label("//python/config_settings:pypi_{}".format(version_name)): version,
                 },
                 visibility = [
                     native.package_relative_label(":__subpackages__"),
@@ -280,7 +234,7 @@ def _config_settings(
     name = "_".join(["is"] + [n for n in name if n and n != "auto"])
 
     flag_values = {
-        k: v
+        str(Label("//python/config_settings:pypi_{}".format(k))): v
         for k, v in flag_values.items()
         if v != None
     }

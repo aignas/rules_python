@@ -161,6 +161,60 @@ def is_python_config_setting(name, *, python_version, reuse_conditions = None, *
         visibility = kwargs.get("visibility", []),
     )
 
+def _whl_string_flags(name, **kwargs):
+    string_flag(
+        name = "{}_whl".format(name),
+        build_setting_default = "auto",
+        values = ["auto", "no"],
+        **kwargs
+    )
+
+    string_flag(
+        name = "{}_whl_abi3".format(name),
+        build_setting_default = "auto",
+        values = ["auto", "no"],
+        **kwargs
+    )
+
+    string_flag(
+        name = "{}_whl_cpxy".format(name),
+        build_setting_default = "auto",
+        values = ["auto", "no"],
+        **kwargs
+    )
+
+    string_flag(
+        name = "{}_whl_plat".format(name),
+        build_setting_default = "auto",
+        values = ["auto", "no"],
+        **kwargs
+    )
+
+    string_flag(
+        name = "{}_whl_osx_arch".format(name),
+        build_setting_default = "singlearch",
+        values = ["singlearch", "multiarch"],
+        **kwargs
+    )
+
+    string_flag(
+        name = "{}_whl_linux_libc".format(name),
+        build_setting_default = "glibc",
+        values = ["glibc", "musl"],
+        **kwargs
+    )
+
+    for flag_name in [
+        "{}_whl_glibc_version".format(name),
+        "{}_whl_muslc_version".format(name),
+        "{}_whl_osx_version".format(name),
+    ]:
+        string_flag(
+            name = flag_name,
+            build_setting_default = "",
+            **kwargs
+        )
+
 def construct_config_settings(name = None):  # buildifier: disable=function-docstring
     """Create a 'python_version' config flag and construct all config settings used in rules_python.
 
@@ -178,6 +232,12 @@ def construct_config_settings(name = None):  # buildifier: disable=function-docs
         # a select condition when they shouldn't.
         build_setting_default = "",
         values = [""] + VERSION_FLAG_VALUES.keys(),
+        visibility = ["//visibility:public"],
+    )
+
+    _whl_string_flags(
+        name = "pypi",
+        # Public only to be used in hub repos
         visibility = ["//visibility:public"],
     )
 

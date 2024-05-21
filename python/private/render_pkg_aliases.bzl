@@ -402,6 +402,7 @@ def whl_select_dict(hub_name, target_name, default_version, dists = None, repo_a
             values that we should use for this whl.
         condition_package: str, used in tests to change where the conditions
             are located.
+        whl_constraints_and_versions: TODO
 
     Returns:
         a dict or a string that can be used in an alias and a second parameter
@@ -486,6 +487,13 @@ def _version_select(*, hub_name, target_name, all_versions, config_setting, file
     alias = {}
     for filename, version in sorted(filenames.items(), key = lambda x: all_versions[x[1]]):
         filename_version = all_versions[version]
+        if not alias:
+            alias["//:is_{}_default".format(config_setting)] = "@{}_{}//:{}".format(
+                hub_name,
+                whl_repo_name(filename),
+                target_name,
+            )
+
         alias.update({
             "//:is_{}_{}".format(config_setting, config_setting_value): "@{}_{}//:{}".format(
                 hub_name,
