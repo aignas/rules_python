@@ -512,6 +512,13 @@ def _get_dist_config_setting_names(dists, default_version, whl_constraints_and_v
     defaults = {}
     extras = {}
 
+    # TODO @aignas 2024-04-30: naming
+    flavor_to_constraints = {
+        "": ("whl_osx_version", whl_constraints_and_versions.osx_versions),
+        "many": ("whl_glibc_version", whl_constraints_and_versions.glibc_versions),
+        "musl": ("whl_muslc_version", whl_constraints_and_versions.muslc_versions),
+    }
+
     # sort the incoming dists for deterministic output
     for filename, target_platforms_ in sorted(dists):
         extra_aliases = {}
@@ -523,6 +530,7 @@ def _get_dist_config_setting_names(dists, default_version, whl_constraints_and_v
                 abis = [parsed.abi_tag]
                 if parsed.platform_tag == "any":
                     defaults[filename] = None
+
             elif parsed.abi_tag.startswith("cp3"):
                 abis = ["cpxy"]
             else:
@@ -545,14 +553,8 @@ def _get_dist_config_setting_names(dists, default_version, whl_constraints_and_v
                     # TODO @aignas 2024-04-29: use an alias label instead
                     platforms.append("{}_{}".format(head, tail))
 
-                    # TODO @aignas 2024-04-30: naming
-                    foo = {
-                        "": ("whl_osx_version", whl_constraints_and_versions.osx_versions),
-                        "many": ("whl_glibc_version", whl_constraints_and_versions.glibc_versions),
-                        "musl": ("whl_muslc_version", whl_constraints_and_versions.muslc_versions),
-                    }
                     for v in p.versions:
-                        config_setting_name, all_versions = foo[p.flavor]
+                        config_setting_name, all_versions = flavor_to_constraints[p.flavor]
                         version_aliases.setdefault("{}_{}".format(head, tail), {
                             "all_versions": all_versions,
                             "config_setting": config_setting_name,
