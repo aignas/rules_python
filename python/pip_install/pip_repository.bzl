@@ -265,13 +265,6 @@ def _create_repository_execution_environment(rctx, python_interpreter):
 
     return env
 
-_BUILD_FILE_CONTENTS = """\
-package(default_visibility = ["//visibility:public"])
-
-# Ensure the `requirements.bzl` source can be accessed by stardoc, since users load() from it
-exports_files(["requirements.bzl"])
-"""
-
 def _pip_repository_impl(rctx):
     requirements_by_platform = parse_requirements(
         rctx,
@@ -373,7 +366,6 @@ def _pip_repository_impl(rctx):
     for path, contents in aliases.items():
         rctx.file(path, contents)
 
-    rctx.file("BUILD.bazel", _BUILD_FILE_CONTENTS)
     rctx.template("requirements.bzl", rctx.attr._template, substitutions = {
         "    # %%GROUP_LIBRARY%%": """\
     group_repo = "{name}__groups"

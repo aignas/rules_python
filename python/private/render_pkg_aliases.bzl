@@ -51,6 +51,13 @@ If the value is missing, then the "default" Python version is being used,
 which has a "null" version value and will not match version constraints.
 """
 
+_ROOT_BUILD_FILE_CONTENTS = """\
+package(default_visibility = ["//visibility:public"])
+
+# Ensure the `requirements.bzl` source can be accessed by stardoc, since users load() from it
+exports_files(["requirements.bzl"])
+"""
+
 def _render_whl_library_alias(
         *,
         name,
@@ -77,7 +84,7 @@ def _render_whl_library_alias(
     no_match_error = "_NO_MATCH_ERROR"
     for alias in sorted(aliases, key = lambda x: x.version):
         actual = "@{repo}//:{name}".format(repo = alias.repo, name = target_name)
-        selects.setdefault(actual, []).append(alias.config_setting)
+        selects.setdefault(actual, []).append("//_config:is_python_{}".format(alias.version))
         if alias.version == default_version:
             selects[actual].append("//conditions:default")
             no_match_error = None
@@ -167,6 +174,21 @@ def _render_common_aliases(*, name, aliases, default_version = None, group_name 
 
     return "\n\n".join(lines)
 
+def _render_pip_config_settings(supported_versions):
+    return """\
+load("@rules_python//python/private:pip_config_settings.bzl", "pip_config_settings")
+
+pip_config_settings(
+    name = "pip_config_settings",
+    python_versions = {python_versions},
+    target_platforms = [],
+    visibility = ["//:__subpackages__"],
+)
+
+""".format(
+        python_versions = render.list(supported_versions),
+    )
+
 def render_pkg_aliases(*, aliases, default_version = None, requirement_cycles = None):
     """Create alias declarations for each PyPI package.
 
@@ -202,6 +224,13 @@ def render_pkg_aliases(*, aliases, default_version = None, requirement_cycles = 
             for whl_name in group_whls
         }
 
+    supported_versions = sorted({
+        alias.version: None
+        for pkg_aliases in aliases.values()
+        for alias in pkg_aliases
+        if alias.version
+    })
+
     files = {
         "{}/BUILD.bazel".format(normalize_name(name)): _render_common_aliases(
             name = normalize_name(name),
@@ -211,6 +240,13 @@ def render_pkg_aliases(*, aliases, default_version = None, requirement_cycles = 
         ).strip()
         for name, pkg_aliases in aliases.items()
     }
+
+    files["BUILD.bazel"] = _ROOT_BUILD_FILE_CONTENTS
+    if supported_versions:
+        files["_config/BUILD.bazel"] = _render_pip_config_settings(
+            supported_versions = supported_versions,
+        )
+
     if requirement_cycles:
         files["_groups/BUILD.bazel"] = generate_group_library_build_bazel("", requirement_cycles)
     return files

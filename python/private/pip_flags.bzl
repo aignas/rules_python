@@ -18,7 +18,7 @@ NOTE: The transitive loads of this should be kept minimal. This avoids loading
 unnecessary files when all that are needed are flag definitions.
 """
 
-load("//python/private:enum.bzl", "enum")
+load(":enum.bzl", "enum")
 
 # Determines if we should use whls for third party
 #
@@ -27,44 +27,9 @@ UseWhlFlag = enum(
     # Automatically decide the effective value based on environment, target
     # platform and the presence of distributions for a particular package.
     AUTO = "auto",
+    # Do not use `sdist` and fail if there are no available whls suitable for the target platform.
+    ONLY = "only",
     # Do not use whl distributions and instead build the whls from `sdist`.
-    NO = "no",
-)
-
-# Determines if we should enable usage of `abi3` wheels.
-#
-# buildifier: disable=name-conventions
-UseWhlAbi3Flag = enum(
-    # Automatically decide the effective value based on environment, target
-    # platform and the presence of distributions for a particular package.
-    AUTO = "auto",
-    # Do not use whl distributions with the `abi3` tag
-    NO = "no",
-)
-
-# Determines if we should enable usage of `cpxy` wheels (e.g. cp38, cp311, etc).
-#
-# buildifier: disable=name-conventions
-UseWhlAbiCpFlag = enum(
-    # Automatically decide the effective value based on environment, target
-    # platform and the presence of distributions for a particular package.
-    AUTO = "auto",
-    # Do not use whl distributions with the `cpxy` tag. This could be useful to
-    # keep the dependency closure compatible with any Python toolchain and it
-    # could be used in scenarios where custom toolchains are defined and used.
-    NO = "no",
-)
-
-# Determines whether platform-specific wheels should be used.
-#
-# buildifier: disable=name-conventions
-UseWhlPlatformFlag = enum(
-    # Automatically decide the effective value based on environment, target
-    # platform and the presence of distributions for a particular package.
-    AUTO = "auto",
-    # Do not use whl distributions that are targeting a particular platform.
-    # This allows the host platform to use the same python packages as any
-    # other target platform, which could be useful in more complex cases.
     NO = "no",
 )
 
@@ -82,8 +47,21 @@ UniversalWhlFlag = enum(
 #
 # buildifier: disable=name-conventions
 WhlLibcFlag = enum(
-    # Prefer glibc wheels (e.g. manylinux_2_17_x86_64)
+    # Prefer glibc wheels (e.g. manylinux_2_17_x86_64 or linux_x86_64)
     GLIBC = "glibc",
     # Prefer musl wheels (e.g. musllinux_2_17_x86_64)
     MUSL = "musl",
 )
+
+INTERNAL_FLAGS = [
+    "whl",
+    "whl_plat",
+    "whl_plat_abi3",
+    "whl_plat_pycp",
+    "whl_plat_pycp_abi3",
+    "whl_plat_pycp_abicp",
+    "whl_py3",
+    "whl_py3_abi3",
+    "whl_pycp",
+    "whl_pycp_abi3",
+]

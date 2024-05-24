@@ -8,11 +8,9 @@ load(
 )
 load(
     "//python/private:pip_flags.bzl",
+    "INTERNAL_FLAGS",
     "UniversalWhlFlag",
-    "UseWhlAbi3Flag",
-    "UseWhlAbiCpFlag",
     "UseWhlFlag",
-    "UseWhlPlatformFlag",
     "WhlLibcFlag",
 )
 load(":config_settings.bzl", "construct_config_settings")
@@ -73,30 +71,6 @@ string_flag(
 )
 
 string_flag(
-    name = "pip_whl_abi3",
-    build_setting_default = UseWhlAbi3Flag.AUTO,
-    values = sorted(UseWhlAbi3Flag.__members__.values()),
-    # NOTE: Only public because it is used in pip hub repos.
-    visibility = ["//visibility:public"],
-)
-
-string_flag(
-    name = "pip_whl_cpxy",
-    build_setting_default = UseWhlAbiCpFlag.AUTO,
-    values = sorted(UseWhlAbiCpFlag.__members__.values()),
-    # NOTE: Only public because it is used in pip hub repos.
-    visibility = ["//visibility:public"],
-)
-
-string_flag(
-    name = "pip_whl_plat",
-    build_setting_default = UseWhlPlatformFlag.AUTO,
-    values = sorted(UseWhlPlatformFlag.__members__.values()),
-    # NOTE: Only public because it is used in pip hub repos.
-    visibility = ["//visibility:public"],
-)
-
-string_flag(
     name = "pip_whl_osx_arch",
     build_setting_default = UniversalWhlFlag.ARCH,
     values = sorted(UniversalWhlFlag.__members__.values()),
@@ -132,3 +106,15 @@ string_flag(
     # NOTE: Only public because it is used in pip hub repos.
     visibility = ["//visibility:public"],
 )
+
+# private pip whl related flags. Their values cannot be changed and they
+# are an implementation detail of how `pip_config_settings` work.
+[
+    string_flag(
+        name = "_internal_pip_" + flag,
+        build_setting_default = "",
+        values = [""],
+        visibility = ["//visibility:public"],
+    )
+    for flag in INTERNAL_FLAGS
+]

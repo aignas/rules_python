@@ -17,13 +17,6 @@
 load("//python/private:render_pkg_aliases.bzl", "render_pkg_aliases", "whl_alias")
 load("//python/private:text_util.bzl", "render")
 
-_BUILD_FILE_CONTENTS = """\
-package(default_visibility = ["//visibility:public"])
-
-# Ensure the `requirements.bzl` source can be accessed by stardoc, since users load() from it
-exports_files(["requirements.bzl"])
-"""
-
 def _pip_repository_impl(rctx):
     bzl_packages = rctx.attr.whl_map.keys()
     aliases = render_pkg_aliases(
@@ -43,7 +36,6 @@ def _pip_repository_impl(rctx):
     # `requirement`, et al. macros.
     macro_tmpl = "@@{name}//{{}}:{{}}".format(name = rctx.attr.name)
 
-    rctx.file("BUILD.bazel", _BUILD_FILE_CONTENTS)
     rctx.template("requirements.bzl", rctx.attr._template, substitutions = {
         "%%ALL_DATA_REQUIREMENTS%%": render.list([
             macro_tmpl.format(p, "data")
