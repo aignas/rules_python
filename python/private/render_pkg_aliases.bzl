@@ -610,7 +610,8 @@ def _get_dist_config_setting_names(dists, default_version, whl_constraints_and_v
             f,
         ),
     )
-    config_settings[""] = defaults[0]
+    if defaults:
+        config_settings[""] = defaults[0]
 
     ret = {}
     for setting, filename in config_settings.items():
