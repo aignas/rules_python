@@ -6,6 +6,15 @@ load(
     "PrecompileSourceRetentionFlag",
     "PycCollectionFlag",
 )
+load(
+    "//python/private:pip_flags.bzl",
+    "UniversalWhlFlag",
+    "UseWhlAbi3Flag",
+    "UseWhlAbiCpFlag",
+    "UseWhlFlag",
+    "UseWhlPlatformFlag",
+    "WhlLibcFlag",
+)
 load(":config_settings.bzl", "construct_config_settings")
 
 filegroup(
@@ -50,5 +59,76 @@ string_flag(
     build_setting_default = PycCollectionFlag.DISABLED,
     values = sorted(PycCollectionFlag.__members__.values()),
     # NOTE: Only public because its an implicit dependency
+    visibility = ["//visibility:public"],
+)
+
+# pip.parse related flags
+
+string_flag(
+    name = "pip_whl",
+    build_setting_default = UseWhlFlag.AUTO,
+    values = sorted(UseWhlFlag.__members__.values()),
+    # NOTE: Only public because it is used in pip hub repos.
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "pip_whl_abi3",
+    build_setting_default = UseWhlAbi3Flag.AUTO,
+    values = sorted(UseWhlAbi3Flag.__members__.values()),
+    # NOTE: Only public because it is used in pip hub repos.
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "pip_whl_cpxy",
+    build_setting_default = UseWhlAbiCpFlag.AUTO,
+    values = sorted(UseWhlAbiCpFlag.__members__.values()),
+    # NOTE: Only public because it is used in pip hub repos.
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "pip_whl_plat",
+    build_setting_default = UseWhlPlatformFlag.AUTO,
+    values = sorted(UseWhlPlatformFlag.__members__.values()),
+    # NOTE: Only public because it is used in pip hub repos.
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "pip_whl_osx_arch",
+    build_setting_default = UniversalWhlFlag.ARCH,
+    values = sorted(UniversalWhlFlag.__members__.values()),
+    # NOTE: Only public because it is used in pip hub repos.
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "pip_whl_linux_libc",
+    build_setting_default = WhlLibcFlag.GLIBC,
+    values = sorted(WhlLibcFlag.__members__.values()),
+    # NOTE: Only public because it is used in pip hub repos.
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "pip_whl_glibc_version",
+    build_setting_default = "",
+    # NOTE: Only public because it is used in pip hub repos.
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "pip_whl_muslc_version",
+    build_setting_default = "",
+    # NOTE: Only public because it is used in pip hub repos.
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "pip_whl_osx_version",
+    build_setting_default = "",
+    # NOTE: Only public because it is used in pip hub repos.
     visibility = ["//visibility:public"],
 )
