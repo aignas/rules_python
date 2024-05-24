@@ -62,7 +62,8 @@ def dist_config_settings(
         constraint_values,
         glibc_versions = None,
         muslc_versions = None,
-        osx_versions = None):
+        osx_versions = None,
+        visibility = None):
     """Create string flags for dist configuration.
 
     Args:
@@ -74,14 +75,14 @@ def dist_config_settings(
         osx_versions: The list of osx versions that we need to support.
         glibc_versions: The list of glibc versions that we need to support.
         muslc_versions: The list of muslc versions that we need to support.
+        visibility: The visibility of the targets.
     """
+    visibility = visibility or [native.package_relative_label(":__subpackages__")]
     presets = {
         name: {
             "constraint_values": cvs,
             "python_versions": python_versions,
-            "visibility": [
-                native.package_relative_label(":__subpackages__"),
-            ],
+            "visibility": visibility,
         }
         for name, cvs in ({"": None} | (constraint_values or {})).items()
     }
@@ -209,9 +210,7 @@ def dist_config_settings(
             flag_values = {
                 Label("//python/config_settings:pypi_{}".format(version_name)): "",
             },
-            visibility = [
-                native.package_relative_label(":__subpackages__"),
-            ],
+            visibility = visibility,
         )
         for version in versions:
             native.config_setting(
@@ -219,9 +218,7 @@ def dist_config_settings(
                 flag_values = {
                     Label("//python/config_settings:pypi_{}".format(version_name)): version,
                 },
-                visibility = [
-                    native.package_relative_label(":__subpackages__"),
-                ],
+                visibility = visibility,
             )
 
 def _config_settings(
