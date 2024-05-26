@@ -17,18 +17,37 @@
 load("//python/private:render_pkg_aliases.bzl", "render_pkg_aliases", "whl_alias")
 load("//python/private:text_util.bzl", "render")
 
+_BUILD_FILE_CONTENTS = """\
+package(default_visibility = ["//visibility:public"])
+
+# Ensure the `requirements.bzl` source can be accessed by stardoc, since users load() from it
+exports_files(["requirements.bzl"])
+"""
+
 def _pip_repository_impl(rctx):
     bzl_packages = rctx.attr.whl_map.keys()
-    aliases = render_pkg_aliases(
-        aliases = {
-            key: [whl_alias(**v) for v in json.decode(values)]
-            for key, values in rctx.attr.whl_map.items()
-        },
-        default_version = rctx.attr.default_version,
+    aliases = {
+        key: [whl_alias(**v) for v in json.decode(values)]
+        for key, values in rctx.attr.whl_map.items()
+    }
+    rendered_aliases = render_pkg_aliases(
+        aliases = aliases,
+        default_config_setting = "//_config:is_python_" + rctx.attr.default_version,
         requirement_cycles = rctx.attr.groups,
     )
-    for path, contents in aliases.items():
+    for path, contents in rendered_aliases.items():
         rctx.file(path, contents)
+
+    rctx.file("BUILD.bazel", _BUILD_FILE_CONTENTS)
+    supported_versions = sorted({
+        alias.version: None
+        for pkg_aliases in aliases.values()
+        for alias in pkg_aliases
+        if alias.version
+    })
+    rctx.file("_config/BUILD.bazel", _render_pip_config_settings(
+        supported_versions = supported_versions,
+    ))
 
     # NOTE: we are using the canonical name with the double '@' in order to
     # always uniquely identify a repository, as the labels are being passed as
@@ -52,6 +71,21 @@ def _pip_repository_impl(rctx):
         "%%MACRO_TMPL%%": macro_tmpl,
         "%%NAME%%": rctx.attr.repo_name,
     })
+
+def _render_pip_config_settings(supported_versions):
+    return """\
+load("@rules_python//python/private:pip_config_settings.bzl", "pip_config_settings")
+
+pip_config_settings(
+    name = "pip_config_settings",
+    python_versions = {python_versions},
+    target_platforms = [],
+    visibility = ["//:__subpackages__"],
+)
+
+""".format(
+        python_versions = render.list(supported_versions),
+    )
 
 pip_repository_attrs = {
     "default_version": attr.string(

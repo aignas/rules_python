@@ -100,7 +100,7 @@ _tests.append(_test_legacy_aliases)
 
 def _test_bzlmod_aliases(env):
     actual = render_pkg_aliases(
-        default_version = "3.2",
+        default_config_setting = "//:my_config_setting",
         aliases = {
             "bar-baz": [
                 whl_alias(version = "3.2", repo = "pypi_32_bar_baz", config_setting = "//:my_config_setting"),
@@ -174,7 +174,7 @@ _tests.append(_test_bzlmod_aliases)
 
 def _test_bzlmod_aliases_with_no_default_version(env):
     actual = render_pkg_aliases(
-        default_version = None,
+        default_config_setting = None,
         aliases = {
             "bar-baz": [
                 whl_alias(
@@ -198,11 +198,10 @@ _NO_MATCH_ERROR = \"\"\"\\
 No matching wheel for current configuration's Python version.
 
 The current build configuration's Python version doesn't match any of the Python
-versions available for this wheel. This wheel supports the following Python versions:
-    3.1, 3.2
-
-As matched by the `@rules_python//python/config_settings:is_python_<version>`
-configuration settings.
+wheels available for this wheel. This wheel supports the following Python
+configuration settings:
+    //_config:is_python_3.1
+    @@//python/config_settings:is_python_3.2
 
 To determine the current configuration's Python version, run:
     `bazel config <config id>` (shown further below)
@@ -222,7 +221,7 @@ alias(
     name = "pkg",
     actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:pkg",
+            "//_config:is_python_3.1": "@pypi_31_bar_baz//:pkg",
             "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:pkg",
         },
         no_match_error = _NO_MATCH_ERROR,
@@ -233,7 +232,7 @@ alias(
     name = "whl",
     actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:whl",
+            "//_config:is_python_3.1": "@pypi_31_bar_baz//:whl",
             "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:whl",
         },
         no_match_error = _NO_MATCH_ERROR,
@@ -244,7 +243,7 @@ alias(
     name = "data",
     actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:data",
+            "//_config:is_python_3.1": "@pypi_31_bar_baz//:data",
             "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:data",
         },
         no_match_error = _NO_MATCH_ERROR,
@@ -255,7 +254,7 @@ alias(
     name = "dist_info",
     actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:dist_info",
+            "//_config:is_python_3.1": "@pypi_31_bar_baz//:dist_info",
             "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:dist_info",
         },
         no_match_error = _NO_MATCH_ERROR,
@@ -274,9 +273,10 @@ def _test_bzlmod_aliases_for_non_root_modules(env):
         # as _test_bzlmod_aliases.
         #
         # However, if the root module uses a different default version than the
-        # non-root module, then we will have a no-match-error because the default_version
-        # is not in the list of the versions in the whl_map.
-        default_version = "3.3",
+        # non-root module, then we will have a no-match-error because the
+        # default_config_setting is not in the list of the versions in the
+        # whl_map.
+        default_config_setting = "//_config:is_python_3.3",
         aliases = {
             "bar-baz": [
                 whl_alias(version = "3.2", repo = "pypi_32_bar_baz"),
@@ -295,11 +295,10 @@ _NO_MATCH_ERROR = \"\"\"\\
 No matching wheel for current configuration's Python version.
 
 The current build configuration's Python version doesn't match any of the Python
-versions available for this wheel. This wheel supports the following Python versions:
-    3.1, 3.2
-
-As matched by the `@rules_python//python/config_settings:is_python_<version>`
-configuration settings.
+wheels available for this wheel. This wheel supports the following Python
+configuration settings:
+    //_config:is_python_3.1
+    //_config:is_python_3.2
 
 To determine the current configuration's Python version, run:
     `bazel config <config id>` (shown further below)
@@ -319,8 +318,8 @@ alias(
     name = "pkg",
     actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:pkg",
-            "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:pkg",
+            "//_config:is_python_3.1": "@pypi_31_bar_baz//:pkg",
+            "//_config:is_python_3.2": "@pypi_32_bar_baz//:pkg",
         },
         no_match_error = _NO_MATCH_ERROR,
     ),
@@ -330,8 +329,8 @@ alias(
     name = "whl",
     actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:whl",
-            "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:whl",
+            "//_config:is_python_3.1": "@pypi_31_bar_baz//:whl",
+            "//_config:is_python_3.2": "@pypi_32_bar_baz//:whl",
         },
         no_match_error = _NO_MATCH_ERROR,
     ),
@@ -341,8 +340,8 @@ alias(
     name = "data",
     actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:data",
-            "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:data",
+            "//_config:is_python_3.1": "@pypi_31_bar_baz//:data",
+            "//_config:is_python_3.2": "@pypi_32_bar_baz//:data",
         },
         no_match_error = _NO_MATCH_ERROR,
     ),
@@ -352,21 +351,21 @@ alias(
     name = "dist_info",
     actual = selects.with_or(
         {
-            "@@//python/config_settings:is_python_3.1": "@pypi_31_bar_baz//:dist_info",
-            "@@//python/config_settings:is_python_3.2": "@pypi_32_bar_baz//:dist_info",
+            "//_config:is_python_3.1": "@pypi_31_bar_baz//:dist_info",
+            "//_config:is_python_3.2": "@pypi_32_bar_baz//:dist_info",
         },
         no_match_error = _NO_MATCH_ERROR,
     ),
 )"""
 
     env.expect.that_collection(actual.keys()).contains_exactly([want_key])
-    env.expect.that_str(actual[want_key]).equals(_normalize_label_strings(want_content))
+    env.expect.that_str(actual[want_key]).equals(want_content)
 
 _tests.append(_test_bzlmod_aliases_for_non_root_modules)
 
 def _test_aliases_are_created_for_all_wheels(env):
     actual = render_pkg_aliases(
-        default_version = "3.2",
+        default_config_setting = "//_config:is_python_3.2",
         aliases = {
             "bar": [
                 whl_alias(version = "3.1", repo = "pypi_31_bar"),
@@ -390,7 +389,7 @@ _tests.append(_test_aliases_are_created_for_all_wheels)
 
 def _test_aliases_with_groups(env):
     actual = render_pkg_aliases(
-        default_version = "3.2",
+        default_config_setting = "//_config:is_python_3.2",
         aliases = {
             "bar": [
                 whl_alias(version = "3.1", repo = "pypi_31_bar"),
