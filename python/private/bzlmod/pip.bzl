@@ -30,7 +30,6 @@ load("//python/private:parse_whl_name.bzl", "parse_whl_name")
 load("//python/private:pypi_index.bzl", "simpleapi_download")
 load("//python/private:render_pkg_aliases.bzl", "whl_alias")
 load("//python/private:version_label.bzl", "version_label")
-load("//python/private:whl_target_platforms.bzl", "select_whl")
 load(":pip_repository.bzl", "pip_repository")
 
 def _parse_version(version):
@@ -202,29 +201,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
 
     repository_platform = host_platform(module_ctx.os)
     for whl_name, requirements in requirements_by_platform.items():
-        requirement = select_requirement(
-            requirements,
-            platform = repository_platform,
-        )
-        if not requirement:
-            # Sometimes the package is not present for host platform if there
-            # are whls specified only in particular requirements files, in that
-            # case just continue, however, if the download_only flag is set up,
-            # then the user can also specify the target platform of the wheel
-            # packages they want to download, in that case there will be always
-            # a requirement here, so we will not be in this code branch.
-            continue
-
-        distribution = None
-        if requirement.whls or requirement.sdists:
-            distribution = select_whl(
-                whls = requirement.whls,
-                want_platform = repository_platform,
-            ) or requirement.sdists[0] if requirement.sdists else None
-
-            if not distribution:
-                print("WARNING: falling back to pip for installing the right file for {}".format(requirement.requirement_line))  # buildifier: disable=print
-
         # We are not using the "sanitized name" because the user
         # would need to guess what name we modified the whl name
         # to.
@@ -236,11 +212,9 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
 
         # Construct args separately so that the lock file can be smaller and does not include unused
         # attrs.
-        repo_name = "{}_{}".format(pip_name, whl_name)
         whl_library_args = dict(
             repo = pip_name,
             dep_template = "@{}//{{name}}:{{target}}".format(hub_name),
-            requirement = requirement.requirement_line,
         )
         maybe_args = dict(
             # The following values are safe to omit if they have false like values
@@ -250,7 +224,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
             environment = pip_attr.environment,
             envsubst = pip_attr.envsubst,
             experimental_target_platforms = pip_attr.experimental_target_platforms,
-            extra_pip_args = requirement.extra_pip_args,
             group_deps = group_deps,
             group_name = group_name,
             pip_data_exclude = pip_attr.pip_data_exclude,
@@ -270,24 +243,73 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
         )
         whl_library_args.update({k: v for k, (v, default) in maybe_args_with_default.items() if v == default})
 
-        if distribution:
-            whl_library_args["requirement"] = requirement.srcs.requirement
-            whl_library_args["urls"] = [distribution.url]
-            whl_library_args["sha256"] = distribution.sha256
-            whl_library_args["filename"] = distribution.filename
-            if pip_attr.netrc:
-                whl_library_args["netrc"] = pip_attr.netrc
-            if pip_attr.auth_patterns:
-                whl_library_args["auth_patterns"] = pip_attr.auth_patterns
+        if pip_attr.experimental_index_url:
+            # TODO @aignas 2024-05-26: move to a separate function
+            found_something = False
+            for requirement in requirements:
+                for distribution in (requirement.whls + requirement.sdists):
+                    found_something = True
+                    if pip_attr.netrc:
+                        whl_library_args["netrc"] = pip_attr.netrc
+                    if pip_attr.auth_patterns:
+                        whl_library_args["auth_patterns"] = pip_attr.auth_patterns
 
-            # pip is not used to download wheels and the python `whl_library` helpers are only extracting things
-            whl_library_args.pop("extra_pip_args", None)
+                    # pip is not used to download wheels and the python `whl_library` helpers are only extracting things
+                    whl_library_args.pop("extra_pip_args", None)
 
-            # This is no-op because pip is not used to download the wheel.
-            whl_library_args.pop("download_only", None)
+                    # This is no-op because pip is not used to download the wheel.
+                    whl_library_args.pop("download_only", None)
+
+                    repo_name = "{}_{}".format(pip_name, distribution.filename)
+                    whl_library_args["requirement"] = requirement.srcs.requirement
+                    whl_library_args["urls"] = [distribution.url]
+                    whl_library_args["sha256"] = distribution.sha256
+                    whl_library_args["filename"] = distribution.filename
+                    whl_library_args["experimental_target_platforms"] = requirement.target_platforms
+
+                    # Pure python wheels or sdists may need to have a platform here
+                    target_platforms = None
+                    if distribution.filename.endswith("-any.whl") or not distribution.filename.endswith(".whl"):
+                        if len(requirements) > 1:
+                            target_platforms = requirement.target_platforms
+
+                    whl_library(name = repo_name, **dict(sorted(whl_library_args.items())))
+
+                    whl_map[hub_name].setdefault(whl_name, []).append(
+                        whl_alias(
+                            repo = repo_name,
+                            version = major_minor,
+                            filename = distribution.filename,
+                            target_platforms = target_platforms,
+                        ),
+                    )
+
+            if found_something:
+                continue
+
+        # TODO @aignas 2024-05-26: fallback
+        requirement = select_requirement(
+            requirements,
+            platform = repository_platform,
+        )
+        if not requirement:
+            # Sometimes the package is not present for host platform if there
+            # are whls specified only in particular requirements files, in that
+            # case just continue, however, if the download_only flag is set up,
+            # then the user can also specify the target platform of the wheel
+            # packages they want to download, in that case there will be always
+            # a requirement here, so we will not be in this code branch.
+            continue
+        elif pip_attr.experimental_index_url:
+            print("WARNING: falling back to pip for installing the right file for {}".format(requirement.requirement_line))  # buildifier: disable=print
+
+        whl_library_args["requirement"] = requirement.requirement_line
+        if requirement.extra_pip_args:
+            whl_library_args["extra_pip_args"] = requirement.extra_pip_args
 
         # We sort so that the lock-file remains the same no matter the order of how the
         # args are manipulated in the code going before.
+        repo_name = "{}_{}".format(pip_name, whl_name)
         whl_library(name = repo_name, **dict(sorted(whl_library_args.items())))
         whl_map[hub_name].setdefault(whl_name, []).append(
             whl_alias(

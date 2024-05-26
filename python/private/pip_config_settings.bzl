@@ -269,6 +269,12 @@ def _whl_config_settings(*, suffix, plat_flag_values, **kwargs):
             **kwargs
         )
 
+def _to_version_string(version, sep = "."):
+    if not version:
+        return ""
+
+    return "{}{}{}".format(version[0], sep, version[1])
+
 def _plat_flag_values(os, cpu, osx_versions, glibc_versions, muslc_versions):
     ret = []
     if os == "":
@@ -282,7 +288,7 @@ def _plat_flag_values(os, cpu, osx_versions, glibc_versions, muslc_versions):
         }.items():
             for osx_version in osx_versions:
                 flags = {
-                    FLAGS.pip_whl_osx_version: osx_version,
+                    FLAGS.pip_whl_osx_version: _to_version_string(osx_version),
                 }
                 if arch == UniversalWhlFlag.ARCH:
                     flags[FLAGS.pip_whl_osx_arch] = arch
@@ -290,7 +296,7 @@ def _plat_flag_values(os, cpu, osx_versions, glibc_versions, muslc_versions):
                 if not osx_version:
                     suffix = "{}_{}".format(os, cpu_)
                 else:
-                    suffix = "{}_{}_{}".format(os, osx_version.replace(".", "_"), cpu_)
+                    suffix = "{}_{}_{}".format(os, _to_version_string(osx_version, "_"), cpu_)
 
                 ret.append((suffix, flags))
 
@@ -313,7 +319,7 @@ def _plat_flag_values(os, cpu, osx_versions, glibc_versions, muslc_versions):
                 if libc_version and os_prefix == os:
                     continue
                 elif libc_version:
-                    suffix = "{}_{}_{}".format(os_prefix, libc_version.replace(".", "_"), cpu)
+                    suffix = "{}_{}_{}".format(os_prefix, _to_version_string(libc_version, "_"), cpu)
                 else:
                     suffix = "{}_{}".format(os_prefix, cpu)
 
@@ -321,7 +327,7 @@ def _plat_flag_values(os, cpu, osx_versions, glibc_versions, muslc_versions):
                     suffix,
                     {
                         FLAGS.pip_whl_linux_libc: linux_libc,
-                        libc_flag: libc_version,
+                        libc_flag: _to_version_string(libc_version),
                     },
                 ))
     else:
@@ -369,13 +375,13 @@ def _config_setting_or(*, name, flag_values, default, visibility, **kwargs):
     _config_setting(
         name = match_name,
         flag_values = flag_values,
-        visibility = ["//visibility:private"],
+        visibility = visibility,
         **kwargs
     )
     _config_setting(
         name = default_name,
         flag_values = default,
-        visibility = ["//visibility:private"],
+        visibility = visibility,
         **kwargs
     )
 

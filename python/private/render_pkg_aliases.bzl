@@ -30,7 +30,9 @@ load(
     "WHEEL_FILE_PUBLIC_LABEL",
 )
 load(":normalize_name.bzl", "normalize_name")
+load(":parse_whl_name.bzl", "parse_whl_name")
 load(":text_util.bzl", "render")
+load(":whl_target_platforms.bzl", "whl_target_platforms")
 
 NO_MATCH_ERROR_MESSAGE_TEMPLATE = """\
 No matching wheel for current configuration's Python version.
@@ -235,7 +237,7 @@ def render_pkg_aliases(*, aliases, default_config_setting = None, requirement_cy
         files["_groups/BUILD.bazel"] = generate_group_library_build_bazel("", requirement_cycles)
     return files
 
-def whl_alias(*, repo, version = None, config_setting = None, extra_targets = None):
+def whl_alias(*, repo, version = None, config_setting = None, filename = None, target_platforms = None):
     """The bzl_packages value used by by the render_pkg_aliases function.
 
     This contains the minimum amount of information required to generate correct
@@ -248,9 +250,10 @@ def whl_alias(*, repo, version = None, config_setting = None, extra_targets = No
             constructed. This is mainly used for better error messages when there
             is no match found during a select.
         config_setting: optional(Label or str), the config setting that we should use. Defaults
-            to "@rules_python//python/config_settings:is_python_{version}".
-        extra_targets: optional(list[str]), the extra targets that we need to create
-            aliases for.
+            to "//_config:is_python_{version}".
+        filename: optional(str), the distribution filename to derive the config_setting.
+        target_platforms: optional(list[str]), the list of target_platforms for this
+            distribution.
 
     Returns:
         a struct with the validated and parsed values.
@@ -266,5 +269,185 @@ def whl_alias(*, repo, version = None, config_setting = None, extra_targets = No
         repo = repo,
         version = version,
         config_setting = config_setting,
-        extra_targets = extra_targets or [],
+        filename = filename,
+        target_platforms = target_platforms,
     )
+
+def get_whl_flag_versions(aliases):
+    """Return all of the flag versions that is used by the aliases
+
+    Args:
+        aliases: list[whl_alias]
+
+    Returns:
+        dict, which may have keys:
+          * python_versions
+    """
+    python_versions = {}
+    glibc_versions = {}
+    target_platforms = {}
+    muslc_versions = {}
+    osx_versions = {}
+
+    for a in aliases:
+        if not a.version and not a.filename:
+            continue
+
+        if a.version:
+            python_versions[a.version] = None
+
+        if not a.filename:
+            continue
+
+        if a.filename.endswith(".whl") and not a.filename.endswith("-any.whl"):
+            parsed = parse_whl_name(a.filename)
+        else:
+            for plat in a.target_platforms or []:
+                target_platforms[plat] = None
+            continue
+
+        for platform_tag in parsed.platform_tag.split("."):
+            parsed = whl_target_platforms(platform_tag)
+
+            for p in parsed:
+                target_platforms[p.target_platform] = None
+
+            if platform_tag.startswith("win") or platform_tag.startswith("linux"):
+                continue
+
+            head, _, tail = platform_tag.partition("_")
+            major, _, tail = tail.partition("_")
+            minor, _, tail = tail.partition("_")
+            if tail:
+                version = (int(major), int(minor))
+                if "many" in head:
+                    glibc_versions[version] = None
+                elif "musl" in head:
+                    muslc_versions[version] = None
+                elif "mac" in head:
+                    osx_versions[version] = None
+                else:
+                    fail(platform_tag)
+
+    return {
+        k: sorted(v)
+        for k, v in {
+            "glibc_versions": glibc_versions,
+            "muslc_versions": muslc_versions,
+            "osx_versions": osx_versions,
+            "python_versions": python_versions,
+            "target_platforms": target_platforms,
+        }.items()
+        if v
+    }
+
+def get_filename_config_settings(
+        *,
+        filename,
+        target_platforms,
+        glibc_versions,
+        muslc_versions,
+        osx_versions,
+        python_version = "",
+        python_default = True):
+    """Get the filename config settings.
+
+    Args:
+        filename: the distribution filename (can be a whl or an sdist).
+        target_platforms: list[str], target platforms in "{os}_{cpu}" format.
+        glibc_versions: list[tuple[int, int]], list of versions. If the
+            config setting for the default should be generated, then the list
+            should include (0, 0).
+        muslc_versions: list[tuple[int, int]], list of versions. If the
+            config setting for the default should be generated, then the list
+            should include (0, 0).
+        osx_versions: list[tuple[int, int]], list of versions. If the
+            config setting for the default should be generated, then the list
+            should include (0, 0).
+        python_version: the python version to generate the config_settings for.
+        python_default: if we should include the setting when python_version is not set.
+
+    Returns:
+        A list of config settings that are generated by ./pip_config_settings.bzl
+    """
+    prefixes = []
+    suffixes = []
+    if filename.endswith(".whl"):
+        parsed = parse_whl_name(filename)
+        if parsed.python_tag == "py2.py3":
+            py = "py"
+        elif parsed.python_tag.startswith("cp"):
+            py = "cp"
+        else:
+            py = parsed.python_tag
+
+        if parsed.abi_tag.startswith("cp"):
+            abi = "cp"
+        else:
+            abi = parsed.abi_tag
+
+        if parsed.platform_tag == "any":
+            prefixes = ["{}_{}_any".format(py, abi)]
+            suffixes = target_platforms
+        else:
+            prefixes = ["{}_{}".format(py, abi)]
+            suffixes = _whl_config_setting_sufixes(
+                platform_tag = parsed.platform_tag,
+                glibc_versions = glibc_versions,
+                muslc_versions = muslc_versions,
+                osx_versions = osx_versions,
+            )
+    else:
+        prefixes = ["sdist"]
+        suffixes = target_platforms
+
+    if python_default and python_version:
+        prefixes += ["cp{}_{}".format(python_version, p) for p in prefixes]
+    elif python_version:
+        prefixes = ["cp{}_{}".format(python_version, p) for p in prefixes]
+    elif python_default:
+        pass
+    else:
+        fail("BUG: got no python_version and it is not default")
+
+    if suffixes:
+        return [":is_{}_{}".format(p, s) for p in prefixes for s in suffixes]
+    else:
+        return [":is_{}".format(p) for p in prefixes]
+
+def _whl_config_setting_sufixes(platform_tag, glibc_versions, muslc_versions, osx_versions):
+    suffixes = []
+    for platform_tag in platform_tag.split("."):
+        for p in whl_target_platforms(platform_tag):
+            prefix = p.os
+            suffix = p.cpu
+            if "manylinux" in platform_tag:
+                prefix = "manylinux"
+                versions = glibc_versions
+            elif "musllinux" in platform_tag:
+                prefix = "musllinux"
+                versions = muslc_versions
+            elif p.os in ["linux", "windows"]:
+                versions = [(0, 0)]
+            elif p.os == "osx":
+                versions = osx_versions
+                if "universal2" in platform_tag:
+                    suffix += "_universal2"
+            else:
+                fail("Unsupported whl os: {}".format(p.os))
+
+            for v in versions:
+                if v == (0, 0):
+                    suffixes.append("{}_{}".format(
+                        prefix,
+                        suffix,
+                    ))
+                elif v >= p.version:
+                    suffixes.append("{}_{}_{}_{}".format(
+                        prefix,
+                        v[0],
+                        v[1],
+                        suffix,
+                    ))
+
+    return suffixes
