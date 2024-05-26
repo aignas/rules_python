@@ -215,6 +215,16 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
             # a requirement here, so we will not be in this code branch.
             continue
 
+        distribution = None
+        if requirement.whls or requirement.sdists:
+            distribution = select_whl(
+                whls = requirement.whls,
+                want_platform = repository_platform,
+            ) or requirement.sdists[0] if requirement.sdists else None
+
+            if not distribution:
+                print("WARNING: falling back to pip for installing the right file for {}".format(requirement.requirement_line))  # buildifier: disable=print
+
         # We are not using the "sanitized name" because the user
         # would need to guess what name we modified the whl name
         # to.
@@ -260,29 +270,21 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
         )
         whl_library_args.update({k: v for k, (v, default) in maybe_args_with_default.items() if v == default})
 
-        if requirement.whls or requirement.sdists:
-            distribution = select_whl(
-                whls = requirement.whls,
-                want_platform = repository_platform,
-            ) or requirement.sdists[0] if requirement.sdists else None
+        if distribution:
+            whl_library_args["requirement"] = requirement.srcs.requirement
+            whl_library_args["urls"] = [distribution.url]
+            whl_library_args["sha256"] = distribution.sha256
+            whl_library_args["filename"] = distribution.filename
+            if pip_attr.netrc:
+                whl_library_args["netrc"] = pip_attr.netrc
+            if pip_attr.auth_patterns:
+                whl_library_args["auth_patterns"] = pip_attr.auth_patterns
 
-            if distribution:
-                whl_library_args["requirement"] = requirement.srcs.requirement
-                whl_library_args["urls"] = [distribution.url]
-                whl_library_args["sha256"] = distribution.sha256
-                whl_library_args["filename"] = distribution.filename
-                if pip_attr.netrc:
-                    whl_library_args["netrc"] = pip_attr.netrc
-                if pip_attr.auth_patterns:
-                    whl_library_args["auth_patterns"] = pip_attr.auth_patterns
+            # pip is not used to download wheels and the python `whl_library` helpers are only extracting things
+            whl_library_args.pop("extra_pip_args", None)
 
-                # pip is not used to download wheels and the python `whl_library` helpers are only extracting things
-                whl_library_args.pop("extra_pip_args", None)
-
-                # This is no-op because pip is not used to download the wheel.
-                whl_library_args.pop("download_only", None)
-            else:
-                print("WARNING: falling back to pip for installing the right file for {}".format(requirement.requirement_line))  # buildifier: disable=print
+            # This is no-op because pip is not used to download the wheel.
+            whl_library_args.pop("download_only", None)
 
         # We sort so that the lock-file remains the same no matter the order of how the
         # args are manipulated in the code going before.
