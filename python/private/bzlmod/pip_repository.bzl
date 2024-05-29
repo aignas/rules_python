@@ -61,9 +61,9 @@ def _pip_repository_impl(rctx):
                 target_platforms = alias.target_platforms,
                 python_version = alias.version,
                 python_default = rctx.attr.default_version == alias.version,
-                glibc_versions = flag_versions.get("glibc_versions", []),
-                muslc_versions = flag_versions.get("muslc_versions", []),
-                osx_versions = flag_versions.get("osx_versions", []),
+                glibc_versions = flag_versions.get("glibc_versions", []) + [(0, 0)],
+                muslc_versions = flag_versions.get("muslc_versions", []) + [(0, 0)],
+                osx_versions = flag_versions.get("osx_versions", []) + [(0, 0)],
             ):
                 aliases[key].append(whl_alias(
                     repo = alias.repo,

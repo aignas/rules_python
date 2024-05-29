@@ -473,9 +473,9 @@ def _test_get_python_versions_from_filenames(env):
         ],
     )
     want = {
-        "glibc_versions": ["2.14", "2.17"],
-        "muslc_versions": ["1.0", "1.1"],
-        "osx_versions": ["10.9", "11.0"],
+        "glibc_versions": [(2, 14), (2, 17)],
+        "muslc_versions": [(1, 0), (1, 1)],
+        "osx_versions": [(10, 9), (11, 0)],
         "python_versions": ["3.3"],
         "target_platforms": [
             "linux_aarch64",
