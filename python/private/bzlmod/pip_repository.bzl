@@ -37,6 +37,9 @@ def _pip_repository_impl(rctx):
         key: [whl_alias(**v) for v in json.decode(values)]
         for key, values in rctx.attr.whl_map.items()
     }
+
+    # TODO @aignas 2024-05-30: add a way to determine the filename that will
+    # use the default value of the version flag.
     flag_versions = get_whl_flag_versions(
         aliases = [
             a
