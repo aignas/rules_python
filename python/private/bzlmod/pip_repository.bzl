@@ -16,9 +16,7 @@
 
 load(
     "//python/private:render_pkg_aliases.bzl",
-    "get_filename_config_settings",
-    "get_whl_flag_versions",
-    "render_pkg_aliases",
+    "render_multiplatform_pkg_aliases",
     "whl_alias",
 )
 load("//python/private:text_util.bzl", "render")
@@ -32,57 +30,18 @@ exports_files(["requirements.bzl"])
 
 def _pip_repository_impl(rctx):
     bzl_packages = rctx.attr.whl_map.keys()
-    rctx.file("BUILD.bazel", _BUILD_FILE_CONTENTS)
-    input_aliases = {
-        key: [whl_alias(**v) for v in json.decode(values)]
-        for key, values in rctx.attr.whl_map.items()
-    }
 
-    # TODO @aignas 2024-05-30: add a way to determine the filename that will
-    # use the default value of the version flag.
-    flag_versions = get_whl_flag_versions(
-        aliases = [
-            a
-            for bunch in input_aliases.values()
-            for a in bunch
-        ],
-    )
-
-    # TODO @aignas 2024-05-27: rewrite with unit tests
-    aliases = {}
-    for key, pkg_aliases in input_aliases.items():
-        aliases[key] = []
-        for alias in pkg_aliases:
-            if not alias.filename:
-                aliases[key].append(alias)
-                continue
-
-            for setting in get_filename_config_settings(
-                # TODO @aignas 2024-05-27: pass the parsed whl to reduce the
-                # number of duplicate operations
-                filename = alias.filename,
-                target_platforms = alias.target_platforms,
-                python_version = alias.version,
-                python_default = rctx.attr.default_version == alias.version,
-                glibc_versions = flag_versions.get("glibc_versions", []),
-                muslc_versions = flag_versions.get("muslc_versions", []),
-                osx_versions = flag_versions.get("osx_versions", []),
-            ):
-                aliases[key].append(whl_alias(
-                    repo = alias.repo,
-                    version = alias.version,
-                    config_setting = "//_config" + setting,
-                ))
-
-    rctx.file("_config/BUILD.bazel", _render_pip_config_settings(
-        **flag_versions
-    ))
-
-    rendered_aliases = render_pkg_aliases(
-        aliases = aliases,
+    rendered_aliases = render_multiplatform_pkg_aliases(
+        input_aliases = {
+            key: [whl_alias(**v) for v in json.decode(values)]
+            for key, values in rctx.attr.whl_map.items()
+        },
+        default_version = rctx.attr.default_version,
         default_config_setting = "//_config:is_python_" + rctx.attr.default_version,
         requirement_cycles = rctx.attr.groups,
     )
+
+    rctx.file("BUILD.bazel", _BUILD_FILE_CONTENTS)
     for path, contents in rendered_aliases.items():
         rctx.file(path, contents)
 
@@ -108,28 +67,6 @@ def _pip_repository_impl(rctx):
         "%%MACRO_TMPL%%": macro_tmpl,
         "%%NAME%%": rctx.attr.repo_name,
     })
-
-def _render_pip_config_settings(python_versions, target_platforms = [], osx_versions = [], glibc_versions = [], muslc_versions = []):
-    return """\
-load("@rules_python//python/private:pip_config_settings.bzl", "pip_config_settings")
-
-pip_config_settings(
-    name = "pip_config_settings",
-    glibc_versions = {glibc_versions},
-    muslc_versions = {muslc_versions},
-    osx_versions = {osx_versions},
-    python_versions = {python_versions},
-    target_platforms = {target_platforms},
-    visibility = ["//:__subpackages__"],
-)
-
-""".format(
-        glibc_versions = render.indent(render.list(glibc_versions)).lstrip(),
-        muslc_versions = render.indent(render.list(muslc_versions)).lstrip(),
-        osx_versions = render.indent(render.list(osx_versions)).lstrip(),
-        python_versions = render.indent(render.list(python_versions)).lstrip(),
-        target_platforms = render.indent(render.list(target_platforms)).lstrip(),
-    )
 
 pip_repository_attrs = {
     "default_version": attr.string(

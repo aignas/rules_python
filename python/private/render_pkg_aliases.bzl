@@ -273,6 +273,124 @@ def whl_alias(*, repo, version = None, config_setting = None, filename = None, t
         target_platforms = target_platforms,
     )
 
+def render_multiplatform_pkg_aliases(*, input_aliases, default_version, **kwargs):
+    """Render the multi-platform pkg aliases.
+
+    Args:
+        input_aliases: dict[str, list(whl_alias)] TODO.
+        default_version: str TODO.
+        **kwargs: extra arguments passed to render_pkg_aliases.
+
+    Returns:
+        A dict of file paths and their contents.
+    """
+
+    # TODO @aignas 2024-05-30: add a way to determine the filename that will
+    # use the default value of the version flag.
+    flag_versions = get_whl_flag_versions(
+        aliases = [
+            a
+            for bunch in input_aliases.values()
+            for a in bunch
+        ],
+    )
+
+    aliases = {
+        pkg: multiplatform_aliases(
+            aliases = pkg_aliases,
+            default_version = default_version,
+            glibc_versions = flag_versions.get("glibc_versions", []),
+            muslc_versions = flag_versions.get("muslc_versions", []),
+            osx_versions = flag_versions.get("osx_versions", []),
+        )
+        for pkg, pkg_aliases in input_aliases.items()
+    }
+
+    return render_pkg_aliases(
+        aliases = aliases,
+        **kwargs
+    ) | {
+        "_config/BUILD.bazel": _render_pip_config_settings(
+            **flag_versions
+        ),
+    }
+
+def multiplatform_aliases(*, aliases, default_version, **kwargs):
+    """convert a list of aliases from filename to config_setting ones.
+
+    Args:
+        aliases: list(whl_alias):  TODO.
+        default_version: string | None, the default python version to use.
+        **kwargs: Extra parameters passed to get_filename_config_settings.
+
+    Returns:
+        A dict with aliases to be used in the hub repo.
+    """
+
+    # TODO @aignas 2024-05-27: add unit tests
+    ret = []
+    defaults = {}
+    for alias in aliases:
+        if not alias.filename:
+            ret.append(alias)
+            continue
+
+        # TODO @aignas 2024-05-30: we need to segment the versions so that we
+        # don't have duplicates
+        config_settings, filename_defaults = get_filename_config_settings(
+            # TODO @aignas 2024-05-27: pass the parsed whl to reduce the
+            # number of duplicate operations
+            filename = alias.filename,
+            target_platforms = alias.target_platforms,
+            python_version = alias.version,
+            python_default = default_version == alias.version,
+            **kwargs
+        )
+
+        for setting in config_settings:
+            ret.append(whl_alias(
+                repo = alias.repo,
+                version = alias.version,
+                config_setting = "//_config" + setting,
+            ))
+        for setting, version in filename_defaults.items():
+            a = whl_alias(
+                repo = alias.repo,
+                version = alias.version,
+                config_setting = "//_config" + setting,
+            )
+            _, has_version = defaults.setdefault(setting, (a, version))
+            if has_version > version:
+                defaults[a] = (a, version)
+
+    ret.extend([
+        a
+        for (a, _) in defaults.values()
+    ])
+    return ret
+
+def _render_pip_config_settings(python_versions, target_platforms = [], osx_versions = [], glibc_versions = [], muslc_versions = []):
+    return """\
+load("@rules_python//python/private:pip_config_settings.bzl", "pip_config_settings")
+
+pip_config_settings(
+    name = "pip_config_settings",
+    glibc_versions = {glibc_versions},
+    muslc_versions = {muslc_versions},
+    osx_versions = {osx_versions},
+    python_versions = {python_versions},
+    target_platforms = {target_platforms},
+    visibility = ["//:__subpackages__"],
+)
+
+""".format(
+        glibc_versions = render.indent(render.list(glibc_versions)).lstrip(),
+        muslc_versions = render.indent(render.list(muslc_versions)).lstrip(),
+        osx_versions = render.indent(render.list(osx_versions)).lstrip(),
+        python_versions = render.indent(render.list(python_versions)).lstrip(),
+        target_platforms = render.indent(render.list(target_platforms)).lstrip(),
+    )
+
 def get_whl_flag_versions(aliases):
     """Return all of the flag versions that is used by the aliases
 
