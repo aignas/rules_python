@@ -18,11 +18,18 @@ by the parse_requirements function.
 
 TODO @aignas 2024-05-23: The name is up for bikeshedding. For the time being I
 am keeping it together with parse_requirements.bzl.
+
+TODO @aignas 2024-05-30: add unit tests.
 """
 
 load(":whl_target_platforms.bzl", "select_whls")
 
-def parse_requirements_add_dists(requirements_by_platform, index_urls, python_version):
+def parse_requirements_add_dists(
+        requirements_by_platform,
+        index_urls,
+        python_version,
+        *,
+        warn = lambda msg: print("[WARNING] {}".format(msg))):  # buildifier: disable=print
     """Populate dists based on the information from the PyPI index.
 
     This function will modify the given requirements_by_platform data structure.
@@ -31,6 +38,7 @@ def parse_requirements_add_dists(requirements_by_platform, index_urls, python_ve
         requirements_by_platform: The result of parse_requirements function.
         index_urls: The result of simpleapi_download.
         python_version: The version of the python interpreter.
+        warn: A function for printing warnings.
     """
     for whl_name, requirements in requirements_by_platform.items():
         for requirement in requirements:
@@ -41,21 +49,33 @@ def parse_requirements_add_dists(requirements_by_platform, index_urls, python_ve
             # requirements by version instead of by sha256. This may be useful
             # for some projects.
             for sha256 in requirement.srcs.shas:
-                # For now if the artifact is marked as yanked we just ignore it.
-                #
-                # See https://packaging.python.org/en/latest/specifications/simple-repository-api/#adding-yank-support-to-the-simple-api
-
                 maybe_whl = index_urls[whl_name].whls.get(sha256)
-                if maybe_whl and not maybe_whl.yanked:
+                if maybe_whl:
                     whls.append(maybe_whl)
                     continue
 
                 maybe_sdist = index_urls[whl_name].sdists.get(sha256)
-                if maybe_sdist and not maybe_sdist.yanked:
+                if maybe_sdist:
                     sdist = maybe_sdist
                     continue
 
-                print("WARNING: Could not find a whl or an sdist with sha256={}".format(sha256))  # buildifier: disable=print
+                warn("Could not find a whl or an sdist with sha256={}".format(sha256))
+
+            # For now if the artifact is marked as yanked we print a warning
+            # which is similar what uv is doing.
+            #
+            # See https://packaging.python.org/en/latest/specifications/simple-repository-api/#adding-yank-support-to-the-simple-api
+            yanked = {}
+            for dist in whls + [sdist]:
+                if dist.yanked:
+                    yanked.setdefault(dist.yanked, []).append(dist.filename)
+            if yanked:
+                warn("\n".join([
+                    "the following distributions got yanked:",
+                ] + [
+                    "reason: {}\n  {}".format(reason, "\n".join(sorted(dists)))
+                    for reason, dists in yanked.items()
+                ]))
 
             # Filter out the wheels that are incompatible with the target_platforms.
             whls = select_whls(
