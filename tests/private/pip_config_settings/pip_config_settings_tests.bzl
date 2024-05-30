@@ -479,9 +479,9 @@ def pip_config_settings_test_suite(name):  # buildifier: disable=function-docstr
     pip_config_settings(
         name = "dummy",
         python_versions = ["3.8", "3.9", "3.10"],
-        glibc_versions = ["2.14", "2.17"],
-        muslc_versions = ["1.1"],
-        osx_versions = ["10.9", "11.0"],
+        glibc_versions = [(2, 14), (2, 17)],
+        muslc_versions = [(1, 1)],
+        osx_versions = [(10, 9), (11, 0)],
         target_platforms = [
             "windows_x86_64",
             "windows_aarch64",
