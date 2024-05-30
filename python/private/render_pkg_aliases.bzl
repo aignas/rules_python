@@ -296,7 +296,7 @@ def render_multiplatform_pkg_aliases(*, input_aliases, default_version, **kwargs
     )
 
     aliases = {
-        pkg: multiplatform_aliases(
+        pkg: multiplatform_whl_aliases(
             aliases = pkg_aliases,
             default_version = default_version,
             glibc_versions = flag_versions.get("glibc_versions", []),
@@ -315,7 +315,7 @@ def render_multiplatform_pkg_aliases(*, input_aliases, default_version, **kwargs
         ),
     }
 
-def multiplatform_aliases(*, aliases, default_version, **kwargs):
+def multiplatform_whl_aliases(*, aliases, default_version, **kwargs):
     """convert a list of aliases from filename to config_setting ones.
 
     Args:

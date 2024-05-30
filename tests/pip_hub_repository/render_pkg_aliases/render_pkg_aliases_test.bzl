@@ -20,6 +20,7 @@ load(
     "//python/private:render_pkg_aliases.bzl",
     "get_filename_config_settings",
     "get_whl_flag_versions",
+    "multiplatform_whl_aliases",
     "render_pkg_aliases",
     "whl_alias",
 )  # buildifier: disable=bzl-visibility
@@ -720,6 +721,67 @@ def _test_cp37_abi3_manylinux_2_17_musllinux_1_1_aarch64(env):
     )
 
 _tests.append(_test_cp37_abi3_manylinux_2_17_musllinux_1_1_aarch64)
+
+def _test_multiplatform_whl_aliases_empty(env):
+    got = multiplatform_whl_aliases(aliases = [], default_version = None)
+    env.expect.that_collection(got).contains_exactly([])
+
+_tests.append(_test_multiplatform_whl_aliases_empty)
+
+def _test_multiplatform_whl_aliases_nofilename(env):
+    aliases = [
+        whl_alias(
+            repo = "foo",
+            config_setting = "//:label",
+            version = "3.1",
+        ),
+    ]
+    got = multiplatform_whl_aliases(aliases = aliases, default_version = None)
+    env.expect.that_collection(got).contains_exactly(aliases)
+
+_tests.append(_test_multiplatform_whl_aliases_nofilename)
+
+def _test_multiplatform_whl_aliases_filename(env):
+    aliases = [
+        whl_alias(
+            repo = "foo-py3-0.0.3",
+            filename = "foo-0.0.3-py3-none-any.whl",
+            version = "3.2",
+        ),
+        whl_alias(
+            repo = "foo-py3-0.0.1",
+            filename = "foo-0.0.1-py3-none-any.whl",
+            version = "3.1",
+        ),
+        whl_alias(
+            repo = "foo-0.0.2",
+            filename = "foo-0.0.2-py3-none-any.whl",
+            version = "3.1",
+            target_platforms = [
+                "linux_x86_64",
+                "linux_aarch64",
+            ],
+        ),
+    ]
+    got = multiplatform_whl_aliases(
+        aliases = aliases,
+        default_version = "3.1",
+        glibc_versions = [],
+        muslc_versions = [],
+        osx_versions = [],
+    )
+    want = [
+        whl_alias(config_setting = "//_config:is_cp3.1_py3_none_any", repo = "foo-py3-0.0.1", version = "3.1"),
+        whl_alias(config_setting = "//_config:is_cp3.1_py3_none_any_linux_aarch64", repo = "foo-0.0.2", version = "3.1"),
+        whl_alias(config_setting = "//_config:is_cp3.1_py3_none_any_linux_x86_64", repo = "foo-0.0.2", version = "3.1"),
+        whl_alias(config_setting = "//_config:is_cp3.2_py3_none_any", repo = "foo-py3-0.0.3", version = "3.2"),
+        whl_alias(config_setting = "//_config:is_py3_none_any", repo = "foo-py3-0.0.1", version = "3.1"),
+        whl_alias(config_setting = "//_config:is_py3_none_any_linux_aarch64", repo = "foo-0.0.2", version = "3.1"),
+        whl_alias(config_setting = "//_config:is_py3_none_any_linux_x86_64", repo = "foo-0.0.2", version = "3.1"),
+    ]
+    env.expect.that_collection(got).contains_exactly(want)
+
+_tests.append(_test_multiplatform_whl_aliases_filename)
 
 def render_pkg_aliases_test_suite(name):
     """Create the test suite.
