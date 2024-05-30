@@ -34,6 +34,9 @@ A brief description of the categories of changes:
   Introduced a new Go-based helper leveraging tree-sitter for syntax analysis.
   Implemented the use of `pypi/stdlib-list` for standard library module verification.
 
+* (pip.parse): Do not ignore yanked packages when using experimental_index_url.
+  This is to mimic what `uv` is doing. We will print a warning instead.
+
 ### Fixed
 * (gazelle) Remove `visibility` from `NonEmptyAttr`.
   Now empty(have no `deps/main/srcs/imports` attr) `py_library/test/binary` rules will
