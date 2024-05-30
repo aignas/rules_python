@@ -485,6 +485,33 @@ def _test_osx_os_version(name):
 
 _tests.append(_test_osx_os_version)
 
+def _test_all(name):
+    _analysis_test(
+        name = name,
+        dist = {
+            "is_" + f: f
+            for f in [
+                "{py}_{abi}_{plat}".format(py = valid_py, abi = valid_abi, plat = valid_plat)
+                for valid_py in ["py", "py3", "py3x", "cp3x"]
+                for valid_abi in ["none", "abi3", "cp3x"]
+                for valid_plat in [
+                    "any",
+                    "manylinux_2_17_x86_64",
+                    "manylinux_2_17_aarch64",
+                    "osx_x86_64",
+                    "windows_x86_64",
+                ]
+            ]
+        },
+        want = "whl",
+        config_settings = [
+            _flag.pip_whl_osx_version("10.9"),
+            _flag.platform("mac_x86_64"),
+        ],
+    )
+
+_tests.append(_test_all)
+
 def pip_config_settings_test_suite(name):  # buildifier: disable=function-docstring
     test_suite(
         name = name,

@@ -173,101 +173,52 @@ def _whl_config_settings(*, suffix, plat_flag_values, **kwargs):
     # With the following three we cover different per-version wheels
     python_version = kwargs.get("python_version")
     py = "cp{}_py".format(python_version) if python_version else "py"
-    _whl_config_setting(
-        name = "{}_none_any{}".format(py, suffix),
-        flag_values = {},
-        **kwargs
-    )
-
-    _whl_config_setting(
-        name = "{}3_none_any{}".format(py, suffix),
-        flag_values = {_flags.whl_py3: ""},
-        **kwargs
-    )
-
-    _whl_config_setting(
-        name = "{}3_abi3_any{}".format(py, suffix),
-        flag_values = {
-            _flags.whl_py3: "",
-            _flags.whl_py3_abi3: "",
-        },
-        **kwargs
-    )
-
-    # With this we cover:
-    # - default python_version and some `cp-<none|abi3>` wheel that we
-    #   determine via the `select_whls` function.
-    # - per-python-version `cp-<none|abi3>` whl which we determine via
-    #   the `select_whls` function.
     pycp = "cp{}_cp".format(python_version) if python_version else "cp"
-    _whl_config_setting(
-        name = "{}_none_any{}".format(pycp, suffix),
-        flag_values = {
-            _flags.whl_py3: "",
-            _flags.whl_py3_abi3: "",
-            _flags.whl_pycp3x: "",
-        },
-        **kwargs
-    )
-    _whl_config_setting(
-        name = "{}_abi3_any{}".format(pycp, suffix),
-        flag_values = {
-            _flags.whl_py3: "",
-            _flags.whl_py3_abi3: "",
-            _flags.whl_pycp3x: "",
-            _flags.whl_pycp3x_abi3: "",
-        },
-        **kwargs
-    )
 
-    for (suffix, flag_values) in plat_flag_values:
-        flag_values = {
-            _flags.whl_py3: "",
-            _flags.whl_py3_abi3: "",
-            _flags.whl_pycp3x: "",
-            _flags.whl_pycp3x_abi3: "",
-            _flags.whl_plat: "",
-        } | flag_values
+    flag_values = {}
+
+    for n, f in {
+        "{}_none_any{}".format(py, suffix): None,
+        "{}3_none_any{}".format(py, suffix): _flags.whl_py3,
+        "{}3_abi3_any{}".format(py, suffix): _flags.whl_py3_abi3,
+        "{}3x_none_any{}".format(py, suffix): _flags.whl_py3x,
+        "{}3x_abi3_any{}".format(py, suffix): _flags.whl_py3x_abi3,
+        "{}3x_none_any{}".format(pycp, suffix): _flags.whl_pycp3x,
+        "{}3x_abi3_any{}".format(pycp, suffix): _flags.whl_pycp3x_abi3,
+        "{}_cp_any{}".format(pycp, suffix): _flags.whl_pycp3x_abicp,
+    }.items():
+        if f and f in flag_values:
+            fail("BUG")
+        elif f:
+            flag_values[f] = ""
+
         _whl_config_setting(
-            name = "{}3_none_{}".format(py, suffix),
+            name = n,
             flag_values = flag_values,
             **kwargs
         )
-        _whl_config_setting(
-            name = "{}3_abi3_{}".format(py, suffix),
-            flag_values = flag_values | {
-                _flags.whl_plat_abi3: "",
-            },
-            **kwargs
-        )
 
-        _whl_config_setting(
-            name = "{}_none_{}".format(pycp, suffix),
-            flag_values = flag_values | {
-                _flags.whl_plat_abi3: "",
-                _flags.whl_plat_pycp3x: "",
-            },
-            **kwargs
-        )
-        _whl_config_setting(
-            name = "{}_abi3_{}".format(pycp, suffix),
-            flag_values = flag_values | {
-                _flags.whl_plat_abi3: "",
-                _flags.whl_plat_pycp3x: "",
-                _flags.whl_plat_pycp3x_abi3: "",
-            },
-            **kwargs
-        )
-        _whl_config_setting(
-            name = "{}_{}_{}".format(pycp, "cp", suffix),
-            flag_values = flag_values | {
-                _flags.whl_plat_abi3: "",
-                _flags.whl_plat_pycp3x: "",
-                _flags.whl_plat_pycp3x_abi3: "",
-                _flags.whl_plat_pycp3x_abicp: "",
-            },
-            **kwargs
-        )
+    for (suffix, flag_values) in plat_flag_values:
+        for n, f in {
+            "{}_none_{}".format(py, suffix): _flags.whl_plat,
+            "{}3_none_{}".format(py, suffix): _flags.whl_plat_py3,
+            "{}3_abi3_{}".format(py, suffix): _flags.whl_plat_py3_abi3,
+            "{}3x_none_{}".format(py, suffix): _flags.whl_plat_py3x,
+            "{}3x_abi3_{}".format(py, suffix): _flags.whl_plat_py3x_abi3,
+            "{}3x_none_{}".format(pycp, suffix): _flags.whl_plat_pycp3x,
+            "{}3x_abi3_{}".format(pycp, suffix): _flags.whl_plat_pycp3x_abi3,
+            "{}_cp_{}".format(pycp, suffix): _flags.whl_plat_pycp3x_abicp,
+        }.items():
+            if f and f in flag_values:
+                fail("BUG")
+            elif f:
+                flag_values[f] = ""
+
+            _whl_config_setting(
+                name = n,
+                flag_values = flag_values,
+                **kwargs
+            )
 
 def _to_version_string(version, sep = "."):
     if not version:
