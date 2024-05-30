@@ -536,17 +536,17 @@ def _test_sdist(env):
     _test_config_settings(
         env,
         filename = "foo-0.0.1" + ext,
-        python_version = "4.2",
+        python_version = "3.2",
         want = [
             ":is_sdist",
-            ":is_cp4.2_sdist",
+            ":is_cp3.2_sdist",
         ],
     )
 
     _test_config_settings(
         env,
         filename = "foo-0.0.1" + ext,
-        python_version = "4.2",
+        python_version = "3.2",
         python_default = True,
         target_platforms = [
             "linux_aarch64",
@@ -554,9 +554,9 @@ def _test_sdist(env):
         ],
         want = [
             ":is_sdist_linux_aarch64",
-            ":is_cp4.2_sdist_linux_aarch64",
+            ":is_cp3.2_sdist_linux_aarch64",
             ":is_sdist_linux_x86_64",
-            ":is_cp4.2_sdist_linux_x86_64",
+            ":is_cp3.2_sdist_linux_x86_64",
         ],
     )
 
@@ -581,24 +581,24 @@ def _test_py2_py3_none_any(env):
     _test_config_settings(
         env,
         filename = "foo-0.0.1-py2.py3-none-any.whl",
-        python_version = "4.2",
+        python_version = "3.2",
         python_default = True,
         want = [
             ":is_py_none_any",
-            ":is_cp4.2_py_none_any",
+            ":is_cp3.2_py_none_any",
         ],
     )
 
     _test_config_settings(
         env,
         filename = "foo-0.0.1-py2.py3-none-any.whl",
-        python_version = "4.2",
+        python_version = "3.2",
         python_default = False,
         target_platforms = [
             "osx_x86_64",
         ],
         want = [
-            ":is_cp4.2_py_none_any_osx_x86_64",
+            ":is_cp3.2_py_none_any_osx_x86_64",
         ],
     )
 
@@ -648,19 +648,19 @@ def _test_cp37_abi3_linux_x86_64(env):
         env,
         filename = "foo-0.0.1-cp37-abi3-linux_x86_64.whl",
         want = [
-            ":is_cp_abi3_linux_x86_64",
+            ":is_cp3x_abi3_linux_x86_64",
         ],
     )
 
     _test_config_settings(
         env,
         filename = "foo-0.0.1-cp37-abi3-linux_x86_64.whl",
-        python_version = "4.2",
+        python_version = "3.2",
         python_default = True,
         want = [
-            ":is_cp_abi3_linux_x86_64",
+            ":is_cp3x_abi3_linux_x86_64",
             # TODO @aignas 2024-05-29: update the pip_config_settings to generate this
-            ":is_cp4.2_cp_abi3_linux_x86_64",
+            ":is_cp3.2_cp3x_abi3_linux_x86_64",
         ],
     )
 
@@ -671,7 +671,7 @@ def _test_cp37_abi3_windows_x86_64(env):
         env,
         filename = "foo-0.0.1-cp37-abi3-windows_x86_64.whl",
         want = [
-            ":is_cp_abi3_windows_x86_64",
+            ":is_cp3x_abi3_windows_x86_64",
         ],
     )
 
@@ -688,9 +688,9 @@ def _test_cp37_abi3_manylinux_2_17_x86_64(env):
         ],
         want = [],
         want_versions = {
-            ":is_cp_abi3_manylinux_x86_64": {
-                (2, 17): ":is_cp_abi3_manylinux_2_17_x86_64",
-                (2, 18): ":is_cp_abi3_manylinux_2_18_x86_64",
+            ":is_cp3x_abi3_manylinux_x86_64": {
+                (2, 17): ":is_cp3x_abi3_manylinux_2_17_x86_64",
+                (2, 18): ":is_cp3x_abi3_manylinux_2_18_x86_64",
             },
         },
     )
@@ -712,12 +712,12 @@ def _test_cp37_abi3_manylinux_2_17_musllinux_1_1_aarch64(env):
         ],
         want = [],
         want_versions = {
-            ":is_cp_cp_manylinux_aarch64": {
-                (2, 17): ":is_cp_cp_manylinux_2_17_aarch64",
-                (2, 18): ":is_cp_cp_manylinux_2_18_aarch64",
+            ":is_cp3x_cp_manylinux_aarch64": {
+                (2, 17): ":is_cp3x_cp_manylinux_2_17_aarch64",
+                (2, 18): ":is_cp3x_cp_manylinux_2_18_aarch64",
             },
-            ":is_cp_cp_musllinux_aarch64": {
-                (1, 1): ":is_cp_cp_musllinux_1_1_aarch64",
+            ":is_cp3x_cp_musllinux_aarch64": {
+                (1, 1): ":is_cp3x_cp_musllinux_1_1_aarch64",
             },
         },
     )

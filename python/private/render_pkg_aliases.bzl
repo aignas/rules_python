@@ -533,7 +533,7 @@ def get_filename_config_settings(
         if parsed.python_tag == "py2.py3":
             py = "py"
         elif parsed.python_tag.startswith("cp"):
-            py = "cp"
+            py = "cp3x"
         else:
             py = parsed.python_tag
 
