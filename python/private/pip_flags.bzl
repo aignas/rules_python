@@ -54,14 +54,17 @@ WhlLibcFlag = enum(
 )
 
 INTERNAL_FLAGS = [
-    "whl",
     "whl_plat",
     "whl_plat_abi3",
-    "whl_plat_pycp",
-    "whl_plat_pycp_abi3",
-    "whl_plat_pycp_abicp",
+    "whl_plat_py3x",
+    "whl_plat_pycp3x",
+    "whl_plat_pycp3x_abi3",
+    "whl_plat_pycp3x_abicp",
+    "whl_py2_py3",
     "whl_py3",
     "whl_py3_abi3",
-    "whl_pycp",
-    "whl_pycp_abi3",
+    "whl_py3x",
+    "whl_py3x_abi3",
+    "whl_pycp3x",
+    "whl_pycp3x_abi3",
 ]

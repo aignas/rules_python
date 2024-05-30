@@ -199,13 +199,13 @@ def _whl_config_settings(*, suffix, plat_flag_values, **kwargs):
     #   determine via the `select_whls` function.
     # - per-python-version `cp-<none|abi3>` whl which we determine via
     #   the `select_whls` function.
-    pycp = "cp" + python_version
+    pycp = "cp{}_cp".format(python_version) if python_version else "cp"
     _whl_config_setting(
         name = "{}_none_any{}".format(pycp, suffix),
         flag_values = {
             _flags.whl_py3: "",
             _flags.whl_py3_abi3: "",
-            _flags.whl_pycp: "",
+            _flags.whl_pycp3x: "",
         },
         **kwargs
     )
@@ -214,8 +214,8 @@ def _whl_config_settings(*, suffix, plat_flag_values, **kwargs):
         flag_values = {
             _flags.whl_py3: "",
             _flags.whl_py3_abi3: "",
-            _flags.whl_pycp: "",
-            _flags.whl_pycp_abi3: "",
+            _flags.whl_pycp3x: "",
+            _flags.whl_pycp3x_abi3: "",
         },
         **kwargs
     )
@@ -224,8 +224,8 @@ def _whl_config_settings(*, suffix, plat_flag_values, **kwargs):
         flag_values = {
             _flags.whl_py3: "",
             _flags.whl_py3_abi3: "",
-            _flags.whl_pycp: "",
-            _flags.whl_pycp_abi3: "",
+            _flags.whl_pycp3x: "",
+            _flags.whl_pycp3x_abi3: "",
             _flags.whl_plat: "",
         } | flag_values
         _whl_config_setting(
@@ -245,7 +245,7 @@ def _whl_config_settings(*, suffix, plat_flag_values, **kwargs):
             name = "{}_none_{}".format(pycp, suffix),
             flag_values = flag_values | {
                 _flags.whl_plat_abi3: "",
-                _flags.whl_plat_pycp: "",
+                _flags.whl_plat_pycp3x: "",
             },
             **kwargs
         )
@@ -253,18 +253,18 @@ def _whl_config_settings(*, suffix, plat_flag_values, **kwargs):
             name = "{}_abi3_{}".format(pycp, suffix),
             flag_values = flag_values | {
                 _flags.whl_plat_abi3: "",
-                _flags.whl_plat_pycp: "",
-                _flags.whl_plat_pycp_abi3: "",
+                _flags.whl_plat_pycp3x: "",
+                _flags.whl_plat_pycp3x_abi3: "",
             },
             **kwargs
         )
         _whl_config_setting(
-            name = "{}_{}_{}".format(pycp, pycp, suffix),
+            name = "{}_{}_{}".format(pycp, "cp", suffix),
             flag_values = flag_values | {
                 _flags.whl_plat_abi3: "",
-                _flags.whl_plat_pycp: "",
-                _flags.whl_plat_pycp_abi3: "",
-                _flags.whl_plat_pycp_abicp: "",
+                _flags.whl_plat_pycp3x: "",
+                _flags.whl_plat_pycp3x_abi3: "",
+                _flags.whl_plat_pycp3x_abicp: "",
             },
             **kwargs
         )
@@ -342,7 +342,7 @@ def _whl_config_setting(*, name, flag_values, visibility, **kwargs):
             FLAGS.pip_whl: UseWhlFlag.ONLY,
         },
         default = flag_values | {
-            _flags.whl: "",
+            _flags.whl_py2_py3: "",
             FLAGS.pip_whl: UseWhlFlag.AUTO,
         },
         visibility = visibility,
