@@ -229,7 +229,7 @@ def whl_target_platforms(platform_tag, abi_tag = ""):
     maybe_arch = tail
     major, _, tail = tail.partition("_")
     minor, _, tail = tail.partition("_")
-    if not tail:
+    if not tail or not major.isdigit() or not minor.isdigit():
         tail = maybe_arch
         major = 0
         minor = 0
