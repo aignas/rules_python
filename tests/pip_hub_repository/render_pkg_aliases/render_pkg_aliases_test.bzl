@@ -494,13 +494,14 @@ def _test_config_settings(
         *,
         filename,
         want,
+        want_default_versions = {},
         target_platforms = [],
         glibc_versions = [],
         muslc_versions = [],
         osx_versions = [],
         python_version = "",
         python_default = True):
-    got = get_filename_config_settings(
+    got, got_default_version_settings = get_filename_config_settings(
         filename = filename,
         target_platforms = target_platforms,
         glibc_versions = glibc_versions,
@@ -510,6 +511,7 @@ def _test_config_settings(
         python_default = python_default,
     )
     env.expect.that_collection(got).contains_exactly(want)
+    env.expect.that_dict(got_default_version_settings).contains_exactly(want_default_versions)
 
 def _test_sdist(env):
     # Do the first test for multiple extensions
@@ -622,7 +624,6 @@ def _test_py3_none_macosx_10_9_universal2(env):
         env,
         filename = "foo-0.0.1-py3-none-macosx_10_9_universal2.whl",
         osx_versions = [
-            (0, 0),
             (10, 9),
             (11, 0),
         ],
@@ -631,9 +632,11 @@ def _test_py3_none_macosx_10_9_universal2(env):
             ":is_py3_none_osx_11_0_x86_64_universal2",
             ":is_py3_none_osx_10_9_aarch64_universal2",
             ":is_py3_none_osx_10_9_x86_64_universal2",
-            ":is_py3_none_osx_aarch64_universal2",
-            ":is_py3_none_osx_x86_64_universal2",
         ],
+        want_default_versions = {
+            ":is_py3_none_osx_aarch64_universal2": (10, 9),
+            ":is_py3_none_osx_x86_64_universal2": (10, 9),
+        },
     )
 
 _tests.append(_test_py3_none_macosx_10_9_universal2)
@@ -677,16 +680,17 @@ def _test_cp37_abi3_manylinux_2_17_x86_64(env):
         env,
         filename = "foo-0.0.1-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         glibc_versions = [
-            (0, 0),
             (2, 16),
             (2, 17),
             (2, 18),
         ],
         want = [
-            ":is_cp_abi3_manylinux_x86_64",
             ":is_cp_abi3_manylinux_2_17_x86_64",
             ":is_cp_abi3_manylinux_2_18_x86_64",
         ],
+        want_default_versions = {
+            ":is_cp_abi3_manylinux_x86_64": (2, 17),
+        },
     )
 
 _tests.append(_test_cp37_abi3_manylinux_2_17_x86_64)
@@ -697,22 +701,22 @@ def _test_cp37_abi3_manylinux_2_17_musllinux_1_1_aarch64(env):
         env,
         filename = "foo-0.0.1-cp37-cp37-manylinux_2_17_arm64.musllinux_1_1_arm64.whl",
         glibc_versions = [
-            (0, 0),
             (2, 16),
             (2, 17),
             (2, 18),
         ],
         muslc_versions = [
-            (0, 0),
             (1, 1),
         ],
         want = [
-            ":is_cp_cp_manylinux_aarch64",
             ":is_cp_cp_manylinux_2_17_aarch64",
             ":is_cp_cp_manylinux_2_18_aarch64",
-            ":is_cp_cp_musllinux_aarch64",
             ":is_cp_cp_musllinux_1_1_aarch64",
         ],
+        want_default_versions = {
+            ":is_cp_cp_manylinux_aarch64": (2, 17),
+            ":is_cp_cp_musllinux_aarch64": (1, 1),
+        },
     )
 
 _tests.append(_test_cp37_abi3_manylinux_2_17_musllinux_1_1_aarch64)
