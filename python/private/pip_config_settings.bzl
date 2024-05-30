@@ -173,7 +173,7 @@ def _whl_config_settings(*, suffix, plat_flag_values, **kwargs):
     # With the following three we cover different per-version wheels
     python_version = kwargs.get("python_version")
     py = "cp{}_py".format(python_version) if python_version else "py"
-    pycp = "cp{}_cp".format(python_version) if python_version else "cp3x"
+    pycp = "cp{}_cp3x".format(python_version) if python_version else "cp3x"
 
     flag_values = {}
 

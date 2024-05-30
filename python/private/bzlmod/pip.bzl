@@ -260,7 +260,7 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                     # This is no-op because pip is not used to download the wheel.
                     whl_library_args.pop("download_only", None)
 
-                    repo_name = "{}_{}".format(pip_name, distribution.filename)
+                    repo_name = _repo_name(pip_name, distribution.filename)
                     whl_library_args["requirement"] = requirement.srcs.requirement
                     whl_library_args["urls"] = [distribution.url]
                     whl_library_args["sha256"] = distribution.sha256
@@ -317,6 +317,21 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 version = major_minor,
             ),
         )
+
+def _repo_name(prefix, filename):
+    if not filename.endswith(".whl"):
+        # Then the filename is basically foo-3.2.1.<ext>
+        name = normalize_name(filename)
+    else:
+        parsed = parse_whl_name(filename)
+        name = "{}_{}_{}_{}_{}".format(
+            parsed.distribution,
+            parsed.version,
+            parsed.python_tag,
+            parsed.abi_tag,
+            parsed.platform_tag,
+        )
+    return "{}__{}".format(prefix, normalize_name(name))
 
 def _pip_impl(module_ctx):
     """Implementation of a class tag that creates the pip hub and corresponding pip spoke whl repositories.

@@ -255,9 +255,9 @@ def _test_cp_version_is_selected_when_python_version_is_specified(name):
     _analysis_test(
         name = name,
         dist = {
-            "is_cp3.10_cp_none_any": "cp310",
-            "is_cp3.8_cp_none_any": "cp38",
-            "is_cp3.9_cp_none_any": "cp39",
+            "is_cp3.10_cp3x_none_any": "cp310",
+            "is_cp3.8_cp3x_none_any": "cp38",
+            "is_cp3.9_cp3x_none_any": "cp39",
             "is_cp3x_none_any": "cp_default",
         },
         want = "cp310",
@@ -289,7 +289,7 @@ def _test_cp_cp_whl(name):
     _analysis_test(
         name = name,
         dist = {
-            "is_cp3.10_cp_cp_linux_aarch64": "whl",
+            "is_cp3.10_cp3x_cp_linux_aarch64": "whl",
         },
         want = "whl",
         config_settings = [
