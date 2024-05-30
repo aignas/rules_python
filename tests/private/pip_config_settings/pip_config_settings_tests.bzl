@@ -230,7 +230,7 @@ def _test_cp_whl_is_prefered_over_py3(name):
     _analysis_test(
         name = name,
         dist = {
-            "is_cp_none_any": "cp",
+            "is_cp3x_none_any": "cp",
             "is_py3_abi3_any": "py3_abi3",
             "is_py3_none_any": "py3",
         },
@@ -243,7 +243,7 @@ def _test_cp_abi_whl_is_prefered_over_py3(name):
     _analysis_test(
         name = name,
         dist = {
-            "is_cp_abi3_any": "cp",
+            "is_cp3x_abi3_any": "cp",
             "is_py3_abi3_any": "py3",
         },
         want = "cp",
@@ -258,7 +258,7 @@ def _test_cp_version_is_selected_when_python_version_is_specified(name):
             "is_cp3.10_cp_none_any": "cp310",
             "is_cp3.8_cp_none_any": "cp38",
             "is_cp3.9_cp_none_any": "cp39",
-            "is_cp_none_any": "cp_default",
+            "is_cp3x_none_any": "cp_default",
         },
         want = "cp310",
         config_settings = [
@@ -346,7 +346,7 @@ def _test_glibc(name):
     _analysis_test(
         name = name,
         dist = {
-            "is_cp_cp_manylinux_aarch64": "glibc",
+            "is_cp3x_cp_manylinux_aarch64": "glibc",
             "is_py3_abi3_linux_aarch64": "abi3_platform",
         },
         want = "glibc",
@@ -358,8 +358,8 @@ def _test_glibc_versioned(name):
     _analysis_test(
         name = name,
         dist = {
-            "is_cp_cp_manylinux_2_14_aarch64": "glibc",
-            "is_cp_cp_manylinux_2_17_aarch64": "glibc",
+            "is_cp3x_cp_manylinux_2_14_aarch64": "glibc",
+            "is_cp3x_cp_manylinux_2_17_aarch64": "glibc",
             "is_py3_abi3_linux_aarch64": "abi3_platform",
         },
         want = "glibc",
@@ -378,8 +378,8 @@ def _test_glibc_compatible_exists(name):
         dist = {
             # Code using the conditions will need to construct selects, which
             # do the version matching correctly.
-            "is_cp_cp_manylinux_2_14_aarch64": "2_14_whl_via_2_14_branch",
-            "is_cp_cp_manylinux_2_17_aarch64": "2_14_whl_via_2_17_branch",
+            "is_cp3x_cp_manylinux_2_14_aarch64": "2_14_whl_via_2_14_branch",
+            "is_cp3x_cp_manylinux_2_17_aarch64": "2_14_whl_via_2_17_branch",
         },
         want = "2_14_whl_via_2_17_branch",
         config_settings = [
@@ -395,7 +395,7 @@ def _test_musl(name):
     _analysis_test(
         name = name,
         dist = {
-            "is_cp_cp_musllinux_aarch64": "musl",
+            "is_cp3x_cp_musllinux_aarch64": "musl",
         },
         want = "musl",
         config_settings = [
@@ -410,7 +410,7 @@ def _test_windows(name):
     _analysis_test(
         name = name,
         dist = {
-            "is_cp_cp_windows_x86_64": "whl",
+            "is_cp3x_cp_windows_x86_64": "whl",
         },
         want = "whl",
         config_settings = [
@@ -425,8 +425,8 @@ def _test_osx(name):
         name = name,
         dist = {
             # We prefer arch specific whls over universal
-            "is_cp_cp_osx_x86_64": "whl",
-            "is_cp_cp_osx_x86_64_universal2": "universal_whl",
+            "is_cp3x_cp_osx_x86_64": "whl",
+            "is_cp3x_cp_osx_x86_64_universal2": "universal_whl",
         },
         want = "whl",
         config_settings = [
@@ -441,7 +441,7 @@ def _test_osx_universal_default(name):
         name = name,
         dist = {
             # We default to universal if only that exists
-            "is_cp_cp_osx_x86_64_universal2": "whl",
+            "is_cp3x_cp_osx_x86_64_universal2": "whl",
         },
         want = "whl",
         config_settings = [
@@ -456,8 +456,8 @@ def _test_osx_universal_only(name):
         name = name,
         dist = {
             # If we prefer universal, then we use that
-            "is_cp_cp_osx_x86_64": "whl",
-            "is_cp_cp_osx_x86_64_universal2": "universal",
+            "is_cp3x_cp_osx_x86_64": "whl",
+            "is_cp3x_cp_osx_x86_64_universal2": "universal",
         },
         want = "universal",
         config_settings = [
@@ -474,7 +474,7 @@ def _test_osx_os_version(name):
         dist = {
             # Similarly to the libc version, the user of the config settings will have to
             # construct the select so that the version selection is correct.
-            "is_cp_cp_osx_10_9_x86_64": "whl",
+            "is_cp3x_cp_osx_10_9_x86_64": "whl",
         },
         want = "whl",
         config_settings = [
@@ -492,8 +492,12 @@ def _test_all(name):
             "is_" + f: f
             for f in [
                 "{py}_{abi}_{plat}".format(py = valid_py, abi = valid_abi, plat = valid_plat)
-                for valid_py in ["py", "py3", "py3x", "cp3x"]
-                for valid_abi in ["none", "abi3", "cp3x"]
+                # we have py2.py3, py3, cp3x
+                for valid_py in ["py", "py3", "cp3x"]
+                # cp abi usually comes with a version and we only need one
+                # config setting variant for all of them because the python
+                # version will discriminate between different versions.
+                for valid_abi in ["none", "abi3", "cp"]
                 for valid_plat in [
                     "any",
                     "manylinux_2_17_x86_64",
@@ -501,12 +505,16 @@ def _test_all(name):
                     "osx_x86_64",
                     "windows_x86_64",
                 ]
+                if not (
+                    valid_abi == "abi3" and valid_py == "py" or
+                    valid_abi == "cp" and valid_py != "cp3x"
+                )
             ]
         },
-        want = "whl",
+        want = "cp3x_cp_manylinux_2_17_x86_64",
         config_settings = [
-            _flag.pip_whl_osx_version("10.9"),
-            _flag.platform("mac_x86_64"),
+            _flag.pip_whl_glibc_version("2.17"),
+            _flag.platform("linux_x86_64"),
         ],
     )
 

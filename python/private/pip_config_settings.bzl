@@ -173,7 +173,7 @@ def _whl_config_settings(*, suffix, plat_flag_values, **kwargs):
     # With the following three we cover different per-version wheels
     python_version = kwargs.get("python_version")
     py = "cp{}_py".format(python_version) if python_version else "py"
-    pycp = "cp{}_cp".format(python_version) if python_version else "cp"
+    pycp = "cp{}_cp".format(python_version) if python_version else "cp3x"
 
     flag_values = {}
 
@@ -181,10 +181,8 @@ def _whl_config_settings(*, suffix, plat_flag_values, **kwargs):
         "{}_none_any{}".format(py, suffix): None,
         "{}3_none_any{}".format(py, suffix): _flags.whl_py3,
         "{}3_abi3_any{}".format(py, suffix): _flags.whl_py3_abi3,
-        "{}3x_none_any{}".format(py, suffix): _flags.whl_py3x,
-        "{}3x_abi3_any{}".format(py, suffix): _flags.whl_py3x_abi3,
-        "{}3x_none_any{}".format(pycp, suffix): _flags.whl_pycp3x,
-        "{}3x_abi3_any{}".format(pycp, suffix): _flags.whl_pycp3x_abi3,
+        "{}_none_any{}".format(pycp, suffix): _flags.whl_pycp3x,
+        "{}_abi3_any{}".format(pycp, suffix): _flags.whl_pycp3x_abi3,
         "{}_cp_any{}".format(pycp, suffix): _flags.whl_pycp3x_abicp,
     }.items():
         if f and f in flag_values:
@@ -198,15 +196,17 @@ def _whl_config_settings(*, suffix, plat_flag_values, **kwargs):
             **kwargs
         )
 
+    generic_flag_values = flag_values
+
     for (suffix, flag_values) in plat_flag_values:
+        flag_values = flag_values | generic_flag_values
+
         for n, f in {
             "{}_none_{}".format(py, suffix): _flags.whl_plat,
             "{}3_none_{}".format(py, suffix): _flags.whl_plat_py3,
             "{}3_abi3_{}".format(py, suffix): _flags.whl_plat_py3_abi3,
-            "{}3x_none_{}".format(py, suffix): _flags.whl_plat_py3x,
-            "{}3x_abi3_{}".format(py, suffix): _flags.whl_plat_py3x_abi3,
-            "{}3x_none_{}".format(pycp, suffix): _flags.whl_plat_pycp3x,
-            "{}3x_abi3_{}".format(pycp, suffix): _flags.whl_plat_pycp3x_abi3,
+            "{}_none_{}".format(pycp, suffix): _flags.whl_plat_pycp3x,
+            "{}_abi3_{}".format(pycp, suffix): _flags.whl_plat_pycp3x_abi3,
             "{}_cp_{}".format(pycp, suffix): _flags.whl_plat_pycp3x_abicp,
         }.items():
             if f and f in flag_values:
