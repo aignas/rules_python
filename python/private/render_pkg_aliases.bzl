@@ -327,17 +327,14 @@ def multiplatform_whl_aliases(*, aliases, default_version, **kwargs):
         A dict with aliases to be used in the hub repo.
     """
 
-    # TODO @aignas 2024-05-27: add unit tests
     ret = []
-    defaults = {}
+    versioned_additions = {}
     for alias in aliases:
         if not alias.filename:
             ret.append(alias)
             continue
 
-        # TODO @aignas 2024-05-30: we need to segment the versions so that we
-        # don't have duplicates
-        config_settings, filename_defaults = get_filename_config_settings(
+        config_settings, all_versioned_settings = get_filename_config_settings(
             # TODO @aignas 2024-05-27: pass the parsed whl to reduce the
             # number of duplicate operations
             filename = alias.filename,
@@ -353,20 +350,53 @@ def multiplatform_whl_aliases(*, aliases, default_version, **kwargs):
                 version = alias.version,
                 config_setting = "//_config" + setting,
             ))
-        for setting, version in filename_defaults.items():
-            a = whl_alias(
-                repo = alias.repo,
-                version = alias.version,
-                config_setting = "//_config" + setting,
-            )
-            _, has_version = defaults.setdefault(setting, (a, version))
-            if has_version > version:
-                defaults[a] = (a, version)
 
-    ret.extend([
-        a
-        for (a, _) in defaults.values()
-    ])
+        # Now for the versioned platform config settings, we need to select one
+        # that best fits the bill and if there are multiple wheels, e.g.
+        # manylinux_2_17_x86_64 and manylinux_2_28_x86_64, then we need to select
+        # the former when the glibc is in the range of [2.17, 2.28) and then chose
+        # the later if it is [2.28, ...). If the 2.28 wheel was not present in
+        # the hub, then we would need to use 2.17 for all the glibc version
+        # configurations.
+        #
+        # Here we add the version settings to a dict where we key the range of
+        # versions that the whl spans. If the wheel supports musl and glibc at
+        # the same time, we do this for each supported platform, hence the
+        # double dict.
+        for default_setting, versioned in all_versioned_settings.items():
+            versions = sorted(versioned)
+            min_version = versions[0]
+            max_version = versions[-1]
+
+            versioned_additions.setdefault(default_setting, {})[(min_version, max_version)] = struct(
+                repo = alias.repo,
+                python_version = alias.version,
+                settings = versioned,
+            )
+
+    versioned = {}
+    for default_setting, candidates in versioned_additions.items():
+        # Sort the candidates by the range of versions the span, so that we
+        # start with the lowest version.
+        for _, candidate in sorted(candidates.items()):
+            # Set the default with the first candidate, which gives us the highest
+            # compatibility. If the users want to use a higher-version than the default
+            # they can configure the glibc_version flag.
+            versioned.setdefault(default_setting, whl_alias(
+                version = candidate.python_version,
+                config_setting = "//_config" + default_setting,
+                repo = candidate.repo,
+            ))
+
+            # We will be overwriting previously added entries, but that is intended.
+            for _, setting in sorted(candidate.settings.items()):
+                versioned[setting] = whl_alias(
+                    version = candidate.python_version,
+                    config_setting = "//_config" + setting,
+                    repo = candidate.repo,
+                )
+
+    ret.extend(versioned.values())
     return ret
 
 def _render_pip_config_settings(python_versions, target_platforms = [], osx_versions = [], glibc_versions = [], muslc_versions = []):
@@ -496,7 +526,7 @@ def get_filename_config_settings(
     glibc_versions = sorted(glibc_versions)
     muslc_versions = sorted(muslc_versions)
     osx_versions = sorted(osx_versions)
-    default_version_settings = {}
+    setting_supported_versions = {}
 
     if filename.endswith(".whl"):
         parsed = parse_whl_name(filename)
@@ -522,7 +552,7 @@ def get_filename_config_settings(
                 glibc_versions = glibc_versions,
                 muslc_versions = muslc_versions,
                 osx_versions = osx_versions,
-                default_version_settings = default_version_settings,
+                setting_supported_versions = setting_supported_versions,
             )
     else:
         prefixes = ["sdist"]
@@ -537,21 +567,26 @@ def get_filename_config_settings(
     else:
         fail("BUG: got no python_version and it is not default")
 
-    if suffixes:
-        return [":is_{}_{}".format(p, s) for p in prefixes for s in suffixes], {
-            ":is_{}_{}".format(p, suffix): version
-            for p in prefixes
-            for suffix, version in default_version_settings.items()
+    versioned = {
+        ":is_{}_{}".format(p, suffix): {
+            version: ":is_{}_{}".format(p, setting)
+            for version, setting in versions.items()
         }
+        for p in prefixes
+        for suffix, versions in setting_supported_versions.items()
+    }
+
+    if suffixes or versioned:
+        return [":is_{}_{}".format(p, s) for p in prefixes for s in suffixes], versioned
     else:
-        return [":is_{}".format(p) for p in prefixes], default_version_settings
+        return [":is_{}".format(p) for p in prefixes], setting_supported_versions
 
 def _whl_config_setting_sufixes(
         platform_tag,
         glibc_versions,
         muslc_versions,
         osx_versions,
-        default_version_settings):
+        setting_supported_versions):
     suffixes = []
     for platform_tag in platform_tag.split("."):
         for p in whl_target_platforms(platform_tag):
@@ -573,20 +608,18 @@ def _whl_config_setting_sufixes(
                 fail("Unsupported whl os: {}".format(p.os))
 
             default_version_setting = "{}_{}".format(prefix, suffix)
-            min_version = default_version_settings.get(default_version_setting)
+            supported_versions = {}
             for v in versions:
                 if v == (0, 0):
                     suffixes.append(default_version_setting)
                 elif v >= p.version:
-                    if not min_version or min_version > v:
-                        min_version = v
-                    suffixes.append("{}_{}_{}_{}".format(
+                    supported_versions[v] = "{}_{}_{}_{}".format(
                         prefix,
                         v[0],
                         v[1],
                         suffix,
-                    ))
-            if min_version:
-                default_version_settings[default_version_setting] = min_version
+                    )
+            if supported_versions:
+                setting_supported_versions[default_version_setting] = supported_versions
 
     return suffixes

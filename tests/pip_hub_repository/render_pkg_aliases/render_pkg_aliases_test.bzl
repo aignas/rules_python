@@ -495,7 +495,7 @@ def _test_config_settings(
         *,
         filename,
         want,
-        want_default_versions = {},
+        want_versions = {},
         target_platforms = [],
         glibc_versions = [],
         muslc_versions = [],
@@ -512,7 +512,7 @@ def _test_config_settings(
         python_default = python_default,
     )
     env.expect.that_collection(got).contains_exactly(want)
-    env.expect.that_dict(got_default_version_settings).contains_exactly(want_default_versions)
+    env.expect.that_dict(got_default_version_settings).contains_exactly(want_versions)
 
 def _test_sdist(env):
     # Do the first test for multiple extensions
@@ -628,15 +628,16 @@ def _test_py3_none_macosx_10_9_universal2(env):
             (10, 9),
             (11, 0),
         ],
-        want = [
-            ":is_py3_none_osx_11_0_aarch64_universal2",
-            ":is_py3_none_osx_11_0_x86_64_universal2",
-            ":is_py3_none_osx_10_9_aarch64_universal2",
-            ":is_py3_none_osx_10_9_x86_64_universal2",
-        ],
-        want_default_versions = {
-            ":is_py3_none_osx_aarch64_universal2": (10, 9),
-            ":is_py3_none_osx_x86_64_universal2": (10, 9),
+        want = [],
+        want_versions = {
+            ":is_py3_none_osx_aarch64_universal2": {
+                (10, 9): ":is_py3_none_osx_10_9_aarch64_universal2",
+                (11, 0): ":is_py3_none_osx_11_0_aarch64_universal2",
+            },
+            ":is_py3_none_osx_x86_64_universal2": {
+                (10, 9): ":is_py3_none_osx_10_9_x86_64_universal2",
+                (11, 0): ":is_py3_none_osx_11_0_x86_64_universal2",
+            },
         },
     )
 
@@ -685,12 +686,12 @@ def _test_cp37_abi3_manylinux_2_17_x86_64(env):
             (2, 17),
             (2, 18),
         ],
-        want = [
-            ":is_cp_abi3_manylinux_2_17_x86_64",
-            ":is_cp_abi3_manylinux_2_18_x86_64",
-        ],
-        want_default_versions = {
-            ":is_cp_abi3_manylinux_x86_64": (2, 17),
+        want = [],
+        want_versions = {
+            ":is_cp_abi3_manylinux_x86_64": {
+                (2, 17): ":is_cp_abi3_manylinux_2_17_x86_64",
+                (2, 18): ":is_cp_abi3_manylinux_2_18_x86_64",
+            },
         },
     )
 
@@ -709,14 +710,15 @@ def _test_cp37_abi3_manylinux_2_17_musllinux_1_1_aarch64(env):
         muslc_versions = [
             (1, 1),
         ],
-        want = [
-            ":is_cp_cp_manylinux_2_17_aarch64",
-            ":is_cp_cp_manylinux_2_18_aarch64",
-            ":is_cp_cp_musllinux_1_1_aarch64",
-        ],
-        want_default_versions = {
-            ":is_cp_cp_manylinux_aarch64": (2, 17),
-            ":is_cp_cp_musllinux_aarch64": (1, 1),
+        want = [],
+        want_versions = {
+            ":is_cp_cp_manylinux_aarch64": {
+                (2, 17): ":is_cp_cp_manylinux_2_17_aarch64",
+                (2, 18): ":is_cp_cp_manylinux_2_18_aarch64",
+            },
+            ":is_cp_cp_musllinux_aarch64": {
+                (1, 1): ":is_cp_cp_musllinux_1_1_aarch64",
+            },
         },
     )
 
@@ -782,6 +784,43 @@ def _test_multiplatform_whl_aliases_filename(env):
     env.expect.that_collection(got).contains_exactly(want)
 
 _tests.append(_test_multiplatform_whl_aliases_filename)
+
+def _test_multiplatform_whl_aliases_filename_versioned(env):
+    aliases = [
+        whl_alias(
+            repo = "glibc-2.17",
+            filename = "foo-0.0.1-py3-none-manylinux_2_17_x86_64.whl",
+            version = "3.1",
+        ),
+        whl_alias(
+            repo = "glibc-2.18",
+            filename = "foo-0.0.1-py3-none-manylinux_2_18_x86_64.whl",
+            version = "3.1",
+        ),
+        whl_alias(
+            repo = "musl",
+            filename = "foo-0.0.1-py3-none-musllinux_1_1_x86_64.whl",
+            version = "3.1",
+        ),
+    ]
+    got = multiplatform_whl_aliases(
+        aliases = aliases,
+        default_version = None,
+        glibc_versions = [(2, 17), (2, 18)],
+        muslc_versions = [(1, 1), (1, 2)],
+        osx_versions = [],
+    )
+    want = [
+        whl_alias(config_setting = "//_config:is_cp3.1_py3_none_manylinux_2_17_x86_64", repo = "glibc-2.17", version = "3.1"),
+        whl_alias(config_setting = "//_config:is_cp3.1_py3_none_manylinux_2_18_x86_64", repo = "glibc-2.18", version = "3.1"),
+        whl_alias(config_setting = "//_config:is_cp3.1_py3_none_manylinux_x86_64", repo = "glibc-2.17", version = "3.1"),
+        whl_alias(config_setting = "//_config:is_cp3.1_py3_none_musllinux_1_1_x86_64", repo = "musl", version = "3.1"),
+        whl_alias(config_setting = "//_config:is_cp3.1_py3_none_musllinux_1_2_x86_64", repo = "musl", version = "3.1"),
+        whl_alias(config_setting = "//_config:is_cp3.1_py3_none_musllinux_x86_64", repo = "musl", version = "3.1"),
+    ]
+    env.expect.that_collection(got).contains_exactly(want)
+
+_tests.append(_test_multiplatform_whl_aliases_filename_versioned)
 
 def render_pkg_aliases_test_suite(name):
     """Create the test suite.
