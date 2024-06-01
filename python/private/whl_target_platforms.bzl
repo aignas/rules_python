@@ -103,29 +103,34 @@ def _whl_priority(value):
     # Windows does not have multiple wheels for the same target platform
     return (False, False, 0, 0)
 
-def select_whls(*, whls, want_version = "3.0", want_abis = [], want_platforms = []):
+def select_whls(*, whls, want_python_version = "3.0", want_abis = [], want_platforms = [], logger = None):
     """Select a subset of wheels suitable for target platforms from a list.
 
     Args:
-        whls(list[struct]): A list of candidates.
-        want_version(str): An optional parameter to filter whls by version. Defaults to '3.0'.
+        whls(list[struct]): A list of candidates which have a `filename`
+            attribute containing the `whl` filename.
+        want_python_version(str): An optional parameter to filter whls by python version. Defaults to '3.0'.
         want_abis(list[str]): A list of ABIs that are supported.
         want_platforms(str): The platforms
+        logger: A logger for printing diagnostic messages.
 
     Returns:
-        None or a struct with `url`, `sha256` and `filename` attributes for the
-        selected whl. If no match is found, None is returned.
+        A filtered list of items from the `whls` arg where `filename` matches
+        the selected criteria. If no match is found, an empty list is returned.
     """
     if not whls:
-        return {}
+        return []
 
     version_limit = -1
-    if want_version:
-        version_limit = int(want_version.split(".")[1])
+    if want_python_version:
+        version_limit = int(want_python_version.split(".")[1])
 
     candidates = {}
     for whl in whls:
         parsed = parse_whl_name(whl.filename)
+
+        if logger:
+            logger.trace(lambda: "Deciding whether to use '{}'".format(whl.filename))
 
         supported_implementations = {}
         whl_version_min = 0
@@ -135,20 +140,27 @@ def select_whls(*, whls, want_version = "3.0", want_abis = [], want_platforms = 
             if tag.startswith("cp3") or tag.startswith("py3"):
                 version = int(tag[len("..3"):] or 0)
             else:
-                # tag.startswith("cp2") or tag.startswith("py2")
+                # In this case it should be eithor "cp2" or "py2" and we will default
+                # to `whl_version_min` = 0
                 continue
 
             if whl_version_min == 0 or version < whl_version_min:
                 whl_version_min = version
 
         if not ("cp" in supported_implementations or "py" in supported_implementations):
+            if logger:
+                logger.trace(lambda: "Discarding the whl because the whl does not support CPython, whl supported implementations are: {}".format(supported_implementations))
             continue
 
         if want_abis and parsed.abi_tag not in want_abis:
             # Filter out incompatible ABIs
+            if logger:
+                logger.trace(lambda: "Discarding the whl because the whl abi did not match")
             continue
 
         if version_limit != -1 and whl_version_min > version_limit:
+            if logger:
+                logger.trace(lambda: "Discarding the whl because the whl supported python version is too high")
             continue
 
         compatible = False
@@ -161,6 +173,8 @@ def select_whls(*, whls, want_version = "3.0", want_abis = [], want_platforms = 
                     break
 
         if not compatible:
+            if logger:
+                logger.trace(lambda: "Discarding the whl because the whl does not support the desired platforms: {}".format(want_platforms))
             continue
 
         for implementation in supported_implementations:
@@ -208,13 +222,15 @@ def select_whl(*, whls, want_platform):
     # the repository context instead of `select_whl`.
     whls = select_whls(
         whls = whls,
-        want_version = "",
+        want_python_version = "",
         want_platforms = [want_platform],
     )
 
     candidates = {
         parse_whl_name(w.filename).platform_tag: w
         for w in whls
+        # TODO @aignas 2024-06-01: to be addressed in #1837, where we add the necessary
+        # config settings.
         if "musllinux_" not in w.filename
     }
 
