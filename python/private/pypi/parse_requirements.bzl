@@ -164,7 +164,7 @@ def parse_requirements(
         requirements_windows (label): The requirements file for windows OS.
         extra_pip_args (string list): Extra pip arguments to perform extra validations and to
             be joined with args fined in files.
-        get_index_urls: Callable[[ctx, list[str]], dict], a callable to get all
+        get_index_urls: Callable[[ctx, dict[str, str]], dict], a callable to get all
             of the distribution URLs from a PyPI index. Accepts ctx and
             distribution names to query.
         python_version: str or None. This is needed when the get_index_urls is
@@ -332,14 +332,14 @@ def parse_requirements(
             fail_fn("'python_version' must be provided")
             return None
 
+        distributions = {}
+        for reqs in requirements_by_platform.values():
+            for req in reqs.values():
+                distributions.setdefault(req.distribution, {})[req.srcs.version] = None
+
         index_urls = get_index_urls(
             ctx,
-            # Use list({}) as a way to have a set
-            list({
-                req.distribution: None
-                for reqs in requirements_by_platform.values()
-                for req in reqs.values()
-            }),
+            {key: "-".join(sorted(values)) for key, values in distributions.items()},
         )
 
     ret = {}

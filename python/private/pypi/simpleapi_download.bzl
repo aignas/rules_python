@@ -22,7 +22,7 @@ load("//python/private:envsubst.bzl", "envsubst")
 load("//python/private:normalize_name.bzl", "normalize_name")
 load(":parse_simpleapi_html.bzl", "parse_simpleapi_html")
 
-def simpleapi_download(ctx, *, attr, cache, parallel_download = True):
+def simpleapi_download(ctx, *, attr, parallel_download = True):
     """Download Simple API HTML.
 
     Args:
@@ -34,20 +34,12 @@ def simpleapi_download(ctx, *, attr, cache, parallel_download = True):
              separate packages.
            * extra_index_urls: Extra index URLs that will be looked up after
              the main is looked up.
-           * sources: list[str], the sources to download things for. Each value is
+           * sources: dict[str, list[str]], the sources to download things for. Each value is
              the contents of requirements files.
            * envsubst: list[str], the envsubst vars for performing substitution in index url.
            * netrc: The netrc parameter for ctx.download, see http_file for docs.
            * auth_patterns: The auth_patterns parameter for ctx.download, see
                http_file for docs.
-        cache: A dictionary that can be used as a cache between calls during a
-            single evaluation of the extension. We use a dictionary as a cache
-            so that we can reuse calls to the simple API when evaluating the
-            extension. Using the canonical_id parameter of the module_ctx would
-            deposit the simple API responses to the bazel cache and that is
-            undesirable because additions to the PyPI index would not be
-            reflected when re-evaluating the extension unless we do
-            `bazel clean --expunge`.
         parallel_download: A boolean to enable usage of bazel 7.1 non-blocking downloads.
 
     Returns:
@@ -67,7 +59,7 @@ def simpleapi_download(ctx, *, attr, cache, parallel_download = True):
     async_downloads = {}
     contents = {}
     index_urls = [attr.index_url] + attr.extra_index_urls
-    for pkg in attr.sources:
+    for pkg, cache_key in attr.sources.items():
         pkg_normalized = normalize_name(pkg)
 
         success = False
@@ -79,7 +71,7 @@ def simpleapi_download(ctx, *, attr, cache, parallel_download = True):
                     pkg,
                 ),
                 attr = attr,
-                cache = cache,
+                cache_key = cache_key,
                 **download_kwargs
             )
             if hasattr(result, "wait"):
@@ -123,19 +115,20 @@ def simpleapi_download(ctx, *, attr, cache, parallel_download = True):
 
     return contents
 
-def _read_simpleapi(ctx, url, attr, cache, **download_kwargs):
+def _read_simpleapi(ctx, url, attr, cache_key, **download_kwargs):
     """Read SimpleAPI.
 
     Args:
         ctx: The module_ctx or repository_ctx.
         url: str, the url parameter that can be passed to ctx.download.
+        cache_key: str, the unique cache_key that is used to construct the
+            canonical_id.
         attr: The attribute that contains necessary info for downloading. The
           following attributes must be present:
            * envsubst: The envsubst values for performing substitutions in the URL.
            * netrc: The netrc parameter for ctx.download, see http_file for docs.
            * auth_patterns: The auth_patterns parameter for ctx.download, see
                http_file for docs.
-        cache: A dict for storing the results.
         **download_kwargs: Any extra params to ctx.download.
             Note that output and auth will be passed for you.
 
@@ -154,30 +147,30 @@ def _read_simpleapi(ctx, url, attr, cache, **download_kwargs):
         ctx.getenv if hasattr(ctx, "getenv") else ctx.os.environ.get,
     )
 
-    cache_key = real_url
-    if cache_key in cache:
-        return struct(success = True, output = cache[cache_key])
-
     output_str = envsubst(
         url,
         attr.envsubst,
         # Use env names in the subst values - this will be unique over
         # the lifetime of the execution of this function and we also use
-        # `~` as the separator to ensure that we don't get clashes.
-        {e: "~{}~".format(e) for e in attr.envsubst}.get,
+        # `+` as the separator to ensure that we don't get clashes.
+        {e: "+{}+".format(e) for e in attr.envsubst}.get,
     )
+    output_str = "++".join([output_str, cache_key])
 
     # Transform the URL into a valid filename
-    for char in [".", ":", "/", "\\", "-"]:
+    for char in [":", "/", "\\", "-"]:
         output_str = output_str.replace(char, "_")
 
-    output = ctx.path(output_str.strip("_").lower() + ".html")
+    output_str = output_str.strip("_").lower()
+
+    output = ctx.path(output_str + ".html")
 
     # NOTE: this may have block = True or block = False in the download_kwargs
     download = ctx.download(
         url = [real_url],
         output = output,
         auth = get_auth(ctx, [real_url], ctx_attr = attr),
+        canonical_id = output_str,
         allow_fail = True,
         **download_kwargs
     )
@@ -185,12 +178,12 @@ def _read_simpleapi(ctx, url, attr, cache, **download_kwargs):
     if download_kwargs.get("block") == False:
         # Simulate the same API as ctx.download has
         return struct(
-            wait = lambda: _read_index_result(ctx, download.wait(), output, url, cache, cache_key),
+            wait = lambda: _read_index_result(ctx, download.wait(), output, url),
         )
 
-    return _read_index_result(ctx, download, output, url, cache, cache_key)
+    return _read_index_result(ctx, download, output, url)
 
-def _read_index_result(ctx, result, output, url, cache, cache_key):
+def _read_index_result(ctx, result, output, url):
     if not result.success:
         return struct(success = False)
 
@@ -198,7 +191,6 @@ def _read_index_result(ctx, result, output, url, cache, cache_key):
 
     output = parse_simpleapi_html(url = url, content = content)
     if output:
-        cache.setdefault(cache_key, output)
-        return struct(success = True, output = output, cache_key = cache_key)
+        return struct(success = True, output = output)
     else:
         return struct(success = False)

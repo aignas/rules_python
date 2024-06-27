@@ -97,7 +97,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
             whl_mods = whl_mods,
         )
 
-def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, simpleapi_cache):
+def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map):
     logger = repo_utils.logger(module_ctx)
     python_interpreter_target = pip_attr.python_interpreter_target
     is_hub_reproducible = True
@@ -177,7 +177,6 @@ def _create_whl_repos(module_ctx, pip_attr, whl_map, whl_overrides, group_map, s
                 netrc = pip_attr.netrc,
                 auth_patterns = pip_attr.auth_patterns,
             ),
-            cache = simpleapi_cache,
             parallel_download = pip_attr.parallel_download,
         )
 
@@ -432,7 +431,6 @@ def _pip_impl(module_ctx):
     hub_whl_map = {}
     hub_group_map = {}
 
-    simpleapi_cache = {}
     is_extension_reproducible = True
 
     for mod in module_ctx.modules:
@@ -470,7 +468,7 @@ def _pip_impl(module_ctx):
             else:
                 pip_hub_map[pip_attr.hub_name].python_versions.append(pip_attr.python_version)
 
-            is_hub_reproducible = _create_whl_repos(module_ctx, pip_attr, hub_whl_map, whl_overrides, hub_group_map, simpleapi_cache)
+            is_hub_reproducible = _create_whl_repos(module_ctx, pip_attr, hub_whl_map, whl_overrides, hub_group_map)
             is_extension_reproducible = is_extension_reproducible and is_hub_reproducible
 
     for hub_name, whl_map in hub_whl_map.items():
