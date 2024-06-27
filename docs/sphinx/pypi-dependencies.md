@@ -331,13 +331,17 @@ Loading: 0 packages loaded
 
 This does not mean that `rules_python` is fetching the wheels eagerly, but it
 rather means that it is calling the PyPI server to get the Simple API response
-to get the list of all available source and wheel distributions. Once it has
-got all of the available distributions, it will select the right ones depending
-on the `sha256` values in your `requirements_lock.txt` file. The compatible
-distribution URLs will be then written to the `MODULE.bazel.lock` file. Currently
-users wishing to use the lock file with `rules_python` with this feature have
-to set an environment variable `RULES_PYTHON_OS_ARCH_LOCK_FILE=0` which will
-become default in the next release.
+to get the list of all available source and wheel distributions. If you see
+`bazel` selecting the wrong distributions (you can always inspect the
+`MODULE.bazel.lock` file for the resolved URLs), then it means that there could
+be stale items in the bazel downloader cache. This is likely a bug in
+`rules_python` (please raise a ticket) and to workaround it do
+`bazel clean --expunge --async`.
+
+Once it has got all of the available distributions, it will select the right
+ones depending on the `sha256` values in your `requirements_lock.txt` file. The
+compatible distribution URLs will be then written to the `MODULE.bazel.lock`
+file.
 
 Fetching the distribution information from the PyPI allows `rules_python` to
 know which `whl` should be used on which target platform and it will determine

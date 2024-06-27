@@ -335,11 +335,17 @@ def parse_requirements(
         distributions = {}
         for reqs in requirements_by_platform.values():
             for req in reqs.values():
-                distributions.setdefault(req.distribution, {})[req.srcs.version] = None
+                distributions.setdefault(req.distribution, {})[req.srcs.version] = req.requirement_line
 
         index_urls = get_index_urls(
             ctx,
-            {key: "-".join(sorted(values)) for key, values in distributions.items()},
+            {
+                key: struct(
+                    versions = "-".join(sorted(values.keys())),
+                    cache_key = ".".join(sorted(values.values())),
+                )
+                for key, values in distributions.items()
+            },
         )
 
     ret = {}
