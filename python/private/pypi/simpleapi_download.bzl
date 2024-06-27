@@ -22,6 +22,8 @@ load("//python/private:envsubst.bzl", "envsubst")
 load("//python/private:normalize_name.bzl", "normalize_name")
 load(":parse_simpleapi_html.bzl", "parse_simpleapi_html")
 
+visibility("private")
+
 def simpleapi_download(ctx, *, attr, parallel_download = True):
     """Download Simple API HTML.
 
@@ -65,7 +67,7 @@ def simpleapi_download(ctx, *, attr, parallel_download = True):
 
         success = False
         for index_url in index_urls:
-            result = _read_simpleapi(
+            result = read_simpleapi(
                 ctx = ctx,
                 url = "{}/{}/".format(
                     index_url_overrides.get(pkg_normalized, index_url).rstrip("/"),
@@ -117,11 +119,15 @@ def simpleapi_download(ctx, *, attr, parallel_download = True):
 
     return contents
 
-def _read_simpleapi(ctx, url, attr, versions, cache_key, **download_kwargs):
+def read_simpleapi(ctx, url, attr, versions, cache_key, **download_kwargs):
     """Read SimpleAPI.
 
     Args:
-        ctx: The module_ctx or repository_ctx.
+        ctx: The module_ctx or repository_ctx. We use:
+            * ctx.path
+            * ctx.download
+            * ctx.read
+            * ctx.getenv or ctx.os.environ.get
         url: str, the url parameter that can be passed to ctx.download.
         versions: str, the version for which we want the metadata, used to
             construct a filename for outputing a file. Whilst it is not optimal
