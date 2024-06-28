@@ -103,7 +103,12 @@ dev_pip.parse(
     python_version = "3.11",
     requirements_lock = "//examples/wheel:requirements_server.txt",
 )
-use_repo(dev_pip, "dev_pip", "pypiserver")
+dev_pip.parse(
+    hub_name = "pypi_test",
+    python_version = "3.11",
+    requirements_lock = "//tests/pypi:requirements.txt",
+)
+use_repo(dev_pip, "dev_pip", "pypi_test", "pypiserver")
 
 # Bazel integration test setup below
 

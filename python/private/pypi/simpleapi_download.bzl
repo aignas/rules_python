@@ -37,8 +37,8 @@ def simpleapi_download(ctx, *, attr, parallel_download = True):
            * extra_index_urls: Extra index URLs that will be looked up after
              the main is looked up.
            * sources: dict[str, struct], the sources to download things for.
-             Each value is a struct having a `versions` attribute and a
-             concatenated requirement lines.
+             Each value is a struct having a `cache_key` attribute for
+             constructing the canonical_id.
            * envsubst: list[str], the envsubst vars for performing substitution in index url.
            * netrc: The netrc parameter for ctx.download, see http_file for docs.
            * auth_patterns: The auth_patterns parameter for ctx.download, see
@@ -74,7 +74,6 @@ def simpleapi_download(ctx, *, attr, parallel_download = True):
                     pkg,
                 ),
                 attr = attr,
-                versions = req.versions,
                 cache_key = req.cache_key,
                 **download_kwargs
             )
@@ -119,7 +118,7 @@ def simpleapi_download(ctx, *, attr, parallel_download = True):
 
     return contents
 
-def read_simpleapi(ctx, url, attr, versions, cache_key, **download_kwargs):
+def read_simpleapi(ctx, url, attr, cache_key, **download_kwargs):
     """Read SimpleAPI.
 
     Args:
@@ -129,12 +128,6 @@ def read_simpleapi(ctx, url, attr, versions, cache_key, **download_kwargs):
             * ctx.read
             * ctx.getenv or ctx.os.environ.get
         url: str, the url parameter that can be passed to ctx.download.
-        versions: str, the version for which we want the metadata, used to
-            construct a filename for outputing a file. Whilst it is not optimal
-            to call the same URL multiple times for different package versions,
-            it allows us to have a correct caching scheme for caching the
-            results and not needed to refetch the metadata if the lock file
-            does not change or if only certain packages change.
         cache_key: str, the unique cache_key that is used to construct the
             canonical_id.
         attr: The attribute that contains necessary info for downloading. The
@@ -169,22 +162,20 @@ def read_simpleapi(ctx, url, attr, versions, cache_key, **download_kwargs):
         # `+` as the separator to ensure that we don't get clashes.
         {e: "+{}+".format(e) for e in attr.envsubst}.get,
     )
-    output_str = "++".join([output_str, versions])
+    canonical_id = ""  # output_str + "." + cache_key
 
     # Transform the URL into a valid filename
-    for char in [":", "/", "\\", "-"]:
+    for char in [".", ":", "/", "\\", "-"]:
         output_str = output_str.replace(char, "_")
 
-    output_str = output_str.strip("_").lower()
-
-    output = ctx.path(output_str + ".html")
+    output = ctx.path(output_str.strip("_").lower() + ".html")
 
     # NOTE: this may have block = True or block = False in the download_kwargs
     download = ctx.download(
         url = [real_url],
         output = output,
         auth = get_auth(ctx, [real_url], ctx_attr = attr),
-        canonical_id = output_str + "." + cache_key,
+        canonical_id = canonical_id,
         allow_fail = True,
         **download_kwargs
     )
