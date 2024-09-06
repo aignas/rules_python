@@ -16,7 +16,7 @@
 
 load("@bazel_features//:features.bzl", "bazel_features")
 load("//python:repositories.bzl", "python_register_toolchains")
-load("//python:versions.bzl", "TOOL_VERSIONS")
+load("//python:versions.bzl", "PLATFORMS", "TOOL_VERSIONS")
 load("//python/private:repo_utils.bzl", "repo_utils")
 load(":pythons_hub.bzl", "hub_repo")
 load(":text_util.bzl", "render")
@@ -28,7 +28,7 @@ load(":util.bzl", "IS_BAZEL_6_4_OR_HIGHER")
 _MAX_NUM_TOOLCHAINS = 9999
 _TOOLCHAIN_INDEX_PAD_LENGTH = len(str(_MAX_NUM_TOOLCHAINS))
 
-def _python_register_toolchains(name, toolchain_attr, module, ignore_root_user_error):
+def _python_register_toolchains(name, toolchain_attr, module, ignore_root_user_error, platforms):
     """Calls python_register_toolchains and returns a struct used to collect the toolchains.
     """
     python_register_toolchains(
@@ -36,6 +36,7 @@ def _python_register_toolchains(name, toolchain_attr, module, ignore_root_user_e
         python_version = toolchain_attr.python_version,
         register_coverage_tool = toolchain_attr.configure_coverage_tool,
         ignore_root_user_error = ignore_root_user_error,
+        platforms = platforms,
     )
     return struct(
         python_version = toolchain_attr.python_version,
@@ -144,6 +145,8 @@ def _python_impl(module_ctx):
                     toolchain_attr,
                     module = mod,
                     ignore_root_user_error = ignore_root_user_error,
+                    # TODO @aignas 2024-09-06: PLATFORMS overrides
+                    platforms = PLATFORMS,
                 )
                 global_toolchain_versions[toolchain_version] = toolchain_info
                 if debug_info:

@@ -522,7 +522,6 @@ For more information see the official bazel docs
         "platform": attr.string(
             doc = "The platform name for the Python interpreter tarball.",
             mandatory = True,
-            values = PLATFORMS.keys(),
         ),
         "python_version": attr.string(
             doc = "The Python version.",
@@ -567,6 +566,7 @@ def python_register_toolchains(
         register_coverage_tool = False,
         set_python_version_constraint = False,
         tool_versions = None,
+        platforms = None,
         **kwargs):
     """Convenience macro for users which does typical setup.
 
@@ -591,6 +591,8 @@ def python_register_toolchains(
         tool_versions: {type}`dict` contains a mapping of version with SHASUM
             and platform info. If not supplied, the defaults in
             python/versions.bzl will be used.
+        platforms: {type}`dict` contains platform definitions. If not
+            supplied, the defaults in python/versions.bzl will be used.
         **kwargs: passed to each {obj}`python_repository` call.
     """
 
@@ -600,6 +602,7 @@ def python_register_toolchains(
 
     base_url = kwargs.pop("base_url", DEFAULT_RELEASE_BASE_URL)
     tool_versions = tool_versions or TOOL_VERSIONS
+    platforms = platforms or PLATFORMS
 
     python_version = full_version(python_version)
 
@@ -621,6 +624,8 @@ def python_register_toolchains(
             register_coverage_tool = False
 
     loaded_platforms = []
+
+    # TODO @aignas 2024-09-06: PLATFORMS should not be used here.
     for platform in PLATFORMS.keys():
         sha256 = tool_versions[python_version]["sha256"].get(platform, None)
         if not sha256:

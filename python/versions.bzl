@@ -712,9 +712,10 @@ def _commands_for_version(python_version):
         for release_url in get_release_info(platform, python_version)[1]
     ])
 
-def gen_python_config_settings(name = ""):
-    for platform in PLATFORMS.keys():
+def gen_python_config_settings(name = "", platforms = PLATFORMS):
+    for platform in platforms.keys():
         native.config_setting(
             name = "{name}{platform}".format(name = name, platform = platform),
-            constraint_values = PLATFORMS[platform].compatible_with,
+            flag_values = platforms[platform].flag_values,
+            constraint_values = platforms[platform].compatible_with,
         )

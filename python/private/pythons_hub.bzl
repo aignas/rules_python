@@ -14,6 +14,7 @@
 
 "Repo rule used by bzlmod extension to create a repo that has a map of Python interpreters and their labels"
 
+load("//python:versions.bzl", "PLATFORMS")
 load("//python/private:full_version.bzl", "full_version")
 load(
     "//python/private:toolchains_repo.bzl",
@@ -43,7 +44,8 @@ def _hub_build_file_content(
         python_versions,
         set_python_version_constraints,
         user_repository_names,
-        workspace_location):
+        workspace_location,
+        platforms):
     """This macro iterates over each of the lists and returns the toolchain content.
 
     python_toolchain_build_file_content is called to generate each of the toolchain
@@ -62,6 +64,7 @@ def _hub_build_file_content(
                 python_version = full_version(python_versions[i]),
                 set_python_version_constraint = set_python_version_constraints[i],
                 user_repository_name = user_repository_names[i],
+                platforms = platforms,
             )
             for i in range(len(python_versions))
         ],
@@ -94,6 +97,8 @@ def _hub_repo_impl(rctx):
             rctx.attr.toolchain_set_python_version_constraints,
             rctx.attr.toolchain_user_repository_names,
             rctx.attr._rules_python_workspace,
+            # TODO @aignas 2024-09-06: PLATFORMS should not be used here
+            platforms = PLATFORMS,
         ),
         executable = False,
     )
