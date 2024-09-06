@@ -613,8 +613,96 @@ def _test_add_patches(env):
 
 _tests.append(_test_add_patches)
 
+def _test_fail_two_overrides(env):
+    errors = []
+    parse_mods(
+        mctx = _mock_mctx(
+            _mod(
+                name = "my_module",
+                toolchain = [_toolchain("3.13")],
+                override = [
+                    _override(base_url = "foo"),
+                    _override(base_url = "bar"),
+                ],
+            ),
+        ),
+        _fail = errors.append,
+    )
+    env.expect.that_collection(errors).contains_exactly([
+        "Only a single 'python.override' can be present",
+    ])
+
+_tests.append(_test_fail_two_overrides)
+
+def _test_single_version_override_errors(env):
+    for test in [
+        struct(
+            overrides = [
+                _single_version_override(python_version = "3.12.4", distutils_content = "foo"),
+                _single_version_override(python_version = "3.12.4", distutils_content = "foo"),
+            ],
+            want_error = "Only a single 'python.single_version_override' can be present for '3.12.4'",
+        ),
+        struct(
+            overrides = [
+                _single_version_override(python_version = "3.12.4+3", distutils_content = "foo"),
+            ],
+            want_error = "The 'python_version' attribute needs to specify an 'X.Y.Z' semver-compatible version, got: '3.12.4+3'",
+        ),
+    ]:
+        errors = []
+        parse_mods(
+            mctx = _mock_mctx(
+                _mod(
+                    name = "my_module",
+                    toolchain = [_toolchain("3.13")],
+                    single_version_override = test.overrides,
+                ),
+            ),
+            _fail = errors.append,
+        )
+        env.expect.that_collection(errors).contains_exactly([test.want_error])
+
+_tests.append(_test_single_version_override_errors)
+
+def _test_single_version_platform_override_errors(env):
+    for test in [
+        struct(
+            overrides = [
+                _single_version_platform_override(python_version = "3.12.4", platform = "foo", coverage_tool = "foo"),
+                _single_version_platform_override(python_version = "3.12.4", platform = "foo", coverage_tool = "foo"),
+            ],
+            want_error = "Only a single 'python.single_version_platform_override' can be present for '(\"3.12.4\", \"foo\")'",
+        ),
+        struct(
+            overrides = [
+                _single_version_platform_override(python_version = "3.12", platform = "foo"),
+            ],
+            want_error = "The 'python_version' attribute needs to specify an 'X.Y.Z' semver-compatible version, got: '3.12'",
+        ),
+        struct(
+            overrides = [
+                _single_version_platform_override(python_version = "3.12.1+my_build", platform = "foo"),
+            ],
+            want_error = "The 'python_version' attribute needs to specify an 'X.Y.Z' semver-compatible version, got: '3.12.1+my_build'",
+        ),
+    ]:
+        errors = []
+        parse_mods(
+            mctx = _mock_mctx(
+                _mod(
+                    name = "my_module",
+                    toolchain = [_toolchain("3.13")],
+                    single_version_platform_override = test.overrides,
+                ),
+            ),
+            _fail = errors.append,
+        )
+        env.expect.that_collection(errors).contains_exactly([test.want_error])
+
+_tests.append(_test_single_version_platform_override_errors)
+
 # TODO @aignas 2024-09-03: add failure tests:
-# * validate the python_version in overrides
 # * incorrect platform failure
 # * missing python_version failure
 
