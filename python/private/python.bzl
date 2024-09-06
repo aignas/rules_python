@@ -214,19 +214,19 @@ def _python_impl(mctx):
 
     for toolchain in py.toolchains:
         # Ensure that we pass the full version here.
-        full_python_version = full_version(toolchain.python_version, py.overrides.minor_mapping)
+        full_python_version = full_version(toolchain.python_version, py.config.minor_mapping)
         kwargs = {
             "python_version": full_python_version,
             "register_coverage_tool": toolchain.register_coverage_tool,
         }
 
         # Allow overrides per python version
-        kwargs.update(py.overrides.kwargs.get(toolchain.python_version, {}))
-        kwargs.update(py.overrides.kwargs.get(full_python_version, {}))
-        kwargs.update(py.overrides.default)
+        kwargs.update(py.config.kwargs.get(toolchain.python_version, {}))
+        kwargs.update(py.config.kwargs.get(full_python_version, {}))
+        kwargs.update(py.config.default)
         python_register_toolchains(name = toolchain.name, **kwargs)
         if debug_info:
-            debug_info["default"] = py.overrides.default
+            debug_info["default"] = py.config.default
             debug_info["toolchains_registered"].append(dict(
                 name = toolchain.name,
                 **toolchain.debug
@@ -242,7 +242,7 @@ def _python_impl(mctx):
             for index, toolchain in enumerate(py.toolchains)
         ],
         toolchain_python_versions = [
-            full_version(t.python_version, py.overrides.minor_mapping)
+            full_version(t.python_version, py.config.minor_mapping)
             for t in py.toolchains
         ],
         # The last toolchain is the default; it can't have version constraints
