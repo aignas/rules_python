@@ -135,14 +135,14 @@ def _test_default(env):
     # The value there should be consistent in bzlmod with the automatically
     # calculated value Please update the MINOR_MAPPING in //python:versions.bzl
     # when this part starts failing.
-    env.expect.that_dict(py.overrides.minor_mapping).contains_exactly(MINOR_MAPPING)
-    env.expect.that_collection(py.overrides.kwargs).has_size(0)
-    env.expect.that_collection(py.overrides.default.keys()).contains_exactly([
+    env.expect.that_dict(py.config.minor_mapping).contains_exactly(MINOR_MAPPING)
+    env.expect.that_collection(py.config.kwargs).has_size(0)
+    env.expect.that_collection(py.config.default.keys()).contains_exactly([
         "base_url",
         "ignore_root_user_error",
         "tool_versions",
     ])
-    env.expect.that_bool(py.overrides.default["ignore_root_user_error"]).equals(False)
+    env.expect.that_bool(py.config.default["ignore_root_user_error"]).equals(False)
     env.expect.that_str(py.default_python_version).equals("3.11")
 
     want_toolchain = struct(
@@ -164,9 +164,9 @@ def _test_default_some_module(env):
     # The value there should be consistent in bzlmod with the automatically
     # calculated value Please update the MINOR_MAPPING in //python:versions.bzl
     # when this part starts failing.
-    env.expect.that_dict(py.overrides.minor_mapping).contains_exactly(MINOR_MAPPING)
-    env.expect.that_collection(py.overrides.kwargs).has_size(0)
-    env.expect.that_collection(py.overrides.default.keys()).contains_exactly([
+    env.expect.that_dict(py.config.minor_mapping).contains_exactly(MINOR_MAPPING)
+    env.expect.that_collection(py.config.kwargs).has_size(0)
+    env.expect.that_collection(py.config.default.keys()).contains_exactly([
         "base_url",
         "ignore_root_user_error",
         "tool_versions",
@@ -231,7 +231,7 @@ def _test_default_non_rules_python_ignore_root_user_error(env):
         ),
     )
 
-    env.expect.that_bool(py.overrides.default["ignore_root_user_error"]).equals(True)
+    env.expect.that_bool(py.config.default["ignore_root_user_error"]).equals(True)
     env.expect.that_str(py.default_python_version).equals("3.12")
 
     my_module_toolchain = struct(
@@ -263,7 +263,7 @@ def _test_default_non_rules_python_ignore_root_user_error_override(env):
         ),
     )
 
-    env.expect.that_bool(py.overrides.default["ignore_root_user_error"]).equals(True)
+    env.expect.that_bool(py.config.default["ignore_root_user_error"]).equals(True)
     env.expect.that_str(py.default_python_version).equals("3.12")
 
     my_module_toolchain = struct(
@@ -293,7 +293,7 @@ def _test_default_non_rules_python_ignore_root_user_error_non_root_module(env):
     )
 
     env.expect.that_str(py.default_python_version).equals("3.13")
-    env.expect.that_bool(py.overrides.default["ignore_root_user_error"]).equals(False)
+    env.expect.that_bool(py.config.default["ignore_root_user_error"]).equals(False)
 
     my_module_toolchain = struct(
         name = "python_3_13",
@@ -374,7 +374,7 @@ def _test_auth_overrides(env):
         ),
     )
 
-    env.expect.that_dict(py.overrides.default).contains_at_least({
+    env.expect.that_dict(py.config.default).contains_at_least({
         "auth_patterns": {"foo": "bar"},
         "ignore_root_user_error": False,
         "netrc": "/my/netrc",
@@ -444,17 +444,17 @@ def _test_add_new_version(env):
     )
 
     env.expect.that_str(py.default_python_version).equals("3.13")
-    env.expect.that_collection(py.overrides.default["tool_versions"].keys()).contains_exactly([
+    env.expect.that_collection(py.config.default["tool_versions"].keys()).contains_exactly([
         "3.12.4",
         "3.13.0",
         "3.13.1",
     ])
-    env.expect.that_dict(py.overrides.default["tool_versions"]["3.13.0"]).contains_exactly({
+    env.expect.that_dict(py.config.default["tool_versions"]["3.13.0"]).contains_exactly({
         "sha256": {"aarch64-unknown-linux-gnu": "deadbeef"},
         "strip_prefix": {"aarch64-unknown-linux-gnu": "prefix"},
         "url": {"aarch64-unknown-linux-gnu": ["example.org"]},
     })
-    env.expect.that_dict(py.overrides.default["tool_versions"]["3.13.1"]).contains_exactly({
+    env.expect.that_dict(py.config.default["tool_versions"]["3.13.1"]).contains_exactly({
         "coverage_tool": {"aarch64-unknown-linux-gnu": "specific_cov_tool"},
         "patch_strip": {"aarch64-unknown-linux-gnu": 2},
         "patches": {"aarch64-unknown-linux-gnu": ["specific-patch.txt"]},
@@ -462,7 +462,7 @@ def _test_add_new_version(env):
         "strip_prefix": {"aarch64-unknown-linux-gnu": "python"},
         "url": {"aarch64-unknown-linux-gnu": ["something.org", "else.org"]},
     })
-    env.expect.that_dict(py.overrides.minor_mapping).contains_exactly({
+    env.expect.that_dict(py.config.minor_mapping).contains_exactly({
         "3.13": "3.13.0",
     })
     env.expect.that_collection(py.toolchains).contains_exactly([
@@ -510,12 +510,12 @@ def _test_register_all_versions(env):
     )
 
     env.expect.that_str(py.default_python_version).equals("3.13")
-    env.expect.that_collection(py.overrides.default["tool_versions"].keys()).contains_exactly([
+    env.expect.that_collection(py.config.default["tool_versions"].keys()).contains_exactly([
         "3.12.4",
         "3.13.0",
         "3.13.1",
     ])
-    env.expect.that_dict(py.overrides.minor_mapping).contains_exactly({
+    env.expect.that_dict(py.config.minor_mapping).contains_exactly({
         # The mapping is calculated automatically
         "3.12": "3.12.4",
         "3.13": "3.13.1",
@@ -584,7 +584,7 @@ def _test_add_patches(env):
     )
 
     env.expect.that_str(py.default_python_version).equals("3.13")
-    env.expect.that_dict(py.overrides.default["tool_versions"]).contains_exactly({
+    env.expect.that_dict(py.config.default["tool_versions"]).contains_exactly({
         "3.13.0": {
             "coverage_tool": {"aarch64-unknown-linux-gnu": "specific_cov_tool"},
             "patch_strip": {"aarch64-apple-darwin": 1, "aarch64-unknown-linux-gnu": 2},
@@ -600,7 +600,7 @@ def _test_add_patches(env):
             },
         },
     })
-    env.expect.that_dict(py.overrides.minor_mapping).contains_exactly({
+    env.expect.that_dict(py.config.minor_mapping).contains_exactly({
         "3.13": "3.13.0",
     })
     env.expect.that_collection(py.toolchains).contains_exactly([
