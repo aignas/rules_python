@@ -12,6 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load(":python_tests.bzl", "python_test_suite")
+"""A rule to define a target to act as a singleton for label attributes.
 
-python_test_suite(name = "python_tests")
+Label attributes with defaults cannot accept None, otherwise they fall
+back to using the default. A sentinel allows detecting an intended None value.
+"""
+
+SentinelInfo = provider(
+    doc = "Indicates this was the sentinel target.",
+    fields = [],
+)
+
+def _sentinel_impl(ctx):
+    _ = ctx  # @unused
+    return [SentinelInfo()]
+
+sentinel = rule(implementation = _sentinel_impl)

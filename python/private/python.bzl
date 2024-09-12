@@ -31,18 +31,28 @@ load(":util.bzl", "IS_BAZEL_6_4_OR_HIGHER")
 _MAX_NUM_TOOLCHAINS = 9999
 _TOOLCHAIN_INDEX_PAD_LENGTH = len(str(_MAX_NUM_TOOLCHAINS))
 
-def parse_mods(*, mctx, logger, debug = False, _fail = fail):
-    """parse_mods returns a struct with parsed tag class content.
+def parse_modules(*, module_ctx, _fail = fail):
+    """Parse the modules and return a struct for registrations.
 
     Args:
-        mctx: {type}`module_ctx`.
-        logger: logger for diagnostic output.
-        debug: whether to add extra diagnostic information about the configured toolchains.
-        _fail: {type}`function` the fail for failure handling.
+        module_ctx: {type}`module_ctx` module context.
+        _fail: {type}`function` the failure function, mainly for testing.
 
     Returns:
-        a struct with attributes
+        A struct with the following attributes:
+            * `toolchains`: The list of toolchains to register. The last
+              element is special and is treated as the default toolchain.
+            * `defaults`: The default `kwargs` passed to
+              {bzl:obj}`python_register_toolchains`.
+            * `debug_info`: {type}`None | dict` extra information to be passed
+              to the debug repo.
     """
+    if module_ctx.os.environ.get("RULES_PYTHON_BZLMOD_DEBUG", "0") == "1":
+        debug_info = {
+            "toolchains_registered": [],
+        }
+    else:
+        debug_info = None
 
     # The toolchain_info structs to register, in the order to register them in.
     # NOTE: The last element is special: it is treated as the default toolchain,
@@ -59,16 +69,18 @@ def parse_mods(*, mctx, logger, debug = False, _fail = fail):
     # This is a toolchain_info struct.
     default_toolchain = None
 
+    logger = repo_utils.logger(module_ctx, "python")
+
     # if the root module does not register any toolchain then the
     # ignore_root_user_error takes its default value: False
-    if not mctx.modules[0].tags.toolchain:
+    if not module_ctx.modules[0].tags.toolchain:
         ignore_root_user_error = False
 
     seen_versions = {}
 
-    config = _get_toolchain_config(modules = mctx.modules, _fail = _fail)
+    config = _get_toolchain_config(modules = module_ctx.modules, _fail = _fail)
 
-    for mod in mctx.modules:
+    for mod in module_ctx.modules:
         module_toolchain_versions = []
         requested_toolchains = _process_tag_classes(
             mod,
@@ -144,6 +156,11 @@ def parse_mods(*, mctx, logger, debug = False, _fail = fail):
                     register_coverage_tool = toolchain_attr.configure_coverage_tool,
                 )
                 global_toolchain_versions[toolchain_version] = toolchain_info
+                if debug_info:
+                    debug_info["toolchains_registered"].append({
+                        "ignore_root_user_error": ignore_root_user_error,
+                        "name": toolchain_name,
+                    })
 
             if is_default:
                 # This toolchain is setting the default, but the actual
@@ -180,37 +197,21 @@ def parse_mods(*, mctx, logger, debug = False, _fail = fail):
         fail("more than {} python versions are not supported".format(_MAX_NUM_TOOLCHAINS))
 
     return struct(
-        default_python_version = default_toolchain.python_version,
+        debug_info = debug_info,
+        config = config,
+        default_python_version = toolchains[-1].python_version,
         toolchains = [
             struct(
-                name = t.name,
                 python_version = t.python_version,
-                register_coverage_tool = t.register_coverage_tool,
-            ) if not debug else struct(
                 name = t.name,
-                python_version = t.python_version,
                 register_coverage_tool = t.register_coverage_tool,
-                debug = {
-                    "ignore_root_user_error": ignore_root_user_error,
-                    "module": t.module,
-                } if debug else None,
             )
             for t in toolchains
         ],
-        config = config,
     )
 
-def _python_impl(mctx):
-    logger = repo_utils.logger(mctx, "python")
-
-    if mctx.os.environ.get("RULES_PYTHON_BZLMOD_DEBUG", "0") == "1":
-        debug_info = {
-            "toolchains_registered": [],
-        }
-    else:
-        debug_info = None
-
-    py = parse_mods(mctx = mctx, logger = logger, debug = debug_info != None)
+def _python_impl(module_ctx):
+    py = parse_modules(module_ctx = module_ctx)
 
     for toolchain in py.toolchains:
         # Ensure that we pass the full version here.
@@ -225,17 +226,12 @@ def _python_impl(mctx):
         kwargs.update(py.config.kwargs.get(full_python_version, {}))
         kwargs.update(py.config.default)
         python_register_toolchains(name = toolchain.name, **kwargs)
-        if debug_info:
-            debug_info["default"] = py.config.default
-            debug_info["toolchains_registered"].append(dict(
-                name = toolchain.name,
-                **toolchain.debug
-            ))
 
     # Create the pythons_hub repo for the interpreter meta data and the
     # the various toolchains.
     hub_repo(
         name = "pythons_hub",
+        # Last toolchain is default
         default_python_version = py.default_python_version,
         toolchain_prefixes = [
             render.toolchain_prefix(index, toolchain.name, _TOOLCHAIN_INDEX_PAD_LENGTH)
@@ -264,14 +260,14 @@ def _python_impl(mctx):
         },
     )
 
-    if debug_info != None:
+    if py.debug_info != None:
         _debug_repo(
             name = "rules_python_bzlmod_debug",
-            debug_info = json.encode_indent(debug_info),
+            debug_info = json.encode_indent(py.debug_info),
         )
 
     if bazel_features.external_deps.extension_metadata_has_reproducible:
-        return mctx.extension_metadata(reproducible = True)
+        return module_ctx.extension_metadata(reproducible = True)
     else:
         return None
 

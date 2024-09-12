@@ -16,12 +16,9 @@
 
 load("@rules_testing//lib:test_suite.bzl", "test_suite")
 load("//python:versions.bzl", "MINOR_MAPPING")
-load("//python/private:python.bzl", _parse_mods = "parse_mods")  # buildifier: disable=bzl-visibility
+load("//python/private:python.bzl", "parse_modules")  # buildifier: disable=bzl-visibility
 
 _tests = []
-
-def parse_mods(*, mctx, **kwargs):
-    return _parse_mods(mctx = mctx, logger = None, **kwargs)
 
 def _mock_mctx(*modules, environ = {}):
     return struct(
@@ -126,8 +123,8 @@ def _single_version_platform_override(
     )
 
 def _test_default(env):
-    py = parse_mods(
-        mctx = _mock_mctx(
+    py = parse_modules(
+        module_ctx = _mock_mctx(
             _mod(name = "rules_python", toolchain = [_toolchain("3.11")]),
         ),
     )
@@ -155,22 +152,12 @@ def _test_default(env):
 _tests.append(_test_default)
 
 def _test_default_some_module(env):
-    py = parse_mods(
-        mctx = _mock_mctx(
+    py = parse_modules(
+        module_ctx = _mock_mctx(
             _mod(name = "rules_python", toolchain = [_toolchain("3.11")], is_root = False),
         ),
     )
 
-    # The value there should be consistent in bzlmod with the automatically
-    # calculated value Please update the MINOR_MAPPING in //python:versions.bzl
-    # when this part starts failing.
-    env.expect.that_dict(py.config.minor_mapping).contains_exactly(MINOR_MAPPING)
-    env.expect.that_collection(py.config.kwargs).has_size(0)
-    env.expect.that_collection(py.config.default.keys()).contains_exactly([
-        "base_url",
-        "ignore_root_user_error",
-        "tool_versions",
-    ])
     env.expect.that_str(py.default_python_version).equals("3.11")
 
     want_toolchain = struct(
@@ -182,9 +169,9 @@ def _test_default_some_module(env):
 
 _tests.append(_test_default_some_module)
 
-def _test_default_with_patch(env):
-    py = parse_mods(
-        mctx = _mock_mctx(
+def _test_default_with_patch_version(env):
+    py = parse_modules(
+        module_ctx = _mock_mctx(
             _mod(name = "rules_python", toolchain = [_toolchain("3.11.2")]),
         ),
     )
@@ -198,11 +185,11 @@ def _test_default_with_patch(env):
     )
     env.expect.that_collection(py.toolchains).contains_exactly([want_toolchain])
 
-_tests.append(_test_default_with_patch)
+_tests.append(_test_default_with_patch_version)
 
 def _test_default_non_rules_python(env):
-    py = parse_mods(
-        mctx = _mock_mctx(
+    py = parse_modules(
+        module_ctx = _mock_mctx(
             # NOTE @aignas 2024-09-06: the first item in the module_ctx.modules
             # could be a non-root module, which is the case if the root module
             # does not make any calls to the extension.
@@ -221,8 +208,8 @@ def _test_default_non_rules_python(env):
 _tests.append(_test_default_non_rules_python)
 
 def _test_default_non_rules_python_ignore_root_user_error(env):
-    py = parse_mods(
-        mctx = _mock_mctx(
+    py = parse_modules(
+        module_ctx = _mock_mctx(
             _mod(
                 name = "my_module",
                 toolchain = [_toolchain("3.12", ignore_root_user_error = True)],
@@ -252,8 +239,8 @@ def _test_default_non_rules_python_ignore_root_user_error(env):
 _tests.append(_test_default_non_rules_python_ignore_root_user_error)
 
 def _test_default_non_rules_python_ignore_root_user_error_override(env):
-    py = parse_mods(
-        mctx = _mock_mctx(
+    py = parse_modules(
+        module_ctx = _mock_mctx(
             _mod(
                 name = "my_module",
                 toolchain = [_toolchain("3.12")],
@@ -284,8 +271,8 @@ def _test_default_non_rules_python_ignore_root_user_error_override(env):
 _tests.append(_test_default_non_rules_python_ignore_root_user_error_override)
 
 def _test_default_non_rules_python_ignore_root_user_error_non_root_module(env):
-    py = parse_mods(
-        mctx = _mock_mctx(
+    py = parse_modules(
+        module_ctx = _mock_mctx(
             _mod(name = "my_module", toolchain = [_toolchain("3.13")]),
             _mod(name = "some_module", toolchain = [_toolchain("3.12", ignore_root_user_error = True)]),
             _mod(name = "rules_python", toolchain = [_toolchain("3.11")]),
@@ -313,19 +300,21 @@ def _test_default_non_rules_python_ignore_root_user_error_non_root_module(env):
     env.expect.that_collection(py.toolchains).contains_exactly([
         some_module_toolchain,
         rules_python_toolchain,
-        my_module_toolchain,
+        my_module_toolchain,  # this was the only toolchain, default to that
     ]).in_order()
 
 _tests.append(_test_default_non_rules_python_ignore_root_user_error_non_root_module)
 
 def _test_first_occurance_of_the_toolchain_wins(env):
-    py = parse_mods(
-        mctx = _mock_mctx(
+    py = parse_modules(
+        module_ctx = _mock_mctx(
             _mod(name = "my_module", toolchain = [_toolchain("3.12")]),
             _mod(name = "some_module", toolchain = [_toolchain("3.12", configure_coverage_tool = True)]),
             _mod(name = "rules_python", toolchain = [_toolchain("3.11")]),
+            environ = {
+                "RULES_PYTHON_BZLMOD_DEBUG": "1",
+            },
         ),
-        debug = True,
     )
 
     env.expect.that_str(py.default_python_version).equals("3.12")
@@ -336,30 +325,29 @@ def _test_first_occurance_of_the_toolchain_wins(env):
         # NOTE: coverage stays disabled even though `some_module` was
         # configuring something else.
         register_coverage_tool = False,
-        debug = {
-            "ignore_root_user_error": False,
-            "module": struct(is_root = True, name = "my_module"),
-        },
     )
     rules_python_toolchain = struct(
         name = "python_3_11",
         python_version = "3.11",
         register_coverage_tool = False,
-        debug = {
-            "ignore_root_user_error": False,
-            "module": struct(is_root = False, name = "rules_python"),
-        },
     )
     env.expect.that_collection(py.toolchains).contains_exactly([
         rules_python_toolchain,
         my_module_toolchain,  # default toolchain is last
     ]).in_order()
 
+    env.expect.that_dict(py.debug_info).contains_exactly({
+        "toolchains_registered": [
+            {"ignore_root_user_error": False, "name": "python_3_12"},
+            {"ignore_root_user_error": False, "name": "python_3_11"},
+        ],
+    })
+
 _tests.append(_test_first_occurance_of_the_toolchain_wins)
 
 def _test_auth_overrides(env):
-    py = parse_mods(
-        mctx = _mock_mctx(
+    py = parse_modules(
+        module_ctx = _mock_mctx(
             _mod(
                 name = "my_module",
                 toolchain = [_toolchain("3.12")],
@@ -399,8 +387,8 @@ def _test_auth_overrides(env):
 _tests.append(_test_auth_overrides)
 
 def _test_add_new_version(env):
-    py = parse_mods(
-        mctx = _mock_mctx(
+    py = parse_modules(
+        module_ctx = _mock_mctx(
             _mod(
                 name = "my_module",
                 toolchain = [_toolchain("3.13")],
@@ -476,8 +464,8 @@ def _test_add_new_version(env):
 _tests.append(_test_add_new_version)
 
 def _test_register_all_versions(env):
-    py = parse_mods(
-        mctx = _mock_mctx(
+    py = parse_modules(
+        module_ctx = _mock_mctx(
             _mod(
                 name = "my_module",
                 toolchain = [_toolchain("3.13")],
@@ -538,8 +526,8 @@ def _test_register_all_versions(env):
 _tests.append(_test_register_all_versions)
 
 def _test_add_patches(env):
-    py = parse_mods(
-        mctx = _mock_mctx(
+    py = parse_modules(
+        module_ctx = _mock_mctx(
             _mod(
                 name = "my_module",
                 toolchain = [_toolchain("3.13")],
@@ -615,8 +603,8 @@ _tests.append(_test_add_patches)
 
 def _test_fail_two_overrides(env):
     errors = []
-    parse_mods(
-        mctx = _mock_mctx(
+    parse_modules(
+        module_ctx = _mock_mctx(
             _mod(
                 name = "my_module",
                 toolchain = [_toolchain("3.13")],
@@ -651,8 +639,8 @@ def _test_single_version_override_errors(env):
         ),
     ]:
         errors = []
-        parse_mods(
-            mctx = _mock_mctx(
+        parse_modules(
+            module_ctx = _mock_mctx(
                 _mod(
                     name = "my_module",
                     toolchain = [_toolchain("3.13")],
@@ -688,8 +676,8 @@ def _test_single_version_platform_override_errors(env):
         ),
     ]:
         errors = []
-        parse_mods(
-            mctx = _mock_mctx(
+        parse_modules(
+            module_ctx = _mock_mctx(
                 _mod(
                     name = "my_module",
                     toolchain = [_toolchain("3.13")],

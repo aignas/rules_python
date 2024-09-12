@@ -18,6 +18,7 @@ load("//python:py_binary.bzl", "py_binary")
 load("//python:py_library.bzl", "py_library")
 load("//python:versions.bzl", "print_toolchains_checksums")
 load(":py_exec_tools_toolchain.bzl", "current_interpreter_executable")
+load(":sentinel.bzl", "sentinel")
 load(":stamp.bzl", "stamp_build_setting")
 
 package(
@@ -214,6 +215,7 @@ bzl_library(
     srcs = ["py_exec_tools_toolchain.bzl"],
     deps = [
         ":py_exec_tools_info_bzl",
+        ":sentinel_bzl",
         ":toolchain_types_bzl",
         "//python/private/common:providers_bzl",
         "@bazel_skylib//lib:paths",
@@ -299,6 +301,11 @@ bzl_library(
     name = "semver_bzl",
     srcs = ["semver.bzl"],
     visibility = ["//:__subpackages__"],
+)
+
+bzl_library(
+    name = "sentinel_bzl",
+    srcs = ["sentinel.bzl"],
 )
 
 bzl_library(
@@ -475,4 +482,8 @@ current_interpreter_executable(
     # Not actually public. Only public because it's an implicit dependency of
     # py_exec_tools_toolchain.
     visibility = ["//visibility:public"],
+)
+
+sentinel(
+    name = "sentinel",
 )
