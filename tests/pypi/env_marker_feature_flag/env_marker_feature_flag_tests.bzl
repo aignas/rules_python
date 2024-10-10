@@ -72,8 +72,6 @@ def _match(env, target, want):
 _tests = []
 _given = []
 
-_given.append(("is_python_lt_39", "python_version < '3.9'"))
-
 def test_simple(name):
     _analysis_test(
         name = name,
@@ -82,9 +80,8 @@ def test_simple(name):
         config_settings = [_flag.python_version("3.8")],
     )
 
+_given.append(("is_python_lt_39", "python_version < '3.9'"))
 _tests.append(test_simple)
-
-_given.append(("is_python_gt_39", "python_version > '3.9'"))
 
 def test_simple_2(name):
     _analysis_test(
@@ -94,6 +91,7 @@ def test_simple_2(name):
         config_settings = [_flag.python_version("3.8")],
     )
 
+_given.append(("is_python_gt_39", "python_version > '3.9'"))
 _tests.append(test_simple_2)
 
 def env_marker_feature_flag_test_suite(name):  # buildifier: disable=function-docstring
