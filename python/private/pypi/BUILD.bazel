@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load(":env_marker_feature_flag.bzl", "pep508_env")
 
 package(default_visibility = ["//:__subpackages__"])
 
@@ -328,11 +329,74 @@ bzl_library(
 
 # Definitions of PEP508 values
 
-        "_os_name": attr.string(
-            default = select({
-                "@platforms//os:windows": "nt",
-                "@platforms//os:linux": "posix",
-                "@platforms//os:osx": "posix",
-                "//conditions:default": "",
-            })
-        )
+pep508_env(
+    name = "pep508_os_name",
+    value = select({
+        "@platforms//os:linux": "posix",
+        "@platforms//os:osx": "posix",
+        "@platforms//os:windows": "nt",
+        "//conditions:default": "",
+    }),
+)
+
+pep508_env(
+    name = "pep508_sys_platform",
+    value = select({
+        "@platforms//os:linux": "posix",
+        "@platforms//os:osx": "darwin",
+        "@platforms//os:windows": "win32",
+        "//conditions:default": "",
+    }),
+)
+
+pep508_env(
+    name = "pep508_platform_system",
+    value = select({
+        "@platforms//os:linux": "Linux",
+        "@platforms//os:osx": "Darwin",
+        "@platforms//os:windows": "Windows",
+        "//conditions:default": "",
+    }),
+)
+
+config_setting(
+    name = "is_linux_aarch64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+)
+
+pep508_env(
+    name = "pep508_platform_machine",
+    value = select({
+        ":is_linux_aarch64": "aarch64",
+        "@platforms//cpu:aarch64": "arm64",
+        "@platforms//cpu:ppc": "ppc64le",
+        "@platforms//cpu:s390x": "s390x",
+        "@platforms//cpu:x86_32": "i386",
+        "@platforms//cpu:x86_64": "x86_64",
+        "//conditions:default": "",
+    }),
+)
+
+# TODO @aignas 2024-10-10: consider make these build settings
+pep508_env(
+    name = "pep508_platform_release",
+    value = "",
+)
+
+pep508_env(
+    name = "pep508_platform_version",
+    value = "",
+)
+
+pep508_env(
+    name = "pep508_platform_python_implementation",
+    value = "CPython",
+)
+
+pep508_env(
+    name = "pep508_implementation_name",
+    value = "cpython",
+)

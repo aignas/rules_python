@@ -298,5 +298,5 @@ class Platform:
             "python_full_version": f"3.{minor_version}.0",
             # we assume that the following are the same as the interpreter used to setup the deps:
             # "implementation_name": "cpython"
-            # "platform_python_implementation: "CPython",
+            # "platform_python_implementation": "CPython",
         }

@@ -94,35 +94,11 @@ def env_marker_feature_flag_test_suite(name):  # buildifier: disable=function-do
 
     env_marker_feature_flag(
         name = "python_lt_39",
-        marker = 'python_version < "3.9"',
-        # The following could be set in a different rule and we could have a target //python/private/pypi:target_env
-        os_name = select({
-            "@platforms//os:windows": "nt",
-            "@platforms//os:linux": "posix",
-            "@platforms//os:osx": "posix",
-            "//conditions:default": "",
-        }),
-        sys_platform = select({
-            "@platforms//os:windows": "win32",
-            "@platforms//os:linux": "posix",
-            "@platforms//os:osx": "darwin",
-            "//conditions:default": "",
-        }),
-        platform_system = select({
-            "@platforms//os:windows": "Windows",
-            "@platforms//os:linux": "Linux",
-            "@platforms//os:osx": "Darwin",
-            "//conditions:default": "",
-        }),
-        platform_machine = select({
-            "@platforms//cpu:x86_64": "x86_64",
-            # TODO @aignas 2024-10-10: handle the cases where we need os and arch tuples
-            "@platforms//cpu:x86_32": "i386",
-            "@platforms//cpu:ppc": "ppc64le",
-            "@platforms//cpu:s390x": "s390x",
-            "@platforms//cpu:aarch64": "aarch64",
-            "//conditions:default": "",
-        }),
+        marker = "python_version < '3.9'",
+    )
+    env_marker_feature_flag(
+        name = "python_gt_39",
+        marker = "python_version > '3.9'",
     )
     native.config_setting(
         name = "is_python_lt_39",
@@ -130,59 +106,9 @@ def env_marker_feature_flag_test_suite(name):  # buildifier: disable=function-do
             ":python_lt_39": "yes",
         },
     )
-
-# # NOTE @aignas 2023-12-05: below is the minimum number of accessors that are defined in
-# # https://peps.python.org/pep-0496/ to make rules_python generate dependencies.
-# #
-# # WARNING: It may not work in cases where the python implementation is different between
-# # different platforms.
-# 
-# # derived from OS
-# 
-# # derived from OS and Arch
-# @property
-# def platform_machine(self) -> str:
-#     if self.arch == Arch.x86_64:
-#         return "x86_64"
-#     elif self.arch == Arch.x86_32 and self.os != OS.osx:
-#         return "i386"
-#     elif self.arch == Arch.x86_32:
-#         return ""
-#     elif self.arch == Arch.aarch64 and self.os == OS.linux:
-#         return "aarch64"
-#     elif self.arch == Arch.aarch64:
-#         # Assuming that OSX and Windows use this one since the precedent is set here:
-#         # https://github.com/cgohlke/win_arm64-wheels
-#         return "arm64"
-#     elif self.os != OS.linux:
-#         return ""
-#     elif self.arch == Arch.ppc64le:
-#         return "ppc64le"
-#     elif self.arch == Arch.s390x:
-#         return "s390x"
-#     else:
-#         return ""
-# 
-# def env_markers(self, extra: str) -> Dict[str, str]:
-#     # If it is None, use the host version
-#     minor_version = self.minor_version or host_interpreter_minor_version()
-# 
-#     return {
-#         "extra": extra,
-#         "os_name": self.os_name,
-#         "sys_platform": self.sys_platform,
-#         "platform_machine": self.platform_machine,
-#         "platform_system": self.platform_system,
-#         "platform_release": "",  # unset
-#         "platform_version": "",  # unset
-#         "python_version": f"3.{minor_version}",
-#         # FIXME @aignas 2024-01-14: is putting zero last a good idea? Maybe we should
-#         # use `20` or something else to avoid having weird issues where the full version is used for
-#         # matching and the author decides to only support 3.y.5 upwards.
-#         "implementation_version": f"3.{minor_version}.0",
-#         "python_full_version": f"3.{minor_version}.0",
-#         # we assume that the following are the same as the interpreter used to setup the deps:
-#         # "implementation_name": "cpython"
-#         # "platform_python_implementation: "CPython",
-#     }
-# },
+    native.config_setting(
+        name = "is_python_gt_39",
+        flag_values = {
+            ":python_gt_39": "yes",
+        },
+    )

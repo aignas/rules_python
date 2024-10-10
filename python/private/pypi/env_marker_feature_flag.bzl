@@ -21,52 +21,60 @@ def _version(value, *, env):
     value = value.strip(" \"'")
     return semver(env.get(value, value)).key()
 
-def _cmp(left, op, right, *, env):
-    left = _version(left, env=env)
-    right = _version(right, env=env)
-    op = op.strip()
-    version_cmp_ops = ["<"]
+# Taken from
+# https://peps.python.org/pep-0508/#grammar
+#
+# version_cmp   = wsp* '<' | '<=' | '!=' | '==' | '>=' | '>' | '~=' | '==='
+VERSION_CMP = [
+    i.strip(" '")
+    for i in "'<' | '<=' | '!=' | '==' | '>=' | '>' | '~=' | '==='".split(" | ")
+]
 
-    if op in version_cmp_ops:
-        left = _version(left, env=env)
-        right = _version(right, env=env)
+def _cmp(left, op, right, *, env):
+    op = op.strip()
+
+    if op in VERSION_CMP:
+        left = _version(left, env = env)
+        right = _version(right, env = env)
         if op == "<":
-            return left < _right
+            return left < right
+        elif op == ">":
+            return left > right
+        elif op == "<=":
+            return left <= right
+        elif op == ">=":
+            return left >= right
+        elif op == "!=" or op == "~=":
+            return left != right
+        elif op == "==" or "===":
+            return left == right
         else:
-            fail("Unsupported op: '{}'".format(op))
+            fail("BUG: missed op for comparing versions: '{}'".format(op))
     else:
         fail("TODO")
 
 def _impl(ctx):
-    python_version = ctx.attr._python_version_flag[config_common.FeatureFlagInfo].value
+    current_env = {
+        key: getattr(ctx.attr, "_" + key)[config_common.FeatureFlagInfo].value
+        for key in [
+            "implementation_name",
+            "implementation_version",
+            "os_name",
+            "platform_machine",
+            "platform_python_implementation",
+            "platform_release",
+            "platform_system",
+            "platform_version",
+            "python_full_version",
+            "python_version",
+            "sys_platform",
+        ]
+    }
     marker = ctx.attr.marker
-    if python_version:
-        version = semver(python_version)
-        self = ctx.attr
-        current_env = {
-            "os_name": self.os_name,
-            "sys_platform": self.sys_platform,
-            "platform_machine": self.platform_machine,
-            "platform_system": self.platform_system,
-            "python_version": "{}.{}".format(version.major, version.minor),
-            # FIXME @aignas 2024-01-14: is putting zero last a good idea? Maybe we should
-            # use `20` or something else to avoid having weird issues where the full version is used for
-            # matching and the author decides to only support 3.y.5 upwards.
-            "implementation_version": python_version,
-            "python_full_version": python_version,
-            # TODO @aignas 2024-10-10: maybe support taking this from the toolchain
-            "implementation_name": "cpython",
-            "platform_python_implementation": "CPython",
-            # TODO @aignas 2024-10-10: Maybe support taking this from the user where we could have string_flag
-            # values and the user could fully specify that.
-            "platform_release": "",  # unset
-            "platform_version": "1.0.0",  # set to a dummy value
-        }
-
+    if current_env:
         left, _, marker = marker.partition(" ")
         op, _, right = marker.partition(" ")
-
-        value = "yes" if _cmp(left, op, right, env=current_env) else "no"
+        value = "yes" if _cmp(left, op, right, env = current_env) else "no"
     else:
         value = ""
 
@@ -76,11 +84,27 @@ env_marker_feature_flag = rule(
     implementation = _impl,
     attrs = {
         "marker": attr.string(mandatory = True),
-        "_python_version_flag": attr.label(default = "//python/config_settings:python_version"),
-        # TODO @aignas 2024-10-10: split out into a separate rule
-        "os_name": attr.string(mandatory = True),
-        "platform_machine": attr.string(mandatory = True),
-        "platform_system": attr.string(mandatory = True),
-        "sys_platform": attr.string(mandatory = True),
+        # See https://peps.python.org/pep-0508
+        "_implementation_name": attr.label(default = "//python/private/pypi:pep508_implementation_name"),
+        "_implementation_version": attr.label(default = "//python/config_settings:python_version"),
+        "_os_name": attr.label(default = "//python/private/pypi:pep508_os_name"),
+        "_platform_machine": attr.label(default = "//python/private/pypi:pep508_platform_machine"),
+        "_platform_python_implementation": attr.label(default = "//python/private/pypi:pep508_platform_python_implementation"),
+        "_platform_release": attr.label(default = "//python/private/pypi:pep508_platform_release"),
+        "_platform_system": attr.label(default = "//python/private/pypi:pep508_platform_system"),
+        "_platform_version": attr.label(default = "//python/private/pypi:pep508_platform_version"),
+        "_python_full_version": attr.label(default = "//python/config_settings:python_version"),
+        "_python_version": attr.label(default = "//python/config_settings:python_version_major_minor"),
+        "_sys_platform": attr.label(default = "//python/private/pypi:pep508_sys_platform"),
+    },
+)
+
+def _impl_pep508_env(ctx):
+    return [config_common.FeatureFlagInfo(value = ctx.attr.value)]
+
+pep508_env = rule(
+    implementation = _impl_pep508_env,
+    attrs = {
+        "value": attr.string(mandatory = True),
     },
 )
