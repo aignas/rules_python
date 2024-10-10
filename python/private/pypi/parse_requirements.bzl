@@ -288,12 +288,6 @@ def _add_dists(*, requirement, index_urls, logger = None):
         if logger:
             logger.warn(lambda: "Could not find a whl or an sdist with sha256={}".format(sha256))
 
-    if not whls and not sdist:
-        # Get the packages by version number
-        # TODO @aignas 2024-05-22: it is in theory possible to add all
-        # requirements by version instead of by sha256. This may be useful
-        # for some projects.
-
     yanked = {}
     for dist in whls + [sdist]:
         if dist and dist.yanked:
