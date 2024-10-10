@@ -17,6 +17,26 @@
 
 load("//python/private:semver.bzl", "semver")
 
+def _version(value, *, env):
+    value = value.strip(" \"'")
+    return semver(env.get(value, value)).key()
+
+def _cmp(left, op, right, *, env):
+    left = _version(left, env=env)
+    right = _version(right, env=env)
+    op = op.strip()
+    version_cmp_ops = ["<"]
+
+    if op in version_cmp_ops:
+        left = _version(left, env=env)
+        right = _version(right, env=env)
+        if op == "<":
+            return left < _right
+        else:
+            fail("Unsupported op: '{}'".format(op))
+    else:
+        fail("TODO")
+
 def _impl(ctx):
     python_version = ctx.attr._python_version_flag[config_common.FeatureFlagInfo].value
     marker = ctx.attr.marker
@@ -45,16 +65,8 @@ def _impl(ctx):
 
         left, _, marker = marker.partition(" ")
         op, _, right = marker.partition(" ")
-        left = left.strip(" \"'")
-        right = right.strip(" \"'")
-        left = current_env.get(left, left)
-        right = current_env.get(right, right)
-        op = op.strip()
 
-        if op == "<":
-            value = "yes" if semver(left).key() < semver(right).key() else "no"
-        else:
-            fail("Unsupported op: '{}'".format(op))
+        value = "yes" if _cmp(left, op, right, env=current_env) else "no"
     else:
         value = ""
 
