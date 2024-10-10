@@ -74,17 +74,22 @@ _tests = []
 def test_simple(name):
     _analysis_test(
         name = name,
-        dist = {
-            ":is_python_lt_39": "foo",
-        },
+        dist = {":is_python_lt_39": "foo"},
         want = "foo",
-        config_settings = [
-            _flag.python_version("3.8"),
-            _flag.platform("linux_x86_64"),
-        ],
+        config_settings = [_flag.python_version("3.8") ],
     )
 
 _tests.append(test_simple)
+
+def test_simple_2(name):
+    _analysis_test(
+        name = name,
+        dist = {":is_python_gt_39": "foo"},
+        want = "no_match",
+        config_settings = [_flag.python_version("3.8") ],
+    )
+
+_tests.append(test_simple_2)
 
 def env_marker_feature_flag_test_suite(name):  # buildifier: disable=function-docstring
     test_suite(
