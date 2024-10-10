@@ -83,8 +83,8 @@ def test_simple(name):
         config_settings = [_flag.python_version("3.8")],
     )
 
-_given.append(("is_python_lt_39", "python_version < '3.9'"))
-_given.append(("is_python_gt_39", "python_version > '3.9'"))
+_given.append(("is_python_lt_39", "python_version < '3.9' and python_version != \"3.9\""))
+_given.append(("is_python_gt_39", "'3.9' < python_version or python_version > '3.9'"))
 _tests.append(test_simple)
 
 def test_simple_2(name):
@@ -105,7 +105,7 @@ def test_simple_3(name):
         config_settings = [_flag.python_version("3.8.3")],
     )
 
-_given.append(("is_python_ne_38", "python_full_version != '3.8.3'"))
+_given.append(("is_python_ne_38", "python_full_version!='3.8.3'"))
 _tests.append(test_simple_3)
 
 def env_marker_feature_flag_test_suite(name):  # buildifier: disable=function-docstring

@@ -33,10 +33,13 @@ def _version(value, *, env):
 # https://peps.python.org/pep-0508/#grammar
 #
 # version_cmp   = wsp* '<' | '<=' | '!=' | '==' | '>=' | '>' | '~=' | '==='
-VERSION_CMP = [
-    i.strip(" '")
-    for i in "'<' | '<=' | '!=' | '==' | '>=' | '>' | '~=' | '==='".split(" | ")
-]
+VERSION_CMP = sorted(
+    [
+        i.strip(" '")
+        for i in "'<' | '<=' | '!=' | '==' | '>=' | '>' | '~=' | '==='".split(" | ")
+    ],
+    key = lambda x: (-len(x), x),
+)
 
 def _cmp(left, op, right, *, env):
     left, right = _valid(left, op, right, env = env)
@@ -79,11 +82,71 @@ def _impl(ctx):
             "sys_platform",
         ]
     }
+
     marker = ctx.attr.marker
     if current_env:
-        left, _, marker = marker.partition(" ")
-        op, _, right = marker.partition(" ")
-        value = "yes" if _cmp(left, op, right, env = current_env) else "no"
+        # normalize and tokenize the marker
+        for op in VERSION_CMP + ["(", ")"] + [" and ", " in ", " not ", " or "]:
+            marker = marker.replace(op, " " + op + " ")
+        marker = " ".join([m.strip() for m in marker.split(" ") if m])
+        tokens = marker.split(" ")
+
+        value = None
+        combine = None
+        left, op, right = None, None, None
+        take = False
+        for _ in range(len(tokens)):
+            if not tokens:
+                break
+
+            if take:
+                left = tokens[0]
+                op = tokens[1]
+                right = tokens[2]
+                tokens = tokens[3:]
+                take = False
+            elif value == None:
+                take = True
+                continue
+            elif tokens[0] == "or":
+                take = True
+                tokens = tokens[1:]
+                if value:
+                    tokens = []
+                    continue
+                else:
+                    combine = "or"
+            elif tokens[0] == "and" and tokens[1] == "not":
+                take = True
+                tokens = tokens[2:]
+                if value:
+                    combine = "and not"
+                else:
+                    continue
+            elif tokens[0] == "and":
+                take = True
+                tokens = tokens[1:]
+                if not value:
+                    continue
+            else:
+                fail("\n".join([
+                    "TODO: processed '{}', but remaining: {}".format(marker, tokens),
+                    "  value: {}".format(value),
+                    "  combine: {}".format(combine),
+                    "  left: {}".format(left),
+                    "  op: {}".format(op),
+                    "  right: {}".format(right),
+                    "  take: {}".format(take),
+                ]))
+
+            value = _cmp(left, op, right, env = current_env)
+            if combine == "and not":
+                value = not value
+
+        if tokens:
+            fail("unprocessed tokens: {}".format(tokens))
+
+        value = "yes" if value else "no"
     else:
         value = ""
 
