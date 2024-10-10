@@ -325,3 +325,14 @@ bzl_library(
     srcs = ["whl_target_platforms.bzl"],
     deps = [":parse_whl_name_bzl"],
 )
+
+# Definitions of PEP508 values
+
+        "_os_name": attr.string(
+            default = select({
+                "@platforms//os:windows": "nt",
+                "@platforms//os:linux": "posix",
+                "@platforms//os:osx": "posix",
+                "//conditions:default": "",
+            })
+        )

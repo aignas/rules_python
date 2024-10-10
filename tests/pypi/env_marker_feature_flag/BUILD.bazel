@@ -1,0 +1,5 @@
+load(":env_marker_feature_flag_tests.bzl", "env_marker_feature_flag_test_suite")
+
+env_marker_feature_flag_test_suite(
+    name = "env_marker_feature_flag_tests",
+)
