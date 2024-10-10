@@ -135,7 +135,8 @@ def _impl(ctx):
                     "  take: {}".format(take),
                 ]))
 
-            left, op, right, tokens = tokens
+            left, op, right = tokens[0:3]
+            tokens = tokens[3:]
 
             value = _cmp(left, op, right, env = current_env)
             if combine == "and not":
