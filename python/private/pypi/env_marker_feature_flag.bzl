@@ -17,8 +17,16 @@
 
 load("//python/private:semver.bzl", "semver")
 
+def _valid(left, op, right, *, env):
+    clean_left = left.strip(" \"'")
+    clean_right = right.strip(" \"'")
+
+    if clean_left not in env and clean_right not in env:
+        fail("Got '{} {} {}', but only the following PEP508 env markers are supported: {}".format(left, op, right, env.keys()))
+
+    return clean_left, clean_right
+
 def _version(value, *, env):
-    value = value.strip(" \"'")
     return semver(env.get(value, value)).key()
 
 # Taken from
@@ -31,6 +39,7 @@ VERSION_CMP = [
 ]
 
 def _cmp(left, op, right, *, env):
+    left, right = _valid(left, op, right, env = env)
     op = op.strip()
 
     if op in VERSION_CMP:

@@ -75,12 +75,16 @@ _given = []
 def test_simple(name):
     _analysis_test(
         name = name,
-        dist = {":is_python_lt_39": "foo"},
+        dist = {
+            ":is_python_gt_39": "bar",
+            ":is_python_lt_39": "foo",
+        },
         want = "foo",
         config_settings = [_flag.python_version("3.8")],
     )
 
 _given.append(("is_python_lt_39", "python_version < '3.9'"))
+_given.append(("is_python_gt_39", "python_version > '3.9'"))
 _tests.append(test_simple)
 
 def test_simple_2(name):
@@ -91,8 +95,18 @@ def test_simple_2(name):
         config_settings = [_flag.python_version("3.8")],
     )
 
-_given.append(("is_python_gt_39", "python_version > '3.9'"))
 _tests.append(test_simple_2)
+
+def test_simple_3(name):
+    _analysis_test(
+        name = name,
+        dist = {":is_python_ne_38": "bar"},
+        want = "no_match",
+        config_settings = [_flag.python_version("3.8.3")],
+    )
+
+_given.append(("is_python_ne_38", "python_full_version != '3.8.3'"))
+_tests.append(test_simple_3)
 
 def env_marker_feature_flag_test_suite(name):  # buildifier: disable=function-docstring
     test_suite(
