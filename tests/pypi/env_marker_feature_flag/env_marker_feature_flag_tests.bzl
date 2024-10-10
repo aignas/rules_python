@@ -70,23 +70,28 @@ def _match(env, target, want):
     target.attr("dist", factory = subjects.str).equals(want)
 
 _tests = []
+_given = []
+
+_given.append(("is_python_lt_39", "python_version < '3.9'"))
 
 def test_simple(name):
     _analysis_test(
         name = name,
         dist = {":is_python_lt_39": "foo"},
         want = "foo",
-        config_settings = [_flag.python_version("3.8") ],
+        config_settings = [_flag.python_version("3.8")],
     )
 
 _tests.append(test_simple)
+
+_given.append(("is_python_gt_39", "python_version > '3.9'"))
 
 def test_simple_2(name):
     _analysis_test(
         name = name,
         dist = {":is_python_gt_39": "foo"},
         want = "no_match",
-        config_settings = [_flag.python_version("3.8") ],
+        config_settings = [_flag.python_version("3.8")],
     )
 
 _tests.append(test_simple_2)
@@ -97,23 +102,12 @@ def env_marker_feature_flag_test_suite(name):  # buildifier: disable=function-do
         tests = _tests,
     )
 
-    env_marker_feature_flag(
-        name = "python_lt_39",
-        marker = "python_version < '3.9'",
-    )
-    env_marker_feature_flag(
-        name = "python_gt_39",
-        marker = "python_version > '3.9'",
-    )
-    native.config_setting(
-        name = "is_python_lt_39",
-        flag_values = {
-            ":python_lt_39": "yes",
-        },
-    )
-    native.config_setting(
-        name = "is_python_gt_39",
-        flag_values = {
-            ":python_gt_39": "yes",
-        },
-    )
+    for name, marker in _given:
+        env_marker_feature_flag(
+            name = "_" + name,
+            marker = marker,
+        )
+        native.config_setting(
+            name = name,
+            flag_values = {":_" + name: "yes"},
+        )
