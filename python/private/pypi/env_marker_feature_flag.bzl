@@ -18,42 +18,43 @@
 load("//python/private:semver.bzl", "semver")
 
 def _impl(ctx):
-    input = ctx.attr._python_version_flag[config_common.FeatureFlagInfo].value
+    python_version = ctx.attr._python_version_flag[config_common.FeatureFlagInfo].value
     marker = ctx.attr.marker
-    if input:
-        version = semver(input)
+    if python_version:
+        version = semver(python_version)
         self = ctx.attr
         current_env = {
             "os_name": self.os_name,
             "sys_platform": self.sys_platform,
             "platform_machine": self.platform_machine,
             "platform_system": self.platform_system,
-            "python_version": semver("{}.{}".format(version.major, version.minor)),
+            "python_version": "{}.{}".format(version.major, version.minor),
             # FIXME @aignas 2024-01-14: is putting zero last a good idea? Maybe we should
             # use `20` or something else to avoid having weird issues where the full version is used for
             # matching and the author decides to only support 3.y.5 upwards.
-            "implementation_version": version,
-            "python_full_version": version,
+            "implementation_version": python_version,
+            "python_full_version": python_version,
             # TODO @aignas 2024-10-10: maybe support taking this from the toolchain
             "implementation_name": "cpython",
             "platform_python_implementation": "CPython",
             # TODO @aignas 2024-10-10: Maybe support taking this from the user where we could have string_flag
             # values and the user could fully specify that.
             "platform_release": "",  # unset
-            "platform_version": semver("1.0.0"),  # set to a dummy value
+            "platform_version": "1.0.0",  # set to a dummy value
         }
 
-        env_marker, _, marker = marker.partition(" ")
-        op, _, marker = marker.partition(" ")
-        env_marker = env_marker.strip()
+        left, _, marker = marker.partition(" ")
+        op, _, right = marker.partition(" ")
+        left = left.strip(" \"'")
+        right = right.strip(" \"'")
+        left = current_env.get(left, left)
+        right = current_env.get(right, right)
         op = op.strip()
-        marker = semver(marker.strip(" \"'"))
 
         if op == "<":
-            value = "yes" if current_env[env_marker].key() < marker.key() else "no"
+            value = "yes" if semver(left).key() < semver(right).key() else "no"
         else:
             fail("Unsupported op: '{}'".format(op))
-        value = "no"
     else:
         value = ""
 
