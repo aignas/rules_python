@@ -100,10 +100,6 @@ def _impl(ctx):
                 break
 
             if take:
-                left = tokens[0]
-                op = tokens[1]
-                right = tokens[2]
-                tokens = tokens[3:]
                 take = False
             elif value == None:
                 take = True
@@ -139,12 +135,14 @@ def _impl(ctx):
                     "  take: {}".format(take),
                 ]))
 
+            left, op, right, tokens = tokens
+
             value = _cmp(left, op, right, env = current_env)
             if combine == "and not":
                 value = not value
 
         if tokens:
-            fail("unprocessed tokens: {}".format(tokens))
+            fail("BUG: unprocessed tokens: {}".format(tokens))
 
         value = "yes" if value else "no"
     else:
