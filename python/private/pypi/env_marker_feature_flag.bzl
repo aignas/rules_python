@@ -105,25 +105,29 @@ def _impl(ctx):
                 take = True
                 continue
             elif tokens[0] == "or":
-                take = True
-                tokens = tokens[1:]
                 if value:
                     tokens = []
-                    continue
                 else:
+                    take = True
                     combine = "or"
+                    tokens = tokens[1:]
+                continue
             elif tokens[0] == "and" and tokens[1] == "not":
-                take = True
-                tokens = tokens[2:]
                 if value:
+                    take = True
+                    tokens = tokens[2:]
                     combine = "and not"
                 else:
-                    continue
+                    tokens = []
+                continue
             elif tokens[0] == "and":
-                take = True
-                tokens = tokens[1:]
-                if not value:
-                    continue
+                if value:
+                    take = True
+                    tokens = tokens[1:]
+                    combine = "and"
+                else:
+                    tokens = []
+                continue
             else:
                 fail("\n".join([
                     "TODO: processed '{}', but remaining: {}".format(marker, tokens),
