@@ -470,7 +470,7 @@ def _get_toolchain_config(*, modules, _fail = fail):
             "url": {
                 platform: [item["url"]]
                 for platform in item["sha256"]
-            },
+            } if type(item["url"]) == type("") else item["url"],
         }
         for version, item in TOOL_VERSIONS.items()
     }
@@ -774,6 +774,10 @@ class.
                   "Either {attr}`distutils` or {attr}`distutils_content` can be specified, but not both.",
             mandatory = False,
         ),
+        "flag_values": attr.string_dict(
+            mandatory = False,
+            doc = "TODO",
+        ),
         "patch_strip": attr.int(
             mandatory = False,
             doc = "Same as the --strip argument of Unix patch.",
@@ -796,19 +800,15 @@ class.
             doc = "The 'strip_prefix' for the archive, defaults to 'python'.",
             default = "python",
         ),
-        "urls": attr.string_list(
-            mandatory = False,
-            doc = "The URL template to fetch releases for this Python version. See {attr}`python.single_version_platform_override.urls` for documentation.",
-        ),
-        "flag_values": attr.string_dict(
-            mandatory = False,
-            doc = "TODO",
-        ),
         "suffix": attr.string(
             mandatory = False,
             doc = "TODO",
             default = "",
-        )
+        ),
+        "urls": attr.string_list(
+            mandatory = False,
+            doc = "The URL template to fetch releases for this Python version. See {attr}`python.single_version_platform_override.urls` for documentation.",
+        ),
     },
 )
 
