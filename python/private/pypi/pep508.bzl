@@ -102,7 +102,7 @@ def tokenize(marker):
             token = ""
 
         if not marker:
-            break
+            return tokens
 
         char = marker[0]
         if char in _BRACKETS:
@@ -137,7 +137,7 @@ def tokenize(marker):
         # Consume the char
         marker = marker[1:]
 
-    return tokens
+    return fail("BUG: failed to process the marker in allocated cycles: {}".format(marker))
 
 def _impl(ctx):
     current_env = {
