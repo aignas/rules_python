@@ -95,7 +95,10 @@ def tokenize(value):
     char = ""
 
     for _ in range(2 * len(value)):
-        char = value[0] if value else ""
+        if not value:
+            break
+
+        char = value[0]
         if not char:
             break
 
@@ -110,15 +113,15 @@ def tokenize(value):
         ):
             # TODO @aignas 2024-10-16: add a debug logger
             # print("{} -> {}, reason: '{}'".format(state, "none", value))
-            if state == _STATE.STRING and value:
-                value = value[1:]
-            state = _STATE.NONE
-
             if tmp:
                 tokens.append(tmp)
                 tmp = ""
 
-            continue
+            if state != _STATE.STRING:
+                state = _STATE.NONE
+                continue
+
+            state = _STATE.NONE
         elif state != _STATE.NONE:
             tmp += char
         elif char in _QUOTES:
@@ -134,10 +137,7 @@ def tokenize(value):
         else:
             fail("BUG: Cannot parse '{}' in {}".format(char, state))
 
-        if value:
-            value = value[1:]
-        else:
-            break
+        value = value[1:]
 
     if tmp:
         tokens.append(tmp)
