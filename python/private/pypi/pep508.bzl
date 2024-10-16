@@ -102,24 +102,15 @@ def tokenize(value):
         if char in _BRACKETS:
             tokens.append(char)
             state = _STATE.NONE
-        elif state == _STATE.STRING:
-            if char in _QUOTES:
-                state = _STATE.NONE
-                continue
-            else:
-                tmp += char
-        elif state == _STATE.VAR:
-            if char.isalnum() or char == "_":
-                tmp += char
-            else:
-                state = _STATE.NONE
-                continue
-        elif state == _STATE.OP:
-            if char in _OPCHARS:
-                tmp += char
-            else:
-                state = _STATE.NONE
-                continue
+        elif state == _STATE.STRING and char in _QUOTES:
+            state = _STATE.NONE
+            continue
+        elif state == _STATE.VAR and not char.isalnum() and char != "_":
+            state = _STATE.NONE
+            continue
+        elif state == _STATE.OP and char not in _OPCHARS:
+            state = _STATE.NONE
+            continue
         elif state == _STATE.NONE:
             if tmp:
                 tokens.append(tmp)
@@ -137,6 +128,8 @@ def tokenize(value):
                 state = _STATE.NONE
             else:
                 fail("Unknown char: {}".format(char))
+        elif state != _STATE.NONE:
+            tmp += char
         else:
             fail("BUG: unknown state: {}".format(state))
 
