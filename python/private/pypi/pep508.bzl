@@ -48,6 +48,9 @@ _STATE = enum(
     OP = "op",
     NONE = "none",
 )
+_BRACKETS = "()"
+_OPCHARS = "<>!=~"
+_QUOTES = "'\""
 
 def _cmp(left, op, right, *, env):
     left, right = _valid(left, op, right, env = env)
@@ -73,43 +76,41 @@ def _cmp(left, op, right, *, env):
     else:
         fail("TODO")
 
-def tokenize(value):
-    """Tokenize the input string
+def tokenize(marker):
+    """Tokenize the input string.
+
+    The output will have double-quoted values (i.e. the quoting will be normalized) and all of the whitespace will be trimmed.
 
     Args:
-        value: {type}`str` The input to tokenize.
+        marker: {type}`str` The input to tokenize.
 
     Returns:
         The {type}`str` that is the list of recognized tokens that should be parsed.
     """
-    if not value:
+    if not marker:
         return []
 
     tokens = []
-    tmp = ""
+    token = ""
     state = _STATE.NONE
-
-    _BRACKETS = "()"
-    _OPCHARS = "<>!=~"
-    _QUOTES = "'\""
     char = ""
 
     # Due to the `continue` in the loop, we will be processing chars at a slower pace
-    for _ in range(2 * len(value)):
-        if tmp and state == _STATE.NONE:
-            tokens.append(tmp)
-            tmp = ""
+    for _ in range(2 * len(marker)):
+        if token and state == _STATE.NONE:
+            tokens.append(token)
+            token = ""
 
-        if not value:
+        if not marker:
             break
 
-        char = value[0]
+        char = marker[0]
         if char in _BRACKETS:
-            tmp = char
             state = _STATE.NONE
+            token = char
         elif state == _STATE.STRING and char in _QUOTES:
             state = _STATE.NONE
-            tmp = '"{}"'.format(tmp)
+            token = '"{}"'.format(token)
         elif (
             (state == _STATE.VAR and not char.isalnum() and char != "_") or
             (state == _STATE.OP and char not in _OPCHARS)
@@ -122,19 +123,19 @@ def tokenize(value):
                 state = _STATE.STRING
             elif char.isalnum():
                 state = _STATE.VAR
-                tmp += char
+                token += char
             elif char in _OPCHARS:
                 state = _STATE.OP
-                tmp += char
+                token += char
             elif char == " ":
                 state = _STATE.NONE
             else:
                 fail("BUG: Cannot parse '{}' in {}".format(char, state))
         else:
-            tmp += char
+            token += char
 
         # Consume the char
-        value = value[1:]
+        marker = marker[1:]
 
     return tokens
 
