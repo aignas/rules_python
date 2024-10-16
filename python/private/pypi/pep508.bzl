@@ -115,22 +115,22 @@ def tokenize(value):
         ):
             state = _STATE.NONE
             continue  # Skip consuming the char below
-        elif state != _STATE.NONE:
-            tmp += char
-
+        elif state == _STATE.NONE:
             # Transition from _STATE.NONE to something
-        elif char in _QUOTES:
-            state = _STATE.STRING
-        elif char.isalnum():
-            state = _STATE.VAR
-            tmp += char
-        elif char in _OPCHARS:
-            state = _STATE.OP
-            tmp += char
-        elif char == " ":
-            state = _STATE.NONE
+            if char in _QUOTES:
+                state = _STATE.STRING
+            elif char.isalnum():
+                state = _STATE.VAR
+                tmp += char
+            elif char in _OPCHARS:
+                state = _STATE.OP
+                tmp += char
+            elif char == " ":
+                state = _STATE.NONE
+            else:
+                fail("BUG: Cannot parse '{}' in {}".format(char, state))
         else:
-            fail("BUG: Cannot parse '{}' in {}".format(char, state))
+            tmp += char
 
         # Consume the char
         value = value[1:]
