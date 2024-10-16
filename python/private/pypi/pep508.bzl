@@ -109,6 +109,7 @@ def tokenize(value):
             state = _STATE.NONE
         elif state == _STATE.STRING and char in _QUOTES:
             state = _STATE.NONE
+            tmp = '"{}"'.format(tmp)
         elif (
             (state == _STATE.VAR and not char.isalnum() and char != "_") or
             (state == _STATE.OP and char not in _OPCHARS)
@@ -116,7 +117,7 @@ def tokenize(value):
             state = _STATE.NONE
             continue  # Skip consuming the char below
         elif state == _STATE.NONE:
-            # Transition from _STATE.NONE to something
+            # Transition from _STATE.NONE to something or stay in NONE
             if char in _QUOTES:
                 state = _STATE.STRING
             elif char.isalnum():
