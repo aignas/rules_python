@@ -94,53 +94,46 @@ def tokenize(value):
     _QUOTES = "'\""
     char = ""
 
+    # Due to the `continue` in the loop, we will be processing chars at a slower pace
     for _ in range(2 * len(value)):
+        if tmp and state == _STATE.NONE:
+            tokens.append(tmp)
+            tmp = ""
+
         if not value:
             break
 
         char = value[0]
-        if not char:
-            break
-
         if char in _BRACKETS:
-            tokens.append(char)
-            tmp = ""
+            tmp = char
+            state = _STATE.NONE
+        elif state == _STATE.STRING and char in _QUOTES:
             state = _STATE.NONE
         elif (
-            (state == _STATE.STRING and char in _QUOTES) or
             (state == _STATE.VAR and not char.isalnum() and char != "_") or
             (state == _STATE.OP and char not in _OPCHARS)
         ):
-            # TODO @aignas 2024-10-16: add a debug logger
-            # print("{} -> {}, reason: '{}'".format(state, "none", value))
-            if tmp:
-                tokens.append(tmp)
-                tmp = ""
-
-            if state != _STATE.STRING:
-                state = _STATE.NONE
-                continue
-
             state = _STATE.NONE
+            continue  # Skip consuming the char below
         elif state != _STATE.NONE:
             tmp += char
+
+            # Transition from _STATE.NONE to something
         elif char in _QUOTES:
             state = _STATE.STRING
         elif char.isalnum():
             state = _STATE.VAR
             tmp += char
         elif char in _OPCHARS:
-            tmp += char
             state = _STATE.OP
+            tmp += char
         elif char == " ":
             state = _STATE.NONE
         else:
             fail("BUG: Cannot parse '{}' in {}".format(char, state))
 
+        # Consume the char
         value = value[1:]
-
-    if tmp:
-        tokens.append(tmp)
 
     return tokens
 
