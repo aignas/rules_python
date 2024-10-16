@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
-load(":env_marker_feature_flag.bzl", "pep508_env")
+load(":pep508.bzl", "pep508_env")
 
 package(default_visibility = ["//:__subpackages__"])
 

@@ -15,6 +15,7 @@
 """This module is for implementing PEP508 in starlark as FeatureFlagInfo
 """
 
+load("//python/private:enum.bzl", "enum")
 load("//python/private:semver.bzl", "semver")
 
 def _valid(left, op, right, *, env):
@@ -41,6 +42,13 @@ VERSION_CMP = sorted(
     key = lambda x: (-len(x), x),
 )
 
+_STATE = enum(
+    STRING = "string",
+    VAR = "var",
+    OP = "op",
+    NONE = "none",
+)
+
 def _cmp(left, op, right, *, env):
     left, right = _valid(left, op, right, env = env)
     op = op.strip()
@@ -65,6 +73,83 @@ def _cmp(left, op, right, *, env):
     else:
         fail("TODO")
 
+def tokenize(value):
+    """Tokenize the input string
+
+    Args:
+        value: {type}`str` The input to tokenize.
+
+    Returns:
+        The {type}`str` that is the list of recognized tokens that should be parsed.
+    """
+    if not value:
+        return []
+
+    tokens = []
+    tmp = ""
+    state = _STATE.NONE
+
+    _BRACKETS = "()"
+    _OPCHARS = "<>!="
+    _QUOTES = "'\""
+    char = ""
+
+    for _ in range(2 * len(value)):
+        char = value[0] if value else ""
+        if not char:
+            break
+
+        if char in _BRACKETS:
+            tokens.append(char)
+            state = _STATE.NONE
+        elif state == _STATE.STRING:
+            if char in _QUOTES:
+                state = _STATE.NONE
+                continue
+            else:
+                tmp += char
+        elif state == _STATE.VAR:
+            if char.isalnum() or char == "_":
+                tmp += char
+            else:
+                state = _STATE.NONE
+                continue
+        elif state == _STATE.OP:
+            if char in _OPCHARS:
+                tmp += char
+            else:
+                state = _STATE.NONE
+                continue
+        elif state == _STATE.NONE:
+            if tmp:
+                tokens.append(tmp)
+                tmp = ""
+
+            if char in _QUOTES:
+                state = _STATE.STRING
+            elif char.isalnum():
+                state = _STATE.VAR
+                tmp += char
+            elif char in _OPCHARS:
+                tmp += char
+                state = _STATE.OP
+            elif char == " ":
+                state = _STATE.NONE
+            else:
+                fail("Unknown char: {}".format(char))
+        else:
+            fail("BUG: unknown state: {}".format(state))
+
+        if value:
+            value = value[1:]
+        else:
+            break
+
+    if tmp:
+        tokens.append(tmp)
+
+    return tokens
+
 def _impl(ctx):
     current_env = {
         key: getattr(ctx.attr, "_" + key)[config_common.FeatureFlagInfo].value
@@ -85,11 +170,7 @@ def _impl(ctx):
 
     marker = ctx.attr.marker
     if current_env:
-        # normalize and tokenize the marker
-        for op in VERSION_CMP + ["(", ")"] + [" and ", " in ", " not ", " or "]:
-            marker = marker.replace(op, " " + op + " ")
-        marker = " ".join([m.strip() for m in marker.split(" ") if m])
-        tokens = marker.split(" ")
+        tokens = tokenize(marker)
 
         value = None
         combine = None
