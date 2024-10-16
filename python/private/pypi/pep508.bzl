@@ -128,10 +128,8 @@ def tokenize(value):
                 state = _STATE.NONE
             else:
                 fail("Unknown char: {}".format(char))
-        elif state != _STATE.NONE:
-            tmp += char
         else:
-            fail("BUG: unknown state: {}".format(state))
+            tmp += char
 
         if value:
             value = value[1:]
