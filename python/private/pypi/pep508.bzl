@@ -108,6 +108,10 @@ def tokenize(value):
             (state == _STATE.VAR and not char.isalnum() and char != "_") or
             (state == _STATE.OP and char not in _OPCHARS)
         ):
+            # TODO @aignas 2024-10-16: add a debug logger
+            # print("{} -> {}, reason: '{}'".format(state, "none", value))
+            if state == _STATE.STRING and value:
+                value = value[1:]
             state = _STATE.NONE
 
             if tmp:
@@ -128,7 +132,7 @@ def tokenize(value):
         elif char == " ":
             state = _STATE.NONE
         else:
-            fail("Unknown char: {}".format(char))
+            fail("BUG: Cannot parse '{}' in {}".format(char, state))
 
         if value:
             value = value[1:]
