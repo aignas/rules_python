@@ -101,6 +101,7 @@ def tokenize(value):
 
         if char in _BRACKETS:
             tokens.append(char)
+            tmp = ""
             state = _STATE.NONE
         elif (
             (state == _STATE.STRING and char in _QUOTES) or
