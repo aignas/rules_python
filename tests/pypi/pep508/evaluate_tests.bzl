@@ -41,6 +41,7 @@ def tokenize_tests(env):
         "os_name == 'osx'": ["os_name", "==", '"osx"'],
         "python_version <= \"1.0\"": ["python_version", "<=", '"1.0"'],
         "python_version>='1.0.0'": ["python_version", ">=", '"1.0.0"'],
+        "python_version~='1.0.0'": ["python_version", "~=", '"1.0.0"'],
     }.items():
         got = tokenize(input)
         env.expect.that_collection(got).contains_exactly(want).in_order()

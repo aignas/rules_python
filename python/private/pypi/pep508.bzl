@@ -90,7 +90,7 @@ def tokenize(value):
     state = _STATE.NONE
 
     _BRACKETS = "()"
-    _OPCHARS = "<>!="
+    _OPCHARS = "<>!=~"
     _QUOTES = "'\""
     char = ""
 
