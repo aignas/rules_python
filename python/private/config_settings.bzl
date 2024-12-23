@@ -24,10 +24,10 @@ _PYTHON_VERSION_FLAG = Label("//python/config_settings:python_version")
 _PYTHON_VERSION_MAJOR_MINOR_FLAG = Label("//python/config_settings:python_version_major_minor")
 
 _DEBUG_ENV_MESSAGE_TEMPLATE = """\
-The current configuration rules_python config flags is:
+The current build configuration's rules_python flag values are:
     {flags}
 
-If the value is missing, then the default value is being used, see documentation:
+See documentation:
 {docs_url}/python/config_settings
 """
 
