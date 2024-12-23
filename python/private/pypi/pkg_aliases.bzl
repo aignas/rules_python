@@ -39,26 +39,20 @@ _VERSION_NONE = (0, 0)
 _NO_MATCH_ERROR_TEMPLATE = """\
 No matching wheel for current configuration's Python version.
 
-The current build configuration's Python version doesn't match any of the Python
-wheels available for this distribution. This distribution supports the following Python
-configuration settings:
+The current build configuration's settings do not match any of the Python wheels available for this distribution. This distribution supports the following configuration settings:
     {config_settings}
 
-To determine the current configuration's Python version, run:
-    `bazel config <config id>` (shown further below)
-
-For the current configuration value see the debug message above that is
-printing the current flag values. If you can't see the message, then re-run the
-build to make it a failure instead by running the build with:
+To determine the current build configuration flag values, see the debug message above or re-run the build with:
     --{current_flags}=fail
 
-However, the command above will hide the `bazel config <config id>` message.
+For other configuration, run:
+    `bazel config <config id>` (shown further below)\
 """
 
 _LABEL_NONE = Label("//python:none")
 _LABEL_CURRENT_CONFIG = Label("//python/config_settings:current_config")
 _LABEL_CURRENT_CONFIG_NO_MATCH = Label("//python/config_settings:is_not_matching_current_config")
-_INCOMPATIBLE = "_no_matching_repository"
+_INCOMPATIBLE = "_no_match_error"
 
 def pkg_aliases(
         *,
