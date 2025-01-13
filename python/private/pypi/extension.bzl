@@ -152,44 +152,119 @@ def _create_whl_repos(
         whl_group_mapping = {}
         requirement_cycles = {}
 
-    requirements_by_platform = parse_requirements(
-        module_ctx,
-        requirements_by_platform = requirements_files_by_platform(
-            requirements_by_platform = pip_attr.requirements_by_platform,
-            requirements_linux = pip_attr.requirements_linux,
-            requirements_lock = pip_attr.requirements_lock,
-            requirements_osx = pip_attr.requirements_darwin,
-            requirements_windows = pip_attr.requirements_windows,
-            extra_pip_args = pip_attr.extra_pip_args,
-            python_version = major_minor,
-            logger = logger,
-        ),
-        extra_pip_args = pip_attr.extra_pip_args,
-        get_index_urls = get_index_urls,
-        # NOTE @aignas 2024-08-02: , we will execute any interpreter that we find either
-        # in the PATH or if specified as a label. We will configure the env
-        # markers when evaluating the requirement lines based on the output
-        # from the `requirements_files_by_platform` which should have something
-        # similar to:
-        # {
-        #    "//:requirements.txt": ["cp311_linux_x86_64", ...]
-        # }
-        #
-        # We know the target python versions that we need to evaluate the
-        # markers for and thus we don't need to use multiple python interpreter
-        # instances to perform this manipulation. This function should be executed
-        # only once by the underlying code to minimize the overhead needed to
-        # spin up a Python interpreter.
-        evaluate_markers = lambda module_ctx, requirements: evaluate_markers(
+    if pip_attr.uv_lock:
+        lock_toml = module_ctx.path(pip_attr.uv_lock)
+        lock_json = module_ctx.path("uv.lock.json")
+        lines = [
+            "import json",
+            "import pathlib",
+            "import tomllib",
+            "",
+            "with open(pathlib.Path('{}'), 'rb') as t:".format(lock_toml),
+            "    with open(pathlib.Path('{}'), 'w') as j:".format(lock_json),
+            "        json.dump(tomllib.load(t), j)",
+        ]
+        result = module_ctx.execute([
+            module_ctx.path(Label("@python_3_11_host//:python")),
+            "-c",
+            "{}".format("\n".join(lines)),
+        ])
+        if result.return_code != 0:
+            fail(result.stderr)
+
+        lock = json.decode(module_ctx.read(lock_json))
+        packages = lock["package"]
+
+        requirements_by_platform = {}
+        for package in packages:
+            name = package.pop("name")
+            version = package.pop("version")
+            source = package.pop("source")
+            sdist = package.pop("sdist", None)
+            wheels = package.pop("wheels", [])
+            dependencies = package.pop("dependencies", [])
+
+            def _dist_from_uv(dist):
+                if not dist:
+                    return None
+
+                url = dist["url"]
+                _, _, filename = url.rpartition("/")
+                algo, _, sha256 = dist["hash"].partition(":")
+                if algo != "sha256":
+                    fail("Unsupported hashing algorithm")
+
+                return struct(
+                    url = url,
+                    filename = filename,
+                    sha256 = sha256,
+                )
+
+            requirements_by_platform["name"] = [
+                struct(
+                    sdist = _dist_from_uv(sdist),
+                    whls = [
+                        _dist_from_uv(whl) for whl in wheels
+                    ],
+                    srcs = struct(
+                        # Note, we can ignore the extras here if we are passing in
+                        # the deps.
+                        requirement = "{}=={}".format(name, version),
+                    ),
+                    is_exposed = True,
+                    target_platforms = [],
+                    extra_pip_args = pip_attr.extra_pip_args,
+                    # These can be passed to `whl_library` or used within the hub repo.
+                    # For now we can pass them in because changing things to be set in the
+                    # hub repo requires more work, but is probably a better option.
+                    deps = [
+                        struct(
+                            name = p["name"],
+                            marker = p.get("marker"),
+                        )
+                        for p in dependencies
+                    ],
+                )
+            ]
+    else:
+        requirements_by_platform = parse_requirements(
             module_ctx,
-            requirements = requirements,
-            python_interpreter = pip_attr.python_interpreter,
-            python_interpreter_target = python_interpreter_target,
-            srcs = pip_attr._evaluate_markers_srcs,
+            requirements_by_platform = requirements_files_by_platform(
+                requirements_by_platform = pip_attr.requirements_by_platform,
+                requirements_linux = pip_attr.requirements_linux,
+                requirements_lock = pip_attr.requirements_lock,
+                requirements_osx = pip_attr.requirements_darwin,
+                requirements_windows = pip_attr.requirements_windows,
+                extra_pip_args = pip_attr.extra_pip_args,
+                python_version = major_minor,
+                logger = logger,
+            ),
+            extra_pip_args = pip_attr.extra_pip_args,
+            get_index_urls = get_index_urls,
+            # NOTE @aignas 2024-08-02: , we will execute any interpreter that we find either
+            # in the PATH or if specified as a label. We will configure the env
+            # markers when evaluating the requirement lines based on the output
+            # from the `requirements_files_by_platform` which should have something
+            # similar to:
+            # {
+            #    "//:requirements.txt": ["cp311_linux_x86_64", ...]
+            # }
+            #
+            # We know the target python versions that we need to evaluate the
+            # markers for and thus we don't need to use multiple python interpreter
+            # instances to perform this manipulation. This function should be executed
+            # only once by the underlying code to minimize the overhead needed to
+            # spin up a Python interpreter.
+            evaluate_markers = lambda module_ctx, requirements: evaluate_markers(
+                module_ctx,
+                requirements = requirements,
+                python_interpreter = pip_attr.python_interpreter,
+                python_interpreter_target = python_interpreter_target,
+                srcs = pip_attr._evaluate_markers_srcs,
+                logger = logger,
+            ),
             logger = logger,
-        ),
-        logger = logger,
-    )
+        )
 
     for whl_name, requirements in requirements_by_platform.items():
         group_name = whl_group_mapping.get(whl_name)
@@ -750,6 +825,12 @@ The Python version the dependencies are targetting, in Major.Minor format
 If an interpreter isn't explicitly provided (using `python_interpreter` or
 `python_interpreter_target`), then the version specified here must have
 a corresponding `python.toolchain()` configured.
+""",
+        ),
+        "uv_lock": attr.label(
+            doc = """
+The uv.lock file that is used to generate all of the repos. If this is used, then
+`requirements_*` attributes may not be used.
 """,
         ),
         "whl_modifications": attr.label_keyed_string_dict(
