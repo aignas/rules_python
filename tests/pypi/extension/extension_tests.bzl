@@ -78,10 +78,9 @@ def _parse_modules(env, enable_pipstar = 0, **kwargs):
 
 def _default(
         arch_name = None,
-        constraint_values = None,
+        target_settings = None,
         os_name = None,
         platform = None,
-        target_settings = None,
         env_implementation_name = None,
         env_os_name = None,
         env_platform_machine = None,
@@ -93,7 +92,6 @@ def _default(
         whl_platforms = None):
     return struct(
         arch_name = arch_name,
-        constraint_values = constraint_values,
         os_name = os_name,
         platform = platform,
         target_settings = target_settings,
@@ -1063,7 +1061,7 @@ def _test_pipstar_platforms(env):
                 default = [
                     _default(
                         platform = "{}_{}".format(os, cpu),
-                        constraint_values = [
+                        target_settings = [
                             "@platforms//os:{}".format(os),
                             "@platforms//cpu:{}".format(cpu),
                         ],
