@@ -53,16 +53,37 @@ def parse_simpleapi_html(*, content):
 
     # Each line follows the following pattern
     # <a href="https://...#sha256=..." attribute1="foo" ... attributeN="bar">filename</a><br />
+    #
+    # Sometimes the lines may be split, so we should seek until `<br />`
     sha256s_by_version = {}
     for line in lines[1:]:
-        dist_url, _, tail = line.partition("#sha256=")
-
-        sha256, _, tail = tail.partition("\"")
+        attrs, _, _ = line.rpartition("</a><br")
+        attrs, _, _ = attrs.rpartition(">")  # Strip the name as well
+        dist_url, sep, attrs = attrs.partition("#sha256=")
+        if sep:
+            # TODO @aignas 2026-03-08: tests
+            sha256, _, attrs = attrs.partition("\"")
+        else:
+            # TODO @aignas 2026-03-08: tests
+            sha256 = ""
 
         # See https://packaging.python.org/en/latest/specifications/simple-repository-api/#adding-yank-support-to-the-simple-api
-        yanked = "data-yanked" in line
 
-        head, _, _ = tail.rpartition("</a>")
+        # Yank reason
+        # TODO @aignas 2026-03-08: add unit tests
+        _, _, maybe_yanked = attrs.partition(" data-yanked=")
+        yanked, _, maybe_yanked = maybe_yanked.strip('"').partition('"')
+
+        # if yanked endswith '\', then we know this is an escaped yank reason containing '\"' in it
+        for _ in range(1000):
+            if not yanked.endswith("\\"):
+                break
+
+            c, _, maybe_yanked = maybe_yanked.strip('"').partition('"')
+            yanked = "{}\"{}".format(yanked, c)
+        yanked = yanked.strip(" \"")
+
+        head, _, _ = line.rpartition("</a>")
         maybe_metadata, _, filename = head.rpartition(">")
         version = version_from_filename(filename)
         sha256s_by_version.setdefault(version, []).append(sha256)
@@ -73,8 +94,8 @@ def parse_simpleapi_html(*, content):
             metadata_marker = metadata_marker + "=\"sha256="
             if metadata_marker in maybe_metadata:
                 # Implement https://peps.python.org/pep-0714/
-                _, _, tail = maybe_metadata.partition(metadata_marker)
-                metadata_sha256, _, _ = tail.partition("\"")
+                _, _, attrs = maybe_metadata.partition(metadata_marker)
+                metadata_sha256, _, _ = attrs.partition("\"")
                 metadata_url = dist_url + ".metadata"
                 break
 
