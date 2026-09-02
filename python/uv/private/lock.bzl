@@ -15,10 +15,10 @@
 """An implementation for a simple macro to lock the requirements.
 """
 
-load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:shell.bzl", "shell")
 load("//python:py_binary.bzl", "py_binary")
 load("//python/private:bzlmod_enabled.bzl", "BZLMOD_ENABLED")  # buildifier: disable=bzl-visibility
+load("//python/private:common.bzl", "relative_path")
 load("//python/private:common_labels.bzl", "labels")
 load("//python/private:toolchain_types.bzl", "EXEC_TOOLS_TOOLCHAIN_TYPE")  # buildifier: disable=bzl-visibility
 load(":toolchain_types.bzl", "UV_TOOLCHAIN_TYPE")
@@ -93,7 +93,7 @@ def _reroot(x, directory):
     if x == directory:
         return "."
 
-    return paths.relativize(x, directory)
+    return relative_path(directory, x)
 
 def _reroot_all(xs, directory):
     return [
