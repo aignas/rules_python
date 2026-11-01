@@ -1,5 +1,19 @@
 """A simple test helper"""
 
+def expose(
+        *,
+        dependency_groups = ["default"],
+        hub,
+        pyproject_toml = None,
+        venv):
+    """A simple helper for testing to simulate the PyPI extension expose tag class"""
+    return struct(
+        dependency_groups = dependency_groups,
+        hub = hub,
+        pyproject_toml = pyproject_toml,
+        venv = venv,
+    )
+
 def pip_parse(
         *,
         hub_name,

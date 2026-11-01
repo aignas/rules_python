@@ -58,6 +58,30 @@ class UnifiedPypiTest(runner.TestCase):
             'ERROR: PyPI package "six" is not available when building under PyPI hub "pypi_a"\\. Try adding it to the requirements of this hub',
         )
 
+    def test_expose_venv(self):
+        self.run_bazel("test", "//:test_expose_venv")
+
+    def test_expose_testonly_requirements(self):
+        self.run_bazel("build", "//:bin_all_requirements")
+        self.run_bazel(
+            "test",
+            "//:test_all_requirements",
+            "//:test_all_testonly_requirements",
+        )
+
+    def test_expose_venv_disjoint_package_cquery_succeeds_but_build_fails(self):
+        self.run_bazel("cquery", "//:bin_six_expose")
+        result = self.run_bazel("build", "//:bin_six_expose", check=False)
+        self.assertNotEqual(
+            result.exit_code,
+            0,
+            "Expected build to fail during execution phase",
+        )
+        self.assert_result_matches(
+            result,
+            'ERROR: PyPI package "six" is not available when building under PyPI hub "pypi_b_colorama"\\. Try adding it to the requirements of this hub',
+        )
+
     def test_sibling_extra_alias_cquery_succeeds_but_build_fails(self):
         self.run_bazel("cquery", "//:bin_extra_b")
         result = self.run_bazel("build", "//:bin_extra_b", check=False)

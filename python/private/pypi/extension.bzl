@@ -29,6 +29,7 @@ load(":pep508_env.bzl", "env")
 load(":pip_repository_attrs.bzl", "ATTRS")
 load(":platform.bzl", _plat = "platform")
 load(":pypi_cache.bzl", "pypi_cache")
+load(":pyproject_packages.bzl", "dependency_graph_from_uv_lock", "dependency_group_selection", "merge_dependency_graphs", "testonly_packages_from_graph")
 load(":simpleapi_download.bzl", "simpleapi_download")
 load(":unified_hub_repo.bzl", "unified_hub_repo")
 load(":whl_library.bzl", "whl_library")
@@ -210,6 +211,7 @@ def build_config(
     unified_hub_requirements_bzl = False
     defaults = {
         "platforms": default_platforms(),
+        "pyproject_toml": None,
         "python_version": None,
     }
     for mod in module_ctx.modules:
@@ -226,6 +228,8 @@ def build_config(
                 unified_hub_requirements_bzl = True
             pyproject_toml = tag.pyproject_toml
             if pyproject_toml:
+                if mod.is_root or not defaults["pyproject_toml"]:
+                    defaults["pyproject_toml"] = pyproject_toml
                 pyproject = read_pyproject(module_ctx, pyproject_toml)
                 if pyproject.requires_python:
                     defaults["python_version"] = version_from_requires_python(pyproject.requires_python)
@@ -272,9 +276,59 @@ def build_config(
             for name, values in defaults["platforms"].items()
         },
         enable_pipstar_extract = enable_pipstar_extract,
+        pyproject_toml = defaults["pyproject_toml"],
         toml_decode = toml.decode,
         unified_hub_requirements_bzl = unified_hub_requirements_bzl,
     )
+
+def _merge_package_sets(previous, previous_testonly, current, current_testonly):
+    """Merge two exposures of the same venv.
+
+    A package that is non-testonly in either exposure stays non-testonly.
+
+    Args:
+        previous: {type}`list[str]` the previously exposed packages.
+        previous_testonly: {type}`list[str]` the previously testonly packages.
+        current: {type}`list[str]` the newly exposed packages.
+        current_testonly: {type}`list[str]` the newly testonly packages.
+
+    Returns:
+        A tuple of the merged `packages` and `testonly_packages` lists.
+    """
+    previous_packages = {
+        pkg: None
+        for pkg in previous
+    }
+    current_packages = {
+        pkg: None
+        for pkg in current
+    }
+    previous_testonly = {
+        pkg: None
+        for pkg in previous_testonly
+    }
+    current_testonly = {
+        pkg: None
+        for pkg in current_testonly
+    }
+
+    packages = {
+        pkg: None
+        for pkg in previous + current
+    }
+    testonly = {}
+    for pkg in packages:
+        if pkg in previous_packages and pkg in current_packages:
+            is_testonly = pkg in previous_testonly and pkg in current_testonly
+        elif pkg in previous_packages:
+            is_testonly = pkg in previous_testonly
+        else:
+            is_testonly = pkg in current_testonly
+
+        if is_testonly:
+            testonly[pkg] = None
+
+    return sorted(packages), sorted(testonly)
 
 def parse_modules(
         module_ctx,
@@ -364,6 +418,8 @@ You cannot use both the additive_build_content and additive_build_content_file a
     # dict[str repo, HubBuilder]
     # See `hub_builder.bzl%hub_builder()` for `HubBuilder`
     pip_hub_map = {}
+    hub_pyproject = {}
+    hub_uv_lock = {}
     simpleapi_cache = pypi_cache(mctx = module_ctx)
 
     is_pypi_hub_reserved = module_ctx.getenv("RULES_PYTHON_PYPI_HUB_RESERVED", "0") == "1"
@@ -409,6 +465,9 @@ You cannot use both the additive_build_content and additive_build_content_file a
                         ),
                     )  # buildifier: disable=print
 
+            if pip_attr.uv_lock:
+                hub_uv_lock.setdefault(hub_name, {})[pip_attr.uv_lock] = None
+
             if hub_name not in pip_hub_map:
                 builder = hub_builder(
                     name = hub_name,
@@ -439,6 +498,9 @@ You cannot use both the additive_build_content and additive_build_content_file a
 
             else:
                 builder = pip_hub_map[hub_name]
+
+            if pip_attr.pyproject_toml and hub_name not in hub_pyproject:
+                hub_pyproject[hub_name] = pip_attr.pyproject_toml
 
             builder.pip_parse(
                 module_ctx,
@@ -477,15 +539,117 @@ You cannot use both the additive_build_content and additive_build_content_file a
         hub_group_map[hub.name] = out.group_map
         hub_whl_map[hub.name] = out.whl_map
 
+    # A venv is a filtered view of a concrete hub. It is a repository in its
+    # own right, so it can be used as `@<venv>//<pkg>` and selected with
+    # `--venv=<venv>` in the unified hub.
+    exposed_venvs = {}
+    testonly_packages = {}
+    for mod in module_ctx.modules:
+        for expose_attr in mod.tags.expose:
+            hub = expose_attr.hub
+            venv = expose_attr.venv
+            if hub not in exposed_packages:
+                _fail("pip.expose() refers to unknown hub '{}'. Available hubs: {}".format(
+                    hub,
+                    ", ".join(sorted(exposed_packages)),
+                ))
+                return None
+            if venv in pip_hub_map and venv != hub:
+                _fail("pip.expose() venv '{}' conflicts with the existing hub of the same name".format(venv))
+                return None
+            if venv == "pypi" and "pypi" not in pip_hub_map:
+                _fail("pip.expose() venv 'pypi' conflicts with the automatically generated unified hub")
+                return None
+            if venv in exposed_venvs and exposed_venvs[venv].hub != hub:
+                _fail("pip.expose() venv '{}' is used with both hub '{}' and hub '{}'".format(
+                    venv,
+                    exposed_venvs[venv].hub,
+                    hub,
+                ))
+                return None
+
+            pyproject = (
+                expose_attr.pyproject_toml or
+                config.pyproject_toml or
+                hub_pyproject.get(hub)
+            )
+            if not pyproject:
+                _fail("pip.expose() venv '{}' requires a pyproject.toml. Set `pyproject_toml` on the expose tag, on the hub's pip.parse tag, or on pip.default()".format(venv))
+                return None
+
+            selection = dependency_group_selection(
+                read_pyproject(module_ctx, pyproject),
+                expose_attr.dependency_groups,
+                _fail = _fail,
+            )
+            available = {
+                normalize_name(pkg): pkg
+                for pkg in exposed_packages[hub]
+            }
+            if selection.transitive:
+                packages = sorted(available.values())
+                if selection.transitive_testonly:
+                    graph = merge_dependency_graphs([
+                        dependency_graph_from_uv_lock(module_ctx, uv_lock)
+                        for uv_lock in hub_uv_lock.get(hub, {})
+                    ])
+                    selected_testonly = testonly_packages_from_graph(
+                        sorted(available),
+                        roots = selection.packages,
+                        testonly_roots = selection.testonly_packages,
+                        graph = graph,
+                    )
+                else:
+                    selected_testonly = selection.testonly_packages
+            else:
+                packages = sorted([
+                    available[pkg]
+                    for pkg in selection.packages
+                    if pkg in available
+                ])
+                selected_testonly = selection.testonly_packages
+
+            testonly = sorted([
+                available[pkg]
+                for pkg in selected_testonly
+                if pkg in available
+            ])
+
+            previous = exposed_venvs.get(venv)
+            if previous:
+                packages, testonly = _merge_package_sets(
+                    previous.packages,
+                    previous.testonly_packages,
+                    packages,
+                    testonly,
+                )
+
+            exposed_venvs[venv] = struct(
+                hub = hub,
+                packages = packages,
+                testonly_packages = testonly,
+            )
+
+    # When the venv has the same name as its hub, there is no separate
+    # repository to create and the concrete hub's exposed packages are
+    # filtered instead. The hub's package aliases are left in place so that
+    # other venvs sharing the hub keep working.
+    for venv, info in exposed_venvs.items():
+        if venv == info.hub:
+            exposed_packages[venv] = info.packages
+            testonly_packages[venv] = info.testonly_packages
+
     return struct(
         config = config,
         declared_deps = declared_deps,
         default_hub = config.default_hub or renamed_default_hub,
         exposed_packages = exposed_packages,
+        exposed_venvs = exposed_venvs,
         extra_aliases = extra_aliases,
         facts = simpleapi_cache.get_facts(),
         hub_group_map = hub_group_map,
         hub_whl_map = hub_whl_map,
+        testonly_packages = testonly_packages,
         unified_hub_requirements_bzl = config.unified_hub_requirements_bzl,
         whl_libraries = whl_libraries,
         whl_mods = whl_mods,
@@ -498,32 +662,138 @@ You cannot use both the additive_build_content and additive_build_content_file a
         },
     )
 
+def _create_venv_repos(mods):
+    """Create the repositories for the venvs declared with `pip.expose`.
+
+    A venv is a filtered view of its concrete hub: only the selected packages
+    get aliases and macros in the venv repository. The wheel repositories are
+    shared with the concrete hub, so nothing is downloaded twice.
+
+    Args:
+        mods: the struct returned by {obj}`parse_modules`.
+    """
+    for venv, info in mods.exposed_venvs.items():
+        if venv == info.hub:
+            # The concrete hub itself is the filtered view.
+            continue
+
+        selected = {
+            normalize_name(pkg_name): None
+            for pkg_name in info.packages
+        }
+        hub = info.hub
+
+        whl_map = {
+            pkg_name: settings
+            for pkg_name, settings in mods.hub_whl_map[hub].items()
+            if normalize_name(pkg_name) in selected
+        }
+        extra_aliases = {
+            pkg_name: aliases
+            for pkg_name, aliases in mods.extra_aliases.get(hub, {}).items()
+            if normalize_name(pkg_name) in selected
+        }
+        groups = {
+            name: [
+                pkg_name
+                for pkg_name in pkg_names
+                if normalize_name(pkg_name) in selected
+            ]
+            for name, pkg_names in mods.hub_group_map.get(hub, {}).items()
+        }
+        groups = {
+            name: pkg_names
+            for name, pkg_names in groups.items()
+            if pkg_names
+        }
+
+        hub_repository(
+            name = venv,
+            repo_name = venv,
+            extra_hub_aliases = extra_aliases,
+            whl_map = {
+                key: whl_config_settings_to_json(values)
+                for key, values in whl_map.items()
+            },
+            packages = info.packages,
+            platform_config_settings = mods.platform_config_settings.get(hub, {}),
+            groups = groups,
+            testonly_packages = info.testonly_packages,
+        )
+
 def _create_unified_hub_repo(mods):
     if "pypi" in mods.hub_whl_map:
         return
 
-    hubs = sorted(mods.hub_whl_map.keys())
+    hubs = {
+        hub: None
+        for hub in mods.hub_whl_map
+    }
+    hubs.update({
+        venv: None
+        for venv in mods.exposed_venvs
+    })
+    hubs = sorted(hubs.keys())
     if mods.default_hub and mods.default_hub not in hubs:
         fail("default_hub '%s' is not a defined PyPI hub. Available hubs: %s" % (mods.default_hub, ", ".join(hubs)))
 
     packages = {}
     extra_aliases = {}
+    package_testonly = {}
 
-    for hub_name in hubs:
+    def _add_package(pkg_name, hub_name, hub_extra_aliases, testonly):
+        norm_pkg = normalize_name(pkg_name)
+        if norm_pkg not in packages:
+            packages[norm_pkg] = []
+        if hub_name not in packages[norm_pkg]:
+            packages[norm_pkg].append(hub_name)
+            package_testonly.setdefault(norm_pkg, []).append(testonly)
+
+        extra = hub_extra_aliases.get(norm_pkg, [])
+        for alias_name in extra:
+            qual_alias = "%s:%s" % (norm_pkg, alias_name)
+            if qual_alias not in extra_aliases:
+                extra_aliases[qual_alias] = []
+            if hub_name not in extra_aliases[qual_alias]:
+                extra_aliases[qual_alias].append(hub_name)
+
+    for hub_name in mods.hub_whl_map:
+        hub_testonly = {
+            normalize_name(pkg_name): None
+            for pkg_name in mods.testonly_packages.get(hub_name, [])
+        }
         for pkg_name in mods.exposed_packages.get(hub_name, []):
-            norm_pkg = normalize_name(pkg_name)
-            if norm_pkg not in packages:
-                packages[norm_pkg] = []
-            if hub_name not in packages[norm_pkg]:
-                packages[norm_pkg].append(hub_name)
+            _add_package(
+                pkg_name,
+                hub_name,
+                mods.extra_aliases.get(hub_name, {}),
+                normalize_name(pkg_name) in hub_testonly,
+            )
 
-            extra = mods.extra_aliases.get(hub_name, {}).get(norm_pkg, [])
-            for alias_name in extra:
-                qual_alias = "%s:%s" % (norm_pkg, alias_name)
-                if qual_alias not in extra_aliases:
-                    extra_aliases[qual_alias] = []
-                if hub_name not in extra_aliases[qual_alias]:
-                    extra_aliases[qual_alias].append(hub_name)
+    for venv, info in mods.exposed_venvs.items():
+        if venv == info.hub:
+            continue
+
+        selected = {
+            normalize_name(pkg_name): None
+            for pkg_name in info.packages
+        }
+        venv_testonly = {
+            normalize_name(pkg_name): None
+            for pkg_name in info.testonly_packages
+        }
+        hub_extra_aliases = {
+            pkg_name: aliases
+            for pkg_name, aliases in mods.extra_aliases.get(info.hub, {}).items()
+            if normalize_name(pkg_name) in selected
+        }
+        for pkg_name in info.packages:
+            _add_package(
+                pkg_name,
+                venv,
+                hub_extra_aliases,
+                normalize_name(pkg_name) in venv_testonly,
+            )
 
     for norm_pkg, extra_targets in mods.declared_deps.items():
         if norm_pkg not in packages:
@@ -534,13 +804,24 @@ def _create_unified_hub_repo(mods):
             if qual_alias not in extra_aliases:
                 extra_aliases[qual_alias] = []
 
+    testonly_packages = []
+    for norm_pkg, testonly_flags in package_testonly.items():
+        is_testonly = True
+        for testonly in testonly_flags:
+            if not testonly:
+                is_testonly = False
+                break
+        if is_testonly:
+            testonly_packages.append(norm_pkg)
+
     unified_hub_repo(
         name = "pypi",
-        default_hub = mods.default_hub or (hubs[0] if hubs else ""),
+        default_hub = mods.default_hub or (sorted(mods.hub_whl_map)[0] if mods.hub_whl_map else ""),
         extra_aliases = extra_aliases,
         hubs = hubs,
         packages = packages,
         requirements_bzl = mods.unified_hub_requirements_bzl,
+        testonly_packages = sorted(testonly_packages),
     )
 
 def _pip_impl(module_ctx):
@@ -632,8 +913,10 @@ def _pip_impl(module_ctx):
             packages = mods.exposed_packages.get(hub_name, []),
             platform_config_settings = mods.platform_config_settings.get(hub_name, {}),
             groups = mods.hub_group_map.get(hub_name),
+            testonly_packages = mods.testonly_packages.get(hub_name, []),
         )
 
+    _create_venv_repos(mods)
     _create_unified_hub_repo(mods)
 
     # The code is smart to not return facts if we don't support the mechanism for that.
@@ -1147,6 +1430,99 @@ execution-phase error when built.
 """,
 )
 
+_expose_tag = tag_class(
+    attrs = {
+        "dependency_groups": attr.string_list(
+            default = ["default"],
+            doc = """\
+The dependency groups to expose in the venv.
+
+Each item is one of:
+
+* `"default"`: the packages in the `[project] dependencies` table.
+* `"optional:<name>"`: the packages in the
+  `[project.optional-dependencies]` table entry `<name>`.
+* `"group:<name>"`: the packages in the PEP 735 `[dependency-groups]` table
+  entry `<name>`. `include-group` entries are expanded.
+* `"optional:*"`: all `[project.optional-dependencies]` entries.
+* `"group:*"`: all PEP 735 `[dependency-groups]` entries.
+* `"*"`: `"default"` plus all optional and all dependency groups.
+* `"transitive"`: every package in the concrete hub, not only the packages
+  named by the selected groups. This is a modifier and is not included by
+  the `"*"` wildcard.
+* `"<name>"`: the `[dependency-groups]` entry `<name>`, if it exists,
+  otherwise the `[project.optional-dependencies]` entry `<name>`.
+
+Any item may be suffixed with `;testonly` to mark its packages as testonly.
+Testonly packages are left out of `all_requirements` in the generated
+`requirements.bzl` and listed in `all_testonly_requirements` instead.
+
+The wildcards and `;testonly` modifier follow last-wins precedence. A later
+`"*"` resets earlier specific overrides, and a later specific entry overrides
+the wildcard. For example, `["*", "group:test;testonly"]` exposes all groups
+but only marks `group:test` as testonly.
+
+With `"transitive;testonly"`, packages that are exclusively reachable from
+testonly roots are marked testonly. Packages reachable from both testonly and
+non-testonly groups remain non-testonly. Reachability uses the hub's
+`uv_lock` when one is configured; without a lock file, only the directly
+selected packages can be classified.
+
+Packages that are not part of the concrete hub are ignored.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::
+""",
+        ),
+        "hub": attr.string(
+            mandatory = True,
+            doc = """\
+The name of the concrete hub to create the venv from.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::
+""",
+        ),
+        "pyproject_toml": attr.label(
+            mandatory = False,
+            doc = """\
+Label pointing to the `pyproject.toml` file that defines the dependency
+groups. When not set, the file configured with
+{obj}`pip.default.pyproject_toml` or the hub's {obj}`pip.parse.pyproject_toml`
+is used.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::
+""",
+        ),
+        "venv": attr.string(
+            mandatory = True,
+            doc = """\
+The name of the repository to create. It can be used as a hub name in
+`use_repo()`, as `@<venv>//<pkg>`, and by setting
+{flag}`--@rules_python//python/config_settings:venv` to this value to route
+the [Unified @pypi Hub](unified-pypi-hub) to it.
+
+If this is the same as {attr}`hub`, the concrete hub's exposed packages are
+filtered to the selection instead of creating a new repository.
+
+Multiple `pip.expose()` tags can use the same `venv` and `hub`; the selected
+packages are combined.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::
+""",
+        ),
+    },
+    doc = """\
+Expose a subset of a concrete hub's packages as a venv repository.
+
+The packages are selected from a `pyproject.toml` file using the
+`[project] dependencies`, `[project.optional-dependencies]` and PEP 735
+`[dependency-groups]` tables.
+""",
+)
+
 pypi = module_extension(
     environ = ["RULES_PYTHON_PYPI_HUB_RESERVED"],
     doc = """\
@@ -1169,6 +1545,10 @@ explicitly named "pypi") to route dependencies dynamically. See
 Environment Variables:
 - `RULES_PYTHON_PYPI_HUB_RESERVED`: Enable fallback renaming for reserved hub name collisions.
   See the {envvar}`RULES_PYTHON_PYPI_HUB_RESERVED` documentation for details.
+
+pip.expose:
+This tag class creates a venv repository containing a subset of a concrete
+hub's packages, selected with dependency groups from a pyproject.toml file.
 
 pip.whl_mods:
 This tag class is used to help create JSON files to describe modifications to
@@ -1198,6 +1578,7 @@ terms used in this extension.
 """,
         ),
         "dep": _dep_tag,
+        "expose": _expose_tag,
         "override": _override_tag,
         "parse": tag_class(
             attrs = _pip_parse_ext_attrs(),

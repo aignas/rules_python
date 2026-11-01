@@ -42,7 +42,38 @@ pip.parse(
     python_version = "3.11",
     requirements_lock = "//:requirements_b.txt",
 )
-use_repo(pip, "pypi_b")
+
+# pypi_b_dev contains the [project] dependencies and the "full" dependency
+# group, which includes six via "dev".
+pip.expose(
+    dependency_groups = [
+        "default",
+        "full",
+    ],
+    hub = "pypi_b",
+    pyproject_toml = "//:pyproject.toml",
+    venv = "pypi_b_dev",
+)
+
+# pypi_b_colorama only contains the [project] dependencies.
+pip.expose(
+    hub = "pypi_b",
+    pyproject_toml = "//:pyproject.toml",
+    venv = "pypi_b_colorama",
+)
+
+# pypi_b_test marks the "dev" group as testonly, so six is only exposed as a
+# testonly package.
+pip.expose(
+    dependency_groups = [
+        "default",
+        "group:dev;testonly",
+    ],
+    hub = "pypi_b",
+    pyproject_toml = "//:pyproject.toml",
+    venv = "pypi_b_test",
+)
+use_repo(pip, "pypi_b", "pypi_b_colorama", "pypi_b_dev", "pypi_b_test")
 
 pip.default(default_hub = "pypi_b")
 pip.default(unified_hub_requirements_bzl = True)

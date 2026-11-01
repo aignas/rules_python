@@ -1,4 +1,5 @@
 load("@pypi//:requirements.bzl", "requirement")
+load("@pypi_b_test//:requirements.bzl", "all_requirements", "all_testonly_requirements")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_test.bzl", "py_test")
 
@@ -65,6 +66,57 @@ py_binary(
         "@rules_python//python/config_settings:venv": "pypi_a",
     },
     deps = ["@pypi//six"],
+)
+
+# The venv contains both packages, so the default and the explicit venv
+# repository resolve through the unified hub.
+py_test(
+    name = "test_expose_venv",
+    srcs = ["test_expose_venv.py"],
+    config_settings = {
+        "@rules_python//python/config_settings:venv": "pypi_b_dev",
+    },
+    main = "test_expose_venv.py",
+    deps = [
+        "@pypi//colorama",
+        "@pypi//six",
+        "@pypi_b_dev//colorama",
+        "@pypi_b_dev//six",
+    ],
+)
+
+# six is not part of the filtered pypi_b_colorama venv:
+py_binary(
+    name = "bin_six_expose",
+    srcs = ["bin_six_a.py"],
+    config_settings = {
+        "@rules_python//python/config_settings:venv": "pypi_b_colorama",
+    },
+    main = "bin_six_a.py",
+    deps = ["@pypi//six"],
+)
+
+# `all_requirements` excludes testonly packages, so this binary must not pull
+# in six.
+py_binary(
+    name = "bin_all_requirements",
+    srcs = ["test_default.py"],
+    main = "test_default.py",
+    deps = all_requirements,
+)
+
+py_test(
+    name = "test_all_requirements",
+    srcs = ["test_default.py"],
+    main = "test_default.py",
+    deps = all_requirements,
+)
+
+py_test(
+    name = "test_all_testonly_requirements",
+    srcs = ["test_six.py"],
+    main = "test_six.py",
+    deps = all_testonly_requirements,
 )
 
 py_binary(

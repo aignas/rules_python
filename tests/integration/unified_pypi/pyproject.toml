@@ -1,0 +1,6 @@
+[project]
+dependencies = ["colorama"]
+
+[dependency-groups]
+dev = ["six"]
+full = [{ include-group = "dev" }]
