@@ -134,6 +134,7 @@ bzl_library(
         ":pip_repository_attrs",
         ":platform",
         ":pypi_cache",
+        ":pyproject_packages",
         ":simpleapi_download",
         ":unified_hub_repo",
         ":whl_library",
@@ -367,6 +368,17 @@ bzl_library(
         "//python/private:repo_utils",
         "//python/private:util",
         "@bazel_skylib//lib:types",
+    ],
+)
+
+bzl_library(
+    name = "pyproject_packages",
+    srcs = ["pyproject_packages.bzl"],
+    deps = [
+        ":pep508_requirement",
+        "//python/private:normalize_name",
+        "//python/private:pyproject_utils",
+        "@toml.bzl//:toml",
     ],
 )
 
