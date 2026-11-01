@@ -55,6 +55,25 @@ def _test_legacy_aliases(env):
 
 _tests.append(_test_legacy_aliases)
 
+def _test_testonly_aliases(env):
+    got = []
+    pkg_aliases(
+        name = "foo",
+        actual = "repo",
+        testonly = True,
+        native = struct(
+            alias = lambda **kwargs: got.append(kwargs),
+        ),
+    )
+
+    env.expect.that_int(len(got)).is_greater_than(0)
+    env.expect.that_bool(all([
+        kwargs.get("testonly", False)
+        for kwargs in got
+    ])).equals(True)
+
+_tests.append(_test_testonly_aliases)
+
 def _test_config_setting_aliases(env):
     # Use this function as it is used in pip_repository
     got = {}

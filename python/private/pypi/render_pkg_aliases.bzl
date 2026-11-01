@@ -65,12 +65,12 @@ def _repr_actual(aliases):
     else:
         return render.dict(aliases, key_repr = _repr_config_setting)
 
-def _render_common_aliases(*, name, aliases, **kwargs):
+def _render_common_aliases(*, name, aliases, testonly = False, **kwargs):
     pkg_aliases = render.call(
         "pkg_aliases",
         name = repr(name),
         actual = _repr_actual(aliases),
-        **_repr_dict(**kwargs)
+        **_repr_dict(testonly = testonly, **kwargs)
     )
     extra_loads = ""
     if "whl_config_setting" in pkg_aliases:
@@ -87,7 +87,7 @@ package(default_visibility = ["//visibility:public"])
         extra_loads = extra_loads,
     )
 
-def render_pkg_aliases(*, aliases, requirement_cycles = None, extra_hub_aliases = {}, **kwargs):
+def render_pkg_aliases(*, aliases, requirement_cycles = None, extra_hub_aliases = {}, testonly_packages = {}, **kwargs):
     """Create alias declarations for each PyPI package.
 
     The aliases should be appended to the pip_repository BUILD.bazel file. These aliases
@@ -100,6 +100,7 @@ def render_pkg_aliases(*, aliases, requirement_cycles = None, extra_hub_aliases 
         requirement_cycles: any package groups to also add.
         extra_hub_aliases: The list of extra aliases for each whl to be added
           in addition to the default ones.
+        testonly_packages: Packages whose aliases should be testonly.
         **kwargs: Extra kwargs to pass to the rules.
 
     Returns:
@@ -110,6 +111,11 @@ def render_pkg_aliases(*, aliases, requirement_cycles = None, extra_hub_aliases 
         return contents
     elif type(aliases) != type({}):
         fail("The aliases need to be provided as a dict, got: {}".format(type(aliases)))
+
+    testonly_packages = {
+        normalize_name(name): None
+        for name in testonly_packages
+    }
 
     whl_group_mapping = {}
     if requirement_cycles:
@@ -130,6 +136,7 @@ def render_pkg_aliases(*, aliases, requirement_cycles = None, extra_hub_aliases 
             aliases = pkg_aliases,
             extra_aliases = extra_hub_aliases.get(normalize_name(name), []),
             group_name = whl_group_mapping.get(normalize_name(name)),
+            testonly = normalize_name(name) in testonly_packages,
             **kwargs
         ).strip()
         for name, pkg_aliases in aliases.items()

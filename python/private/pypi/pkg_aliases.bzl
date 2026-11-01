@@ -86,6 +86,7 @@ def pkg_aliases(
         extras = [],
         include = [],
         group_deps = [],
+        testonly = False,
         **kwargs):
     """Create aliases for an actual package.
 
@@ -107,6 +108,7 @@ def pkg_aliases(
             dependencies when parsing the requires_dist. Comes from METADATA or a lock file.
         include: {type}`list[str]` The subset of packages to include.
             Comes from `//:config.bzl#packages`
+        testonly: {type}`bool` Whether the public aliases should be testonly.
         **kwargs: extra kwargs to pass to {bzl:obj}`get_config_settings`.
     """
     _native = kwargs.pop("native", native)
@@ -118,6 +120,7 @@ def pkg_aliases(
     _native.alias(
         name = name,
         actual = ":" + PY_LIBRARY_PUBLIC_LABEL,
+        **_testonly_kwargs(testonly)
     )
 
     if requires_dist:
@@ -210,6 +213,7 @@ def pkg_aliases(
         elif target_name in (WHEEL_FILE, PY_SRCS_LABEL):
             kwargs["visibility"] = ["//visibility:private"]
 
+        kwargs.update(_testonly_kwargs(testonly))
         _native.alias(
             name = target_name,
             actual = _actual,
@@ -220,11 +224,16 @@ def pkg_aliases(
         _native.alias(
             name = PY_LIBRARY_PUBLIC_LABEL,
             actual = "//_groups:{}_pkg".format(group_name),
+            **_testonly_kwargs(testonly)
         )
         _native.alias(
             name = WHEEL_FILE_PUBLIC_LABEL,
             actual = "//_groups:{}_whl".format(group_name),
+            **_testonly_kwargs(testonly)
         )
+
+def _testonly_kwargs(testonly):
+    return {"testonly": True} if testonly else {}
 
 def multiplatform_whl_aliases(
         *,

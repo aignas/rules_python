@@ -14,6 +14,7 @@
 
 ""
 
+load("//python/private:normalize_name.bzl", "normalize_name")
 load("//python/private:text_util.bzl", "render")
 load(":render_pkg_aliases.bzl", "render_multiplatform_pkg_aliases")
 load(":whl_config_setting.bzl", "whl_config_setting")
@@ -27,6 +28,10 @@ exports_files(["requirements.bzl"])
 
 def _impl(rctx):
     bzl_packages = rctx.attr.packages or rctx.attr.whl_map.keys()
+    testonly_packages = {
+        normalize_name(pkg): None
+        for pkg in rctx.attr.testonly_packages
+    }
     aliases = render_multiplatform_pkg_aliases(
         aliases = {
             key: _whl_config_settings_from_json(values)
@@ -35,6 +40,7 @@ def _impl(rctx):
         extra_hub_aliases = rctx.attr.extra_hub_aliases,
         requirement_cycles = rctx.attr.groups,
         platform_config_settings = rctx.attr.platform_config_settings,
+        testonly_packages = testonly_packages,
     )
     for path, contents in aliases.items():
         rctx.file(path, contents)
@@ -61,6 +67,12 @@ def _impl(rctx):
         "%%ALL_REQUIREMENTS%%": render.list([
             macro_tmpl.format(p, "pkg")
             for p in bzl_packages
+            if normalize_name(p) not in testonly_packages
+        ]),
+        "%%ALL_TESTONLY_REQUIREMENTS%%": render.list([
+            macro_tmpl.format(p, "pkg")
+            for p in bzl_packages
+            if normalize_name(p) in testonly_packages
         ]),
         "%%ALL_WHL_REQUIREMENTS_BY_PACKAGE%%": render.dict({
             p: macro_tmpl.format(p, "whl")
@@ -91,6 +103,10 @@ The list of packages that will be exposed via all_*requirements macros. Defaults
         "repo_name": attr.string(
             mandatory = True,
             doc = "The apparent name of the repo. This is needed because in bzlmod, the name attribute becomes the canonical name.",
+        ),
+        "testonly_packages": attr.string_list(
+            default = [],
+            doc = "The packages whose aliases and requirements should be testonly.",
         ),
         "whl_map": attr.string_dict(
             mandatory = True,
