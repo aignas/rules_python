@@ -168,7 +168,10 @@ pip.expose(
 use_repo(pip, "pypi_hub", "pypi_hub_dev", "pypi")
 ```
 
-The `dependency_groups` attribute accepts these selectors:
+The `dependency_groups` attribute defaults to `["*"]`, which exposes every
+package listed in the `pyproject.toml` (the default dependencies, optional
+dependencies, and dependency groups) without packages that are only pulled in
+transitively. It accepts these selectors:
 
 * `"default"`: the packages in the `[project] dependencies` table.
 * `"optional:<name>"`: the packages in the
@@ -283,7 +286,9 @@ aliases remain available because other venvs may share the hub.
 
 When `pyproject_toml` is not set on the `pip.expose` tag, the file from
 {obj}`pip.default.pyproject_toml` is used, followed by the hub's
-{obj}`pip.parse.pyproject_toml`.
+{obj}`pip.parse.pyproject_toml`. If none of them is set, the venv exposes every
+package in the hub, including transitive packages; this fallback will be
+removed once a `pyproject.toml` becomes mandatory.
 
 ### Declaring Abstract Dependencies (pip.dep)
 
