@@ -142,7 +142,8 @@ concrete hub instead. Prefer `@pypi//<pkg>` labels in new code.
 When a hub is created with `pip.parse(pyproject_toml = ...)`, the hub exposes
 the packages listed in that file: the `[project] dependencies`,
 `[project.optional-dependencies]` and PEP 735 `[dependency-groups]` tables.
-Packages that are only pulled in transitively are not exposed as hub aliases:
+Packages that are only pulled in transitively remain available to the wheel
+repositories, but their hub aliases are not public:
 
 ```toml
 [project]

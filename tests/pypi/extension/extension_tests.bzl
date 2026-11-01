@@ -1171,6 +1171,63 @@ def _test_configure_venv_defaults_to_hub_name(env):
 
 _tests.append(_test_configure_venv_defaults_to_hub_name)
 
+def _test_configure_in_place_ignored_for_non_owner(env):
+    pypi = _configure_parse_modules(
+        env,
+        _mod(
+            name = "my_app",
+            is_root = True,
+        ),
+        _mod(
+            name = "rules_python",
+            is_root = False,
+            parse = [_configure_parse()],
+        ),
+        _mod(
+            name = "other",
+            is_root = False,
+            configure = [
+                _configure(hub_name = "pypi_a", dependency_groups = ["test"]),
+            ],
+        ),
+    )
+
+    # Neither the root module nor the hub's owner module, so the in-place
+    # configuration is ignored.
+    pypi.exposed_venvs().contains_exactly({})
+    pypi.exposed_packages().contains_exactly({
+        "pypi_a": ["other_pkg", "simple", "transitive_pkg"],
+    })
+
+_tests.append(_test_configure_in_place_ignored_for_non_owner)
+
+def _test_configure_in_place_root_wins_over_owner(env):
+    pypi = _configure_parse_modules(
+        env,
+        _mod(
+            name = "my_app",
+            is_root = True,
+            configure = [
+                _configure(hub_name = "pypi_a", dependency_groups = ["test"]),
+            ],
+        ),
+        _mod(
+            name = "rules_python",
+            is_root = False,
+            parse = [_configure_parse(pyproject_toml = "pyproject.toml")],
+            configure = [
+                _configure(hub_name = "pypi_a", dependency_groups = ["dev"]),
+            ],
+        ),
+    )
+
+    pypi.exposed_venvs().contains_exactly({
+        "pypi_a": struct(hub = "pypi_a", packages = ["simple"], testonly_packages = []),
+    })
+    pypi.exposed_packages().contains_exactly({"pypi_a": ["simple"]})
+
+_tests.append(_test_configure_in_place_root_wins_over_owner)
+
 def _test_configure_pyproject_from_parse(env):
     pypi = _configure_parse_modules(
         env,

@@ -61,6 +61,19 @@ class UnifiedPypiTest(runner.TestCase):
     def test_expose_venv(self):
         self.run_bazel("test", "//:test_expose_venv")
 
+    def test_pyproject_toml_hides_transitive_aliases(self):
+        self.run_bazel("test", "//:test_filtered_direct")
+        result = self.run_bazel("build", "//:bin_filtered_six", check=False)
+        self.assertNotEqual(
+            result.exit_code,
+            0,
+            "Expected the transitive package alias to be hidden",
+        )
+        self.assert_result_matches(
+            result,
+            r"alias '[^']*//six:six'.*is not visible from",
+        )
+
     def test_expose_testonly_requirements(self):
         self.run_bazel("build", "//:bin_all_requirements")
         self.run_bazel(

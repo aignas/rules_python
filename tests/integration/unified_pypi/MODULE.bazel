@@ -76,6 +76,17 @@ pip.configure(
 )
 use_repo(pip, "pypi_b", "pypi_b_colorama", "pypi_b_dev", "pypi_b_test")
 
+# pypi_filtered exposes only the [project] dependencies of pyproject.toml.
+# Transitive packages still resolve inside the wheel repositories, but their
+# hub aliases are not public.
+pip.parse(
+    hub_name = "pypi_filtered",
+    pyproject_toml = "//:pyproject_filtered.toml",
+    python_version = "3.11",
+    requirements_lock = "//:requirements_b.txt",
+)
+use_repo(pip, "pypi_filtered")
+
 pip.default(default_hub = "pypi_b")
 pip.default(unified_hub_requirements_bzl = True)
 pip.dep(

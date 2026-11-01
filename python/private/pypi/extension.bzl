@@ -584,6 +584,17 @@ You cannot use both the additive_build_content and additive_build_content_file a
     # `--venv=<venv>` in the unified hub.
     exposed_venvs = {}
     testonly_packages = {}
+
+    # The root module wins over the hub owner when both filter the hub in
+    # place. Non-owner modules cannot change another module's hub in place.
+    root_inplace_hubs = {
+        configure_attr.hub_name: None
+        for mod in module_ctx.modules
+        if mod.is_root
+        for configure_attr in mod.tags.configure
+        if (configure_attr.venv or configure_attr.hub_name) == configure_attr.hub_name
+    }
+
     for mod in module_ctx.modules:
         for configure_attr in mod.tags.configure:
             hub = configure_attr.hub_name
@@ -594,6 +605,10 @@ You cannot use both the additive_build_content and additive_build_content_file a
                     ", ".join(sorted(exposed_packages)),
                 ))
                 return None
+            if venv == hub and not mod.is_root:
+                owner = pip_hub_map[hub].module_name
+                if mod.name != owner or hub in root_inplace_hubs:
+                    continue
             if venv in pip_hub_map and venv != hub:
                 _fail("pip.configure() venv '{}' conflicts with the existing hub of the same name".format(venv))
                 return None
