@@ -134,6 +134,157 @@ rename, and `requirement("numpy")` routes through the active hub like
 fixed at loading time, before the active hub is known, so load them from a
 concrete hub instead. Prefer `@pypi//<pkg>` labels in new code.
 
+### Exposing Dependency Groups as Venvs (pip.expose)
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::
+
+The `pip.expose` tag creates a repository that contains only a subset of a
+concrete hub's packages. The subset is selected from a `pyproject.toml` file
+using the `[project] dependencies`, `[project.optional-dependencies]` and PEP
+735 `[dependency-groups]` tables:
+
+```toml
+[project]
+dependencies = ["numpy"]
+
+[dependency-groups]
+dev = ["pytest"]
+```
+
+```starlark
+pip.parse(
+    hub_name = "pypi_hub",
+    pyproject_toml = "//:pyproject.toml",
+    requirements_lock = "//:requirements_lock.txt",
+)
+
+pip.expose(
+    hub = "pypi_hub",
+    venv = "pypi_hub_dev",
+    dependency_groups = ["default", "dev"],
+)
+
+use_repo(pip, "pypi_hub", "pypi_hub_dev", "pypi")
+```
+
+The `dependency_groups` attribute accepts these selectors:
+
+* `"default"`: the packages in the `[project] dependencies` table.
+* `"optional:<name>"`: the packages in the
+  `[project.optional-dependencies]` table entry `<name>`.
+* `"group:<name>"`: the packages in the PEP 735 `[dependency-groups]` table
+  entry `<name>`. `include-group` entries are expanded.
+* `"optional:*"`: all `[project.optional-dependencies]` entries.
+* `"group:*"`: all PEP 735 `[dependency-groups]` entries.
+* `"*"`: `"default"` plus all optional and all dependency groups.
+* `"<name>"`: the `[dependency-groups]` entry `<name>`, if it exists,
+  otherwise the `[project.optional-dependencies]` entry `<name>`.
+
+Packages selected by the groups that are not part of the concrete hub are
+ignored. This means a single `pyproject.toml` can list development-only tools
+that are missing from the runtime lock file.
+
+#### Transitive Aliases
+
+Add `"transitive"` to `dependency_groups` to expose every package in the
+concrete hub, including packages that are only pulled in indirectly by the
+selected groups:
+
+```starlark
+pip.expose(
+    hub = "pypi_hub",
+    venv = "pypi_hub_all",
+    dependency_groups = ["default", "transitive"],
+)
+```
+
+`"transitive"` is a modifier, not a dependency group. It is not included by
+the `"*"` wildcard and must be listed explicitly.
+
+#### Testonly Packages
+
+Append `;testonly` to any selector to mark its packages as testonly in the
+generated Bazel targets:
+
+```starlark
+pip.expose(
+    hub = "pypi_hub",
+    venv = "pypi_hub_test",
+    dependency_groups = ["default", "group:test;testonly"],
+)
+```
+
+Testonly packages are left out of `all_requirements` in the generated
+`requirements.bzl` and listed in `all_testonly_requirements` instead.
+
+Add `"transitive;testonly"` to also classify transitive packages. Packages
+that are exclusively reachable from testonly roots become testonly, while
+packages reachable from both testonly and non-testonly groups stay
+non-testonly:
+
+```starlark
+pip.expose(
+    hub = "pypi_hub",
+    venv = "pypi_hub_test",
+    dependency_groups = [
+        "default",
+        "group:test;testonly",
+        "transitive;testonly",
+    ],
+)
+```
+
+Reachability uses the hub's `uv_lock` when one is configured. Without a lock
+file, only the directly selected packages can be classified.
+
+#### Wildcards and Precedence
+
+The wildcards and the `;testonly` modifier follow last-wins precedence. A
+later `"*"` resets earlier specific overrides, and a later specific entry
+overrides the wildcard:
+
+```starlark
+# Everything testonly except group:dev.
+pip.expose(
+    hub = "pypi_hub",
+    venv = "pypi_hub_test",
+    dependency_groups = ["*;testonly", "group:dev"],
+)
+
+# Only group:test is testonly.
+pip.expose(
+    hub = "pypi_hub",
+    venv = "pypi_hub_test",
+    dependency_groups = ["*", "group:test;testonly"],
+)
+
+# The earlier group:dev;testonly is overridden by the later "*".
+pip.expose(
+    hub = "pypi_hub",
+    venv = "pypi_hub_test",
+    dependency_groups = ["group:dev;testonly", "*"],
+)
+```
+
+`"optional:*"` and `"group:*"` use the same last-wins rule within their
+category.
+
+The `venv` name is a repository in its own right. Add it to `use_repo()` like
+any other hub, then use it as `@pypi_hub_dev//<pkg>` and select it with
+`--@rules_python//python/config_settings:venv=pypi_hub_dev` to route the
+[Unified @pypi Hub](unified-pypi-hub) to it. Multiple `pip.expose` tags can
+target the same `hub` and `venv`; their selected packages are combined.
+
+If `venv` is the same as `hub`, no additional repository is created. Instead,
+the packages exposed by the concrete hub (its `requirements.bzl` macros and
+the Unified Hub routing) are filtered to the selection. The hub's package
+aliases remain available because other venvs may share the hub.
+
+When `pyproject_toml` is not set on the `pip.expose` tag, the file from
+{obj}`pip.default.pyproject_toml` is used, followed by the hub's
+{obj}`pip.parse.pyproject_toml`.
+
 ### Declaring Abstract Dependencies (pip.dep)
 
 :::{versionadded} 2.2.0
