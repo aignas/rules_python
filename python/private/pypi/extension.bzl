@@ -545,23 +545,23 @@ You cannot use both the additive_build_content and additive_build_content_file a
     exposed_venvs = {}
     testonly_packages = {}
     for mod in module_ctx.modules:
-        for expose_attr in mod.tags.expose:
-            hub = expose_attr.hub
-            venv = expose_attr.venv
+        for configure_attr in mod.tags.configure:
+            hub = configure_attr.hub_name
+            venv = configure_attr.venv or hub
             if hub not in exposed_packages:
-                _fail("pip.expose() refers to unknown hub '{}'. Available hubs: {}".format(
+                _fail("pip.configure() refers to unknown hub '{}'. Available hubs: {}".format(
                     hub,
                     ", ".join(sorted(exposed_packages)),
                 ))
                 return None
             if venv in pip_hub_map and venv != hub:
-                _fail("pip.expose() venv '{}' conflicts with the existing hub of the same name".format(venv))
+                _fail("pip.configure() venv '{}' conflicts with the existing hub of the same name".format(venv))
                 return None
             if venv == "pypi" and "pypi" not in pip_hub_map:
-                _fail("pip.expose() venv 'pypi' conflicts with the automatically generated unified hub")
+                _fail("pip.configure() venv 'pypi' conflicts with the automatically generated unified hub")
                 return None
             if venv in exposed_venvs and exposed_venvs[venv].hub != hub:
-                _fail("pip.expose() venv '{}' is used with both hub '{}' and hub '{}'".format(
+                _fail("pip.configure() venv '{}' is used with both hub '{}' and hub '{}'".format(
                     venv,
                     exposed_venvs[venv].hub,
                     hub,
@@ -569,7 +569,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
                 return None
 
             pyproject = (
-                expose_attr.pyproject_toml or
+                configure_attr.pyproject_toml or
                 config.pyproject_toml or
                 hub_pyproject.get(hub)
             )
@@ -588,7 +588,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
             else:
                 selection = dependency_group_selection(
                     read_pyproject(module_ctx, pyproject),
-                    expose_attr.dependency_groups,
+                    configure_attr.dependency_groups,
                     _fail = _fail,
                 )
                 if selection.transitive:
@@ -668,7 +668,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
     )
 
 def _create_venv_repos(mods):
-    """Create the repositories for the venvs declared with `pip.expose`.
+    """Create the repositories for the venvs declared with `pip.configure`.
 
     A venv is a filtered view of its concrete hub: only the selected packages
     get aliases and macros in the venv repository. The wheel repositories are
@@ -1435,7 +1435,7 @@ execution-phase error when built.
 """,
 )
 
-_expose_tag = tag_class(
+_configure_tag = tag_class(
     attrs = {
         "dependency_groups": attr.string_list(
             default = ["*"],
@@ -1483,10 +1483,10 @@ Packages that are not part of the concrete hub are ignored.
 :::
 """,
         ),
-        "hub": attr.string(
+        "hub_name": attr.string(
             mandatory = True,
             doc = """\
-The name of the concrete hub to create the venv from.
+The name of the concrete hub to configure.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::
@@ -1502,7 +1502,7 @@ is used.
 
 When no `pyproject.toml` is configured at all, the venv falls back to
 exposing every package in the hub, including transitive packages. This
-fallback will be removed once {obj}`pip.expose.pyproject_toml` becomes
+fallback will be removed once {obj}`pip.configure.pyproject_toml` becomes
 mandatory.
 
 :::{versionadded} VERSION_NEXT_FEATURE
@@ -1510,18 +1510,19 @@ mandatory.
 """,
         ),
         "venv": attr.string(
-            mandatory = True,
+            mandatory = False,
             doc = """\
-The name of the repository to create. It can be used as a hub name in
-`use_repo()`, as `@<venv>//<pkg>`, and by setting
-{flag}`--@rules_python//python/config_settings:venv` to this value to route
-the [Unified @pypi Hub](unified-pypi-hub) to it.
+The name of the repository to create. Defaults to {attr}`hub_name`.
 
-If this is the same as {attr}`hub`, the concrete hub's exposed packages are
-filtered to the selection instead of creating a new repository.
+It can be used as a hub name in `use_repo()`, as `@<venv>//<pkg>`, and by
+setting {flag}`--@rules_python//python/config_settings:venv` to this value to
+route the [Unified @pypi Hub](unified-pypi-hub) to it.
 
-Multiple `pip.expose()` tags can use the same `venv` and `hub`; the selected
-packages are combined.
+If this is the same as {attr}`hub_name`, the concrete hub's exposed packages
+are filtered to the selection instead of creating a new repository.
+
+Multiple `pip.configure()` tags can use the same `venv` and `hub_name`; the
+selected packages are combined.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::
@@ -1529,11 +1530,15 @@ packages are combined.
         ),
     },
     doc = """\
-Expose a subset of a concrete hub's packages as a venv repository.
+Configure the packages exposed by a concrete hub.
 
 The packages are selected from a `pyproject.toml` file using the
 `[project] dependencies`, `[project.optional-dependencies]` and PEP 735
 `[dependency-groups]` tables.
+
+By default the selected packages replace the hub's default exposure in place.
+Set `venv` to a different name to create an additional filtered repository
+instead.
 """,
 )
 
@@ -1560,8 +1565,9 @@ Environment Variables:
 - `RULES_PYTHON_PYPI_HUB_RESERVED`: Enable fallback renaming for reserved hub name collisions.
   See the {envvar}`RULES_PYTHON_PYPI_HUB_RESERVED` documentation for details.
 
-pip.expose:
-This tag class creates a venv repository containing a subset of a concrete
+pip.configure:
+This tag class configures the packages exposed by a concrete hub. It can
+filter the hub in place or create a venv repository containing a subset of the
 hub's packages, selected with dependency groups from a pyproject.toml file.
 
 pip.whl_mods:
@@ -1570,6 +1576,7 @@ the BUILD files for wheels.
 """,
     implementation = _pip_impl,
     tag_classes = {
+        "configure": _configure_tag,
         "default": tag_class(
             attrs = _default_attrs,
             doc = """\
@@ -1592,7 +1599,6 @@ terms used in this extension.
 """,
         ),
         "dep": _dep_tag,
-        "expose": _expose_tag,
         "override": _override_tag,
         "parse": tag_class(
             attrs = _pip_parse_ext_attrs(),

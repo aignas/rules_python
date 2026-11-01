@@ -1,15 +1,15 @@
 """A simple test helper"""
 
-def expose(
+def configure(
         *,
         dependency_groups = ["*"],
-        hub,
+        hub_name,
         pyproject_toml = None,
-        venv):
-    """A simple helper for testing to simulate the PyPI extension expose tag class"""
+        venv = ""):
+    """A simple helper for testing to simulate the PyPI extension configure tag class"""
     return struct(
         dependency_groups = dependency_groups,
-        hub = hub,
+        hub_name = hub_name,
         pyproject_toml = pyproject_toml,
         venv = venv,
     )

@@ -22,7 +22,7 @@ load("//python/private/pypi:platform.bzl", _plat = "platform")  # buildifier: di
 load("//python/private/pypi:pyproject_packages.bzl", "dependency_graph_from_uv_lock", "dependency_group_selection", "merge_dependency_graphs", "packages_from_dependency_groups", "testonly_packages_from_graph")  # buildifier: disable=bzl-visibility
 load("//python/private/pypi:whl_config_setting.bzl", "whl_config_setting")  # buildifier: disable=bzl-visibility
 load("//tests/support/mocks:mocks.bzl", "mocks")
-load(":pip_parse.bzl", _expose = "expose", _parse = "pip_parse")
+load(":pip_parse.bzl", _configure = "configure", _parse = "pip_parse")
 
 _tests = []
 
@@ -102,7 +102,7 @@ def _dep(*, name, extra_targets = []):
         extra_targets = extra_targets,
     )
 
-def _mod(*, name, default = _default_tags_default, parse = [], override = [], whl_mods = [], dep = [], expose = [], is_root = True):
+def _mod(*, name, default = _default_tags_default, parse = [], override = [], whl_mods = [], dep = [], configure = [], is_root = True):
     return struct(
         name = name,
         tags = struct(
@@ -111,7 +111,7 @@ def _mod(*, name, default = _default_tags_default, parse = [], override = [], wh
             whl_mods = whl_mods,
             default = default,
             dep = dep,
-            expose = expose,
+            configure = configure,
         ),
         is_root = is_root,
     )
@@ -770,7 +770,7 @@ simple==0.0.1 \
 
 _tests.append(_test_default_index_setting)
 
-_EXPOSE_REQUIREMENTS = """\
+_CONFIGURE_REQUIREMENTS = """\
 simple==0.0.1 \
     --hash=sha256:deadbeef \
     --hash=sha256:deadbaaf
@@ -782,7 +782,7 @@ transitive-pkg==0.0.3 \
     --hash=sha256:deadbaaf
 """
 
-_EXPOSE_PYPROJECT = """\
+_CONFIGURE_PYPROJECT = """\
 [project]
 dependencies = ["simple"]
 
@@ -799,7 +799,7 @@ all = [
 ]
 """
 
-def _expose_mock_mctx(*modules, mock_files = {}):
+def _configure_mock_mctx(*modules, mock_files = {}):
     return _pypi_mock_mctx(
         os_name = "linux",
         arch_name = "x86_64",
@@ -808,23 +808,23 @@ def _expose_mock_mctx(*modules, mock_files = {}):
 [project]
 dependencies = ["other-pkg"]
 """,
-            "pyproject.toml": _EXPOSE_PYPROJECT,
-            "requirements.txt": _EXPOSE_REQUIREMENTS,
+            "pyproject.toml": _CONFIGURE_PYPROJECT,
+            "requirements.txt": _CONFIGURE_REQUIREMENTS,
         } | mock_files,
         *modules
     )
 
-def _expose_parse_modules(env, *modules):
+def _configure_parse_modules(env, *modules):
     return _parse_modules(
         env,
-        module_ctx = _expose_mock_mctx(*modules),
+        module_ctx = _configure_mock_mctx(*modules),
         available_interpreters = {
             "python_3_15_host": "unit_test_interpreter_target",
         },
         minor_mapping = {"3.15": "3.15.19"},
     )
 
-def _expose_parse(*, hub_name = "pypi_a", pyproject_toml = None):
+def _configure_parse(*, hub_name = "pypi_a", pyproject_toml = None):
     return _parse(
         hub_name = hub_name,
         pyproject_toml = pyproject_toml,
@@ -1063,25 +1063,25 @@ def _test_testonly_packages_from_graph(env):
 
 _tests.append(_test_testonly_packages_from_graph)
 
-def _test_expose_dependency_groups(env):
-    pypi = _expose_parse_modules(
+def _test_configure_dependency_groups(env):
+    pypi = _configure_parse_modules(
         env,
         _mod(
             name = "rules_python",
             default = _default_tags_default + [
                 _default(pyproject_toml = "pyproject.toml"),
             ],
-            parse = [_expose_parse()],
-            expose = [
+            parse = [_configure_parse()],
+            configure = [
                 # The default dependency_groups is ["*"], which selects all
                 # packages listed in pyproject.toml but not transitive_pkg.
-                _expose(hub = "pypi_a", venv = "venv_default"),
-                _expose(hub = "pypi_a", venv = "venv_dev", dependency_groups = ["dev"]),
-                _expose(hub = "pypi_a", venv = "venv_group", dependency_groups = ["group:dev"]),
-                _expose(hub = "pypi_a", venv = "venv_optional", dependency_groups = ["optional:other"]),
-                _expose(hub = "pypi_a", venv = "venv_bare_optional", dependency_groups = ["other"]),
-                _expose(hub = "pypi_a", venv = "venv_all", dependency_groups = ["all"]),
-                _expose(hub = "pypi_a", venv = "venv_missing", dependency_groups = ["default", "missing"]),
+                _configure(hub_name = "pypi_a", venv = "venv_default"),
+                _configure(hub_name = "pypi_a", venv = "venv_dev", dependency_groups = ["dev"]),
+                _configure(hub_name = "pypi_a", venv = "venv_group", dependency_groups = ["group:dev"]),
+                _configure(hub_name = "pypi_a", venv = "venv_optional", dependency_groups = ["optional:other"]),
+                _configure(hub_name = "pypi_a", venv = "venv_bare_optional", dependency_groups = ["other"]),
+                _configure(hub_name = "pypi_a", venv = "venv_all", dependency_groups = ["all"]),
+                _configure(hub_name = "pypi_a", venv = "venv_missing", dependency_groups = ["default", "missing"]),
             ],
         ),
     )
@@ -1101,20 +1101,20 @@ def _test_expose_dependency_groups(env):
         "pypi_a": ["other_pkg", "simple", "transitive_pkg"],
     })
 
-_tests.append(_test_expose_dependency_groups)
+_tests.append(_test_configure_dependency_groups)
 
-def _test_expose_union_same_venv(env):
-    pypi = _expose_parse_modules(
+def _test_configure_union_same_venv(env):
+    pypi = _configure_parse_modules(
         env,
         _mod(
             name = "rules_python",
             default = _default_tags_default + [
                 _default(pyproject_toml = "pyproject.toml"),
             ],
-            parse = [_expose_parse()],
-            expose = [
-                _expose(hub = "pypi_a", venv = "venv", dependency_groups = ["test"]),
-                _expose(hub = "pypi_a", venv = "venv", dependency_groups = ["dev"]),
+            parse = [_configure_parse()],
+            configure = [
+                _configure(hub_name = "pypi_a", venv = "venv", dependency_groups = ["test"]),
+                _configure(hub_name = "pypi_a", venv = "venv", dependency_groups = ["dev"]),
             ],
         ),
     )
@@ -1123,19 +1123,19 @@ def _test_expose_union_same_venv(env):
         "venv": struct(hub = "pypi_a", packages = ["other_pkg", "simple"], testonly_packages = []),
     })
 
-_tests.append(_test_expose_union_same_venv)
+_tests.append(_test_configure_union_same_venv)
 
-def _test_expose_venv_same_as_hub(env):
-    pypi = _expose_parse_modules(
+def _test_configure_venv_same_as_hub(env):
+    pypi = _configure_parse_modules(
         env,
         _mod(
             name = "rules_python",
             default = _default_tags_default + [
                 _default(pyproject_toml = "pyproject.toml"),
             ],
-            parse = [_expose_parse()],
-            expose = [
-                _expose(hub = "pypi_a", venv = "pypi_a", dependency_groups = ["test"]),
+            parse = [_configure_parse()],
+            configure = [
+                _configure(hub_name = "pypi_a", venv = "pypi_a", dependency_groups = ["test"]),
             ],
         ),
     )
@@ -1147,16 +1147,38 @@ def _test_expose_venv_same_as_hub(env):
     # There is no separate repository, so the concrete hub is filtered instead.
     pypi.exposed_packages().contains_exactly({"pypi_a": ["simple"]})
 
-_tests.append(_test_expose_venv_same_as_hub)
+_tests.append(_test_configure_venv_same_as_hub)
 
-def _test_expose_pyproject_from_parse(env):
-    pypi = _expose_parse_modules(
+def _test_configure_venv_defaults_to_hub_name(env):
+    pypi = _configure_parse_modules(
         env,
         _mod(
             name = "rules_python",
-            parse = [_expose_parse(pyproject_toml = "pyproject.toml")],
-            expose = [
-                _expose(hub = "pypi_a", venv = "venv"),
+            default = _default_tags_default + [
+                _default(pyproject_toml = "pyproject.toml"),
+            ],
+            parse = [_configure_parse()],
+            configure = [
+                _configure(hub_name = "pypi_a", dependency_groups = ["test"]),
+            ],
+        ),
+    )
+
+    pypi.exposed_venvs().contains_exactly({
+        "pypi_a": struct(hub = "pypi_a", packages = ["simple"], testonly_packages = []),
+    })
+    pypi.exposed_packages().contains_exactly({"pypi_a": ["simple"]})
+
+_tests.append(_test_configure_venv_defaults_to_hub_name)
+
+def _test_configure_pyproject_from_parse(env):
+    pypi = _configure_parse_modules(
+        env,
+        _mod(
+            name = "rules_python",
+            parse = [_configure_parse(pyproject_toml = "pyproject.toml")],
+            configure = [
+                _configure(hub_name = "pypi_a", venv = "venv"),
             ],
         ),
     )
@@ -1165,22 +1187,22 @@ def _test_expose_pyproject_from_parse(env):
         "venv": struct(hub = "pypi_a", packages = ["other_pkg", "simple"], testonly_packages = []),
     })
 
-_tests.append(_test_expose_pyproject_from_parse)
+_tests.append(_test_configure_pyproject_from_parse)
 
-def _test_expose_pyproject_precedence(env):
+def _test_configure_pyproject_precedence(env):
     # pip.default() takes precedence over the hub's pip.parse().
-    pypi = _expose_parse_modules(
+    pypi = _configure_parse_modules(
         env,
         _mod(
             name = "rules_python",
             default = _default_tags_default + [
                 _default(pyproject_toml = "default_pyproject.toml"),
             ],
-            parse = [_expose_parse(pyproject_toml = "pyproject.toml")],
-            expose = [
-                _expose(hub = "pypi_a", venv = "venv_default"),
-                _expose(
-                    hub = "pypi_a",
+            parse = [_configure_parse(pyproject_toml = "pyproject.toml")],
+            configure = [
+                _configure(hub_name = "pypi_a", venv = "venv_default"),
+                _configure(
+                    hub_name = "pypi_a",
                     venv = "venv_tag",
                     pyproject_toml = "pyproject.toml",
                 ),
@@ -1193,17 +1215,17 @@ def _test_expose_pyproject_precedence(env):
         "venv_tag": struct(hub = "pypi_a", packages = ["other_pkg", "simple"], testonly_packages = []),
     })
 
-_tests.append(_test_expose_pyproject_precedence)
+_tests.append(_test_configure_pyproject_precedence)
 
-def _test_expose_unknown_hub_fails(env):
+def _test_configure_unknown_hub_fails(env):
     failures = []
     pypi = parse_modules(
-        module_ctx = _expose_mock_mctx(
+        module_ctx = _configure_mock_mctx(
             _mod(
                 name = "rules_python",
-                parse = [_expose_parse()],
-                expose = [
-                    _expose(hub = "unknown", venv = "venv"),
+                parse = [_configure_parse()],
+                configure = [
+                    _configure(hub_name = "unknown", venv = "venv"),
                 ],
             ),
         ),
@@ -1216,23 +1238,23 @@ def _test_expose_unknown_hub_fails(env):
 
     env.expect.that_bool(pypi == None).equals(True)
     env.expect.that_collection(failures).contains_exactly([
-        "pip.expose() refers to unknown hub 'unknown'. Available hubs: pypi_a",
+        "pip.configure() refers to unknown hub 'unknown'. Available hubs: pypi_a",
     ])
 
-_tests.append(_test_expose_unknown_hub_fails)
+_tests.append(_test_configure_unknown_hub_fails)
 
-def _test_expose_venv_conflicts_with_hub_fails(env):
+def _test_configure_venv_conflicts_with_hub_fails(env):
     failures = []
     pypi = parse_modules(
-        module_ctx = _expose_mock_mctx(
+        module_ctx = _configure_mock_mctx(
             _mod(
                 name = "rules_python",
                 parse = [
-                    _expose_parse(hub_name = "pypi_a"),
-                    _expose_parse(hub_name = "pypi_b"),
+                    _configure_parse(hub_name = "pypi_a"),
+                    _configure_parse(hub_name = "pypi_b"),
                 ],
-                expose = [
-                    _expose(hub = "pypi_a", venv = "pypi_b"),
+                configure = [
+                    _configure(hub_name = "pypi_a", venv = "pypi_b"),
                 ],
             ),
         ),
@@ -1245,20 +1267,20 @@ def _test_expose_venv_conflicts_with_hub_fails(env):
 
     env.expect.that_bool(pypi == None).equals(True)
     env.expect.that_collection(failures).contains_exactly([
-        "pip.expose() venv 'pypi_b' conflicts with the existing hub of the same name",
+        "pip.configure() venv 'pypi_b' conflicts with the existing hub of the same name",
     ])
 
-_tests.append(_test_expose_venv_conflicts_with_hub_fails)
+_tests.append(_test_configure_venv_conflicts_with_hub_fails)
 
-def _test_expose_venv_conflicts_with_unified_hub_fails(env):
+def _test_configure_venv_conflicts_with_unified_hub_fails(env):
     failures = []
     pypi = parse_modules(
-        module_ctx = _expose_mock_mctx(
+        module_ctx = _configure_mock_mctx(
             _mod(
                 name = "rules_python",
-                parse = [_expose_parse()],
-                expose = [
-                    _expose(hub = "pypi_a", venv = "pypi"),
+                parse = [_configure_parse()],
+                configure = [
+                    _configure(hub_name = "pypi_a", venv = "pypi"),
                 ],
             ),
         ),
@@ -1271,27 +1293,27 @@ def _test_expose_venv_conflicts_with_unified_hub_fails(env):
 
     env.expect.that_bool(pypi == None).equals(True)
     env.expect.that_collection(failures).contains_exactly([
-        "pip.expose() venv 'pypi' conflicts with the automatically generated unified hub",
+        "pip.configure() venv 'pypi' conflicts with the automatically generated unified hub",
     ])
 
-_tests.append(_test_expose_venv_conflicts_with_unified_hub_fails)
+_tests.append(_test_configure_venv_conflicts_with_unified_hub_fails)
 
-def _test_expose_same_venv_different_hubs_fails(env):
+def _test_configure_same_venv_different_hubs_fails(env):
     failures = []
     pypi = parse_modules(
-        module_ctx = _expose_mock_mctx(
+        module_ctx = _configure_mock_mctx(
             _mod(
                 name = "rules_python",
                 default = _default_tags_default + [
                     _default(pyproject_toml = "pyproject.toml"),
                 ],
                 parse = [
-                    _expose_parse(hub_name = "pypi_a"),
-                    _expose_parse(hub_name = "pypi_b"),
+                    _configure_parse(hub_name = "pypi_a"),
+                    _configure_parse(hub_name = "pypi_b"),
                 ],
-                expose = [
-                    _expose(hub = "pypi_a", venv = "venv"),
-                    _expose(hub = "pypi_b", venv = "venv"),
+                configure = [
+                    _configure(hub_name = "pypi_a", venv = "venv"),
+                    _configure(hub_name = "pypi_b", venv = "venv"),
                 ],
             ),
         ),
@@ -1304,23 +1326,23 @@ def _test_expose_same_venv_different_hubs_fails(env):
 
     env.expect.that_bool(pypi == None).equals(True)
     env.expect.that_collection(failures).contains_exactly([
-        "pip.expose() venv 'venv' is used with both hub 'pypi_a' and hub 'pypi_b'",
+        "pip.configure() venv 'venv' is used with both hub 'pypi_a' and hub 'pypi_b'",
     ])
 
-_tests.append(_test_expose_same_venv_different_hubs_fails)
+_tests.append(_test_configure_same_venv_different_hubs_fails)
 
-def _test_expose_no_pyproject_exposes_all(env):
+def _test_configure_no_pyproject_exposes_all(env):
     # Without a pyproject.toml there are no dependency groups to select, so
     # the venv falls back to exposing every package in the hub, including
     # transitive packages. This fallback should be removed once pyproject.toml
     # is mandatory.
-    pypi = _expose_parse_modules(
+    pypi = _configure_parse_modules(
         env,
         _mod(
             name = "rules_python",
-            parse = [_expose_parse()],
-            expose = [
-                _expose(hub = "pypi_a", venv = "venv"),
+            parse = [_configure_parse()],
+            configure = [
+                _configure(hub_name = "pypi_a", venv = "venv"),
             ],
         ),
     )
@@ -1329,7 +1351,7 @@ def _test_expose_no_pyproject_exposes_all(env):
         "venv": struct(hub = "pypi_a", packages = ["other_pkg", "simple", "transitive_pkg"], testonly_packages = []),
     })
 
-_tests.append(_test_expose_no_pyproject_exposes_all)
+_tests.append(_test_configure_no_pyproject_exposes_all)
 
 def extension_test_suite(name):
     """Create the test suite.

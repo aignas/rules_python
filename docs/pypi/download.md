@@ -134,12 +134,12 @@ rename, and `requirement("numpy")` routes through the active hub like
 fixed at loading time, before the active hub is known, so load them from a
 concrete hub instead. Prefer `@pypi//<pkg>` labels in new code.
 
-### Exposing Dependency Groups as Venvs (pip.expose)
+### Configuring Hub Exposure and Venvs (pip.configure)
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::
 
-The `pip.expose` tag creates a repository that contains only a subset of a
+The `pip.configure` tag creates a repository that contains only a subset of a
 concrete hub's packages. The subset is selected from a `pyproject.toml` file
 using the `[project] dependencies`, `[project.optional-dependencies]` and PEP
 735 `[dependency-groups]` tables:
@@ -159,8 +159,8 @@ pip.parse(
     requirements_lock = "//:requirements_lock.txt",
 )
 
-pip.expose(
-    hub = "pypi_hub",
+pip.configure(
+    hub_name = "pypi_hub",
     venv = "pypi_hub_dev",
     dependency_groups = ["default", "dev"],
 )
@@ -195,8 +195,8 @@ concrete hub, including packages that are only pulled in indirectly by the
 selected groups:
 
 ```starlark
-pip.expose(
-    hub = "pypi_hub",
+pip.configure(
+    hub_name = "pypi_hub",
     venv = "pypi_hub_all",
     dependency_groups = ["default", "transitive"],
 )
@@ -211,8 +211,8 @@ Append `;testonly` to any selector to mark its packages as testonly in the
 generated Bazel targets:
 
 ```starlark
-pip.expose(
-    hub = "pypi_hub",
+pip.configure(
+    hub_name = "pypi_hub",
     venv = "pypi_hub_test",
     dependency_groups = ["default", "group:test;testonly"],
 )
@@ -227,8 +227,8 @@ packages reachable from both testonly and non-testonly groups stay
 non-testonly:
 
 ```starlark
-pip.expose(
-    hub = "pypi_hub",
+pip.configure(
+    hub_name = "pypi_hub",
     venv = "pypi_hub_test",
     dependency_groups = [
         "default",
@@ -249,22 +249,22 @@ overrides the wildcard:
 
 ```starlark
 # Everything testonly except group:dev.
-pip.expose(
-    hub = "pypi_hub",
+pip.configure(
+    hub_name = "pypi_hub",
     venv = "pypi_hub_test",
     dependency_groups = ["*;testonly", "group:dev"],
 )
 
 # Only group:test is testonly.
-pip.expose(
-    hub = "pypi_hub",
+pip.configure(
+    hub_name = "pypi_hub",
     venv = "pypi_hub_test",
     dependency_groups = ["*", "group:test;testonly"],
 )
 
 # The earlier group:dev;testonly is overridden by the later "*".
-pip.expose(
-    hub = "pypi_hub",
+pip.configure(
+    hub_name = "pypi_hub",
     venv = "pypi_hub_test",
     dependency_groups = ["group:dev;testonly", "*"],
 )
@@ -276,15 +276,15 @@ category.
 The `venv` name is a repository in its own right. Add it to `use_repo()` like
 any other hub, then use it as `@pypi_hub_dev//<pkg>` and select it with
 `--@rules_python//python/config_settings:venv=pypi_hub_dev` to route the
-[Unified @pypi Hub](unified-pypi-hub) to it. Multiple `pip.expose` tags can
-target the same `hub` and `venv`; their selected packages are combined.
+[Unified @pypi Hub](unified-pypi-hub) to it. Multiple `pip.configure` tags can
+target the same `hub_name` and `venv`; their selected packages are combined.
 
-If `venv` is the same as `hub`, no additional repository is created. Instead,
+If `venv` is the same as `hub_name`, no additional repository is created. Instead,
 the packages exposed by the concrete hub (its `requirements.bzl` macros and
 the Unified Hub routing) are filtered to the selection. The hub's package
 aliases remain available because other venvs may share the hub.
 
-When `pyproject_toml` is not set on the `pip.expose` tag, the file from
+When `pyproject_toml` is not set on the `pip.configure` tag, the file from
 {obj}`pip.default.pyproject_toml` is used, followed by the hub's
 {obj}`pip.parse.pyproject_toml`. If none of them is set, the venv exposes every
 package in the hub, including transitive packages; this fallback will be
