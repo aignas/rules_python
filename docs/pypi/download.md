@@ -139,10 +139,10 @@ concrete hub instead. Prefer `@pypi//<pkg>` labels in new code.
 :::{versionadded} VERSION_NEXT_FEATURE
 :::
 
-The `pip.configure` tag creates a repository that contains only a subset of a
-concrete hub's packages. The subset is selected from a `pyproject.toml` file
-using the `[project] dependencies`, `[project.optional-dependencies]` and PEP
-735 `[dependency-groups]` tables:
+When a hub is created with `pip.parse(pyproject_toml = ...)`, the hub exposes
+the packages listed in that file: the `[project] dependencies`,
+`[project.optional-dependencies]` and PEP 735 `[dependency-groups]` tables.
+Packages that are only pulled in transitively are not exposed as hub aliases:
 
 ```toml
 [project]
@@ -158,20 +158,30 @@ pip.parse(
     pyproject_toml = "//:pyproject.toml",
     requirements_lock = "//:requirements_lock.txt",
 )
-
-pip.configure(
-    hub_name = "pypi_hub",
-    venv = "pypi_hub_dev",
-    dependency_groups = ["default", "dev"],
-)
-
-use_repo(pip, "pypi_hub", "pypi_hub_dev", "pypi")
 ```
 
-The `dependency_groups` attribute defaults to `["*"]`, which exposes every
-package listed in the `pyproject.toml` (the default dependencies, optional
-dependencies, and dependency groups) without packages that are only pulled in
-transitively. It accepts these selectors:
+Here `@pypi_hub//numpy` and `@pypi_hub//pytest` are available, but a package
+that `numpy` depends on is only reachable through `@pypi_hub//numpy`. The
+{obj}`pip.parse.python_version` and `requires-python` handling is unchanged.
+
+If a hub has no `pyproject.toml`, it exposes every package in its requirements
+file, including transitive packages. This fallback will be removed once
+`pyproject.toml` becomes mandatory.
+
+#### Overriding Hub Exposure
+
+A `pip.configure` tag can override which packages a concrete hub exposes. Set
+`venv` to the hub name, or leave it unset, to filter the hub in place:
+
+```starlark
+pip.configure(
+    hub_name = "pypi_hub",
+    dependency_groups = ["default", "group:dev"],
+)
+```
+
+Multiple `pip.configure` tags for the same hub combine their selections. Use
+the `dependency_groups` selectors to choose the packages:
 
 * `"default"`: the packages in the `[project] dependencies` table.
 * `"optional:<name>"`: the packages in the
@@ -184,9 +194,36 @@ transitively. It accepts these selectors:
 * `"<name>"`: the `[dependency-groups]` entry `<name>`, if it exists,
   otherwise the `[project.optional-dependencies]` entry `<name>`.
 
+The `dependency_groups` attribute defaults to `["*"]`, so an unqualified
+`pip.configure(hub_name = "pypi_hub")` exposes every package listed in the
+`pyproject.toml` (still without transitive packages).
+
 Packages selected by the groups that are not part of the concrete hub are
 ignored. This means a single `pyproject.toml` can list development-only tools
 that are missing from the runtime lock file.
+
+#### Creating Venv Repositories
+
+Set `venv` to a name different from the hub to create a separate repository
+that exposes a filtered subset of the hub instead of changing the hub itself:
+
+```starlark
+pip.configure(
+    hub_name = "pypi_hub",
+    venv = "pypi_hub_dev",
+    dependency_groups = ["default", "dev"],
+)
+
+use_repo(pip, "pypi_hub", "pypi_hub_dev", "pypi")
+```
+
+Each venv is a repository in its own right. Add it to `use_repo()` like any
+other hub, then use it as `@pypi_hub_dev//<pkg>` and select it with
+`--@rules_python//python/config_settings:venv=pypi_hub_dev` to route the
+[Unified @pypi Hub](unified-pypi-hub) to it. Multiple `pip.configure` tags can
+target the same `hub_name` and `venv`; their selected packages are combined.
+A `venv` name must not collide with another hub, and a venv cannot be used
+with two different hubs.
 
 #### Transitive Aliases
 
@@ -197,13 +234,13 @@ selected groups:
 ```starlark
 pip.configure(
     hub_name = "pypi_hub",
-    venv = "pypi_hub_all",
     dependency_groups = ["default", "transitive"],
 )
 ```
 
-`"transitive"` is a modifier, not a dependency group. It is not included by
-the `"*"` wildcard and must be listed explicitly.
+This is the way to restore the pre-`pyproject.toml` behavior of exposing all
+hub packages. `"transitive"` is a modifier, not a dependency group. It is not
+included by the `"*"` wildcard and must be listed explicitly.
 
 #### Testonly Packages
 
@@ -272,17 +309,6 @@ pip.configure(
 
 `"optional:*"` and `"group:*"` use the same last-wins rule within their
 category.
-
-The `venv` name is a repository in its own right. Add it to `use_repo()` like
-any other hub, then use it as `@pypi_hub_dev//<pkg>` and select it with
-`--@rules_python//python/config_settings:venv=pypi_hub_dev` to route the
-[Unified @pypi Hub](unified-pypi-hub) to it. Multiple `pip.configure` tags can
-target the same `hub_name` and `venv`; their selected packages are combined.
-
-If `venv` is the same as `hub_name`, no additional repository is created. Instead,
-the packages exposed by the concrete hub (its `requirements.bzl` macros and
-the Unified Hub routing) are filtered to the selection. The hub's package
-aliases remain available because other venvs may share the hub.
 
 When `pyproject_toml` is not set on the `pip.configure` tag, the file from
 {obj}`pip.default.pyproject_toml` is used, followed by the hub's

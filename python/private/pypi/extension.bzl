@@ -330,6 +330,41 @@ def _merge_package_sets(previous, previous_testonly, current, current_testonly):
 
     return sorted(packages), sorted(testonly)
 
+def _default_exposed_packages(module_ctx, pyproject, exposed, _fail):
+    """Return the packages exposed by a concrete hub by default.
+
+    When the hub has a `pyproject.toml`, only the packages that it lists are
+    exposed, which hides packages that are only pulled in transitively.
+
+    Args:
+        module_ctx: {type}`module_ctx` module context.
+        pyproject: {type}`str | None` the hub's `pyproject.toml` label.
+        exposed: {type}`list[str]` the packages that the hub could expose.
+        _fail: {type}`function` the failure function, mainly for testing.
+
+    Returns:
+        {type}`list[str]` the packages that the hub exposes by default.
+    """
+
+    # TODO: Remove this fallback once pyproject.toml is mandatory.
+    if not pyproject:
+        return exposed
+
+    selection = dependency_group_selection(
+        read_pyproject(module_ctx, pyproject),
+        ["*"],
+        _fail = _fail,
+    )
+    available = {
+        normalize_name(pkg): pkg
+        for pkg in exposed
+    }
+    return sorted([
+        available[pkg]
+        for pkg in selection.packages
+        if pkg in available
+    ])
+
 def parse_modules(
         module_ctx,
         _fail = fail,
@@ -534,7 +569,12 @@ You cannot use both the additive_build_content and additive_build_content_file a
             else:
                 whl_libraries[whl_name] = lib
 
-        exposed_packages[hub.name] = out.exposed_packages
+        exposed_packages[hub.name] = _default_exposed_packages(
+            module_ctx,
+            hub_pyproject.get(hub.name),
+            out.exposed_packages,
+            _fail,
+        )
         extra_aliases[hub.name] = out.extra_aliases
         hub_group_map[hub.name] = out.group_map
         hub_whl_map[hub.name] = out.whl_map

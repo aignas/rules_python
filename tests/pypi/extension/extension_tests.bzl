@@ -219,7 +219,7 @@ def _test_pip_parse_pyproject_toml(env):
                 os_name = "linux",
                 arch_name = "x86_64",
                 mock_files = {
-                    "pyproject.toml": "[project]\nrequires-python = \"==3.15.19\"\n",
+                    "pyproject.toml": "[project]\ndependencies = [\"simple\"]\nrequires-python = \"==3.15.19\"\n",
                 },
             ),
             available_interpreters = available_interpreters,
@@ -1188,6 +1188,37 @@ def _test_configure_pyproject_from_parse(env):
     })
 
 _tests.append(_test_configure_pyproject_from_parse)
+
+def _test_parse_pyproject_toml_filters_exposed_packages(env):
+    # The hub's own pip.parse(pyproject_toml = ...) determines the default
+    # exposure: packages listed anywhere in the pyproject.toml (dependencies,
+    # optional dependencies and dependency groups) without the transitive ones.
+    pypi = _configure_parse_modules(
+        env,
+        _mod(
+            name = "rules_python",
+            parse = [_configure_parse(pyproject_toml = "pyproject.toml")],
+        ),
+    )
+
+    pypi.exposed_packages().contains_exactly({"pypi_a": ["other_pkg", "simple"]})
+
+_tests.append(_test_parse_pyproject_toml_filters_exposed_packages)
+
+def _test_parse_pyproject_toml_exposes_all_without_pyproject(env):
+    pypi = _configure_parse_modules(
+        env,
+        _mod(
+            name = "rules_python",
+            parse = [_configure_parse()],
+        ),
+    )
+
+    pypi.exposed_packages().contains_exactly({
+        "pypi_a": ["other_pkg", "simple", "transitive_pkg"],
+    })
+
+_tests.append(_test_parse_pyproject_toml_exposes_all_without_pyproject)
 
 def _test_configure_pyproject_precedence(env):
     # pip.default() takes precedence over the hub's pip.parse().
