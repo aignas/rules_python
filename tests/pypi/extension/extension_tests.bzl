@@ -777,6 +777,9 @@ simple==0.0.1 \
 other-pkg==0.0.2 \
     --hash=sha256:deadbeef \
     --hash=sha256:deadbaaf
+transitive-pkg==0.0.3 \
+    --hash=sha256:deadbeef \
+    --hash=sha256:deadbaaf
 """
 
 _EXPOSE_PYPROJECT = """\
@@ -826,7 +829,7 @@ def _expose_parse(*, hub_name = "pypi_a", pyproject_toml = None):
         hub_name = hub_name,
         pyproject_toml = pyproject_toml,
         python_version = "3.15",
-        simpleapi_skip = ["simple", "other-pkg"],
+        simpleapi_skip = ["simple", "other-pkg", "transitive-pkg"],
         requirements_lock = "requirements.txt",
     )
 
@@ -1070,6 +1073,8 @@ def _test_expose_dependency_groups(env):
             ],
             parse = [_expose_parse()],
             expose = [
+                # The default dependency_groups is ["*"], which selects all
+                # packages listed in pyproject.toml but not transitive_pkg.
                 _expose(hub = "pypi_a", venv = "venv_default"),
                 _expose(hub = "pypi_a", venv = "venv_dev", dependency_groups = ["dev"]),
                 _expose(hub = "pypi_a", venv = "venv_group", dependency_groups = ["group:dev"]),
@@ -1084,7 +1089,7 @@ def _test_expose_dependency_groups(env):
     pypi.exposed_venvs().contains_exactly({
         "venv_all": struct(hub = "pypi_a", packages = ["other_pkg", "simple"], testonly_packages = []),
         "venv_bare_optional": struct(hub = "pypi_a", packages = ["other_pkg"], testonly_packages = []),
-        "venv_default": struct(hub = "pypi_a", packages = ["simple"], testonly_packages = []),
+        "venv_default": struct(hub = "pypi_a", packages = ["other_pkg", "simple"], testonly_packages = []),
         "venv_dev": struct(hub = "pypi_a", packages = ["other_pkg"], testonly_packages = []),
         "venv_group": struct(hub = "pypi_a", packages = ["other_pkg"], testonly_packages = []),
         "venv_missing": struct(hub = "pypi_a", packages = ["simple"], testonly_packages = []),
@@ -1093,7 +1098,7 @@ def _test_expose_dependency_groups(env):
 
     # The concrete hub is not filtered when the venv has a different name.
     pypi.exposed_packages().contains_exactly({
-        "pypi_a": ["other_pkg", "simple"],
+        "pypi_a": ["other_pkg", "simple", "transitive_pkg"],
     })
 
 _tests.append(_test_expose_dependency_groups)
@@ -1157,7 +1162,7 @@ def _test_expose_pyproject_from_parse(env):
     )
 
     pypi.exposed_venvs().contains_exactly({
-        "venv": struct(hub = "pypi_a", packages = ["simple"], testonly_packages = []),
+        "venv": struct(hub = "pypi_a", packages = ["other_pkg", "simple"], testonly_packages = []),
     })
 
 _tests.append(_test_expose_pyproject_from_parse)
@@ -1185,7 +1190,7 @@ def _test_expose_pyproject_precedence(env):
 
     pypi.exposed_venvs().contains_exactly({
         "venv_default": struct(hub = "pypi_a", packages = ["other_pkg"], testonly_packages = []),
-        "venv_tag": struct(hub = "pypi_a", packages = ["simple"], testonly_packages = []),
+        "venv_tag": struct(hub = "pypi_a", packages = ["other_pkg", "simple"], testonly_packages = []),
     })
 
 _tests.append(_test_expose_pyproject_precedence)
@@ -1304,31 +1309,27 @@ def _test_expose_same_venv_different_hubs_fails(env):
 
 _tests.append(_test_expose_same_venv_different_hubs_fails)
 
-def _test_expose_requires_pyproject_fails(env):
-    failures = []
-    pypi = parse_modules(
-        module_ctx = _expose_mock_mctx(
-            _mod(
-                name = "rules_python",
-                parse = [_expose_parse()],
-                expose = [
-                    _expose(hub = "pypi_a", venv = "venv"),
-                ],
-            ),
+def _test_expose_no_pyproject_exposes_all(env):
+    # Without a pyproject.toml there are no dependency groups to select, so
+    # the venv falls back to exposing every package in the hub, including
+    # transitive packages. This fallback should be removed once pyproject.toml
+    # is mandatory.
+    pypi = _expose_parse_modules(
+        env,
+        _mod(
+            name = "rules_python",
+            parse = [_expose_parse()],
+            expose = [
+                _expose(hub = "pypi_a", venv = "venv"),
+            ],
         ),
-        _fail = failures.append,
-        available_interpreters = {
-            "python_3_15_host": "unit_test_interpreter_target",
-        },
-        minor_mapping = {"3.15": "3.15.19"},
     )
 
-    env.expect.that_bool(pypi == None).equals(True)
-    env.expect.that_collection(failures).contains_exactly([
-        "pip.expose() venv 'venv' requires a pyproject.toml. Set `pyproject_toml` on the expose tag, on the hub's pip.parse tag, or on pip.default()",
-    ])
+    pypi.exposed_venvs().contains_exactly({
+        "venv": struct(hub = "pypi_a", packages = ["other_pkg", "simple", "transitive_pkg"], testonly_packages = []),
+    })
 
-_tests.append(_test_expose_requires_pyproject_fails)
+_tests.append(_test_expose_no_pyproject_exposes_all)
 
 def extension_test_suite(name):
     """Create the test suite.

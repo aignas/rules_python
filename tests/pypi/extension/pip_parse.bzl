@@ -2,7 +2,7 @@
 
 def expose(
         *,
-        dependency_groups = ["default"],
+        dependency_groups = ["*"],
         hub,
         pyproject_toml = None,
         venv):

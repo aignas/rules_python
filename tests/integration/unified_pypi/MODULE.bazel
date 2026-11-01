@@ -57,6 +57,7 @@ pip.expose(
 
 # pypi_b_colorama only contains the [project] dependencies.
 pip.expose(
+    dependency_groups = ["default"],
     hub = "pypi_b",
     pyproject_toml = "//:pyproject.toml",
     venv = "pypi_b_colorama",

@@ -573,47 +573,52 @@ You cannot use both the additive_build_content and additive_build_content_file a
                 config.pyproject_toml or
                 hub_pyproject.get(hub)
             )
-            if not pyproject:
-                _fail("pip.expose() venv '{}' requires a pyproject.toml. Set `pyproject_toml` on the expose tag, on the hub's pip.parse tag, or on pip.default()".format(venv))
-                return None
-
-            selection = dependency_group_selection(
-                read_pyproject(module_ctx, pyproject),
-                expose_attr.dependency_groups,
-                _fail = _fail,
-            )
             available = {
                 normalize_name(pkg): pkg
                 for pkg in exposed_packages[hub]
             }
-            if selection.transitive:
+
+            # TODO: Remove this fallback once pyproject.toml is mandatory.
+            # Without a pyproject.toml there are no dependency groups to
+            # select from, so keep the previous behaviour and expose every
+            # package in the hub, including transitive ones.
+            if not pyproject:
                 packages = sorted(available.values())
-                if selection.transitive_testonly:
-                    graph = merge_dependency_graphs([
-                        dependency_graph_from_uv_lock(module_ctx, uv_lock)
-                        for uv_lock in hub_uv_lock.get(hub, {})
-                    ])
-                    selected_testonly = testonly_packages_from_graph(
-                        sorted(available),
-                        roots = selection.packages,
-                        testonly_roots = selection.testonly_packages,
-                        graph = graph,
-                    )
-                else:
-                    selected_testonly = selection.testonly_packages
+                testonly = []
             else:
-                packages = sorted([
+                selection = dependency_group_selection(
+                    read_pyproject(module_ctx, pyproject),
+                    expose_attr.dependency_groups,
+                    _fail = _fail,
+                )
+                if selection.transitive:
+                    packages = sorted(available.values())
+                    if selection.transitive_testonly:
+                        graph = merge_dependency_graphs([
+                            dependency_graph_from_uv_lock(module_ctx, uv_lock)
+                            for uv_lock in hub_uv_lock.get(hub, {})
+                        ])
+                        selected_testonly = testonly_packages_from_graph(
+                            sorted(available),
+                            roots = selection.packages,
+                            testonly_roots = selection.testonly_packages,
+                            graph = graph,
+                        )
+                    else:
+                        selected_testonly = selection.testonly_packages
+                else:
+                    packages = sorted([
+                        available[pkg]
+                        for pkg in selection.packages
+                        if pkg in available
+                    ])
+                    selected_testonly = selection.testonly_packages
+
+                testonly = sorted([
                     available[pkg]
-                    for pkg in selection.packages
+                    for pkg in selected_testonly
                     if pkg in available
                 ])
-                selected_testonly = selection.testonly_packages
-
-            testonly = sorted([
-                available[pkg]
-                for pkg in selected_testonly
-                if pkg in available
-            ])
 
             previous = exposed_venvs.get(venv)
             if previous:
@@ -1433,9 +1438,13 @@ execution-phase error when built.
 _expose_tag = tag_class(
     attrs = {
         "dependency_groups": attr.string_list(
-            default = ["default"],
+            default = ["*"],
             doc = """\
 The dependency groups to expose in the venv.
+
+Defaults to `["*"]`, which exposes every package listed in the
+`pyproject.toml` (the default dependencies, optional dependencies, and
+dependency groups) but not packages that are only pulled in transitively.
 
 Each item is one of:
 
@@ -1490,6 +1499,11 @@ Label pointing to the `pyproject.toml` file that defines the dependency
 groups. When not set, the file configured with
 {obj}`pip.default.pyproject_toml` or the hub's {obj}`pip.parse.pyproject_toml`
 is used.
+
+When no `pyproject.toml` is configured at all, the venv falls back to
+exposing every package in the hub, including transitive packages. This
+fallback will be removed once {obj}`pip.expose.pyproject_toml` becomes
+mandatory.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::
