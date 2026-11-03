@@ -95,6 +95,15 @@ bzl_library(
 )
 
 bzl_library(
+    name = "dependency_groups",
+    srcs = ["dependency_groups.bzl"],
+    deps = [
+        ":pep508_requirement",
+        "//python/private:normalize_name",
+    ],
+)
+
+bzl_library(
     name = "deps",
     srcs = ["deps.bzl"],
     deps = ["//python/private:bazel_tools"],
@@ -128,13 +137,13 @@ bzl_library(
     srcs = ["extension.bzl"],
     deps = [
         ":hub_builder",
+        ":hub_exposure",
         ":hub_repository",
         ":parse_whl_name",
         ":pep508_env",
         ":pip_repository_attrs",
         ":platform",
         ":pypi_cache",
-        ":pyproject_packages",
         ":simpleapi_download",
         ":unified_hub_repo",
         ":whl_library",
@@ -196,6 +205,16 @@ bzl_library(
         "//python/private:text_util",
         "//python/private:version",
         "//python/private:version_label",
+    ],
+)
+
+bzl_library(
+    name = "hub_exposure",
+    srcs = ["hub_exposure.bzl"],
+    deps = [
+        ":dependency_groups",
+        "//python/private:pyproject_utils",
+        "@toml.bzl//:toml",
     ],
 )
 
@@ -369,17 +388,6 @@ bzl_library(
         "//python/private:repo_utils",
         "//python/private:util",
         "@bazel_skylib//lib:types",
-    ],
-)
-
-bzl_library(
-    name = "pyproject_packages",
-    srcs = ["pyproject_packages.bzl"],
-    deps = [
-        ":pep508_requirement",
-        "//python/private:normalize_name",
-        "//python/private:pyproject_utils",
-        "@toml.bzl//:toml",
     ],
 )
 

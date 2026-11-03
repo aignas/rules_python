@@ -923,7 +923,6 @@ bzl_library(
     name = "pyproject_utils",
     srcs = ["pyproject_utils.bzl"],
     deps = [
-        ":normalize_name",
         ":version",
         "@toml.bzl//:toml",
     ],

@@ -16,10 +16,8 @@
 
 load("@rules_testing//lib:test_suite.bzl", "test_suite")
 load("@rules_testing//lib:truth.bzl", "subjects")
-load("//python/private:pyproject_utils.bzl", "resolve_dependency_groups")  # buildifier: disable=bzl-visibility
 load("//python/private/pypi:extension.bzl", "build_config", "default_platforms", "parse_modules")  # buildifier: disable=bzl-visibility
 load("//python/private/pypi:platform.bzl", _plat = "platform")  # buildifier: disable=bzl-visibility
-load("//python/private/pypi:pyproject_packages.bzl", "dependency_graph_from_uv_lock", "dependency_group_selection", "merge_dependency_graphs", "packages_from_dependency_groups", "testonly_packages_from_graph")  # buildifier: disable=bzl-visibility
 load("//python/private/pypi:whl_config_setting.bzl", "whl_config_setting")  # buildifier: disable=bzl-visibility
 load("//tests/support/mocks:mocks.bzl", "mocks")
 load(":pip_parse.bzl", _configure = "configure", _parse = "pip_parse")
@@ -123,10 +121,10 @@ def _parse_modules(env, **kwargs):
             declared_deps = subjects.dict,
             default_hub = subjects.str,
             exposed_packages = subjects.dict,
-            exposed_venvs = subjects.dict,
             hub_group_map = subjects.dict,
             hub_whl_map = subjects.dict,
             testonly_packages = subjects.dict,
+            venvs = subjects.dict,
             unified_hub_requirements_bzl = subjects.bool,
             whl_libraries = subjects.dict,
             whl_mods = subjects.dict,
@@ -786,31 +784,19 @@ _CONFIGURE_PYPROJECT = """\
 [project]
 dependencies = ["simple"]
 
-[project.optional-dependencies]
-other = ["other-pkg"]
-
 [dependency-groups]
 dev = ["other-pkg"]
-missing = ["not-in-hub"]
 test = ["simple"]
-all = [
-    {include-group = "dev"},
-    {include-group = "test"},
-]
 """
 
-def _configure_mock_mctx(*modules, mock_files = {}):
+def _configure_mock_mctx(*modules):
     return _pypi_mock_mctx(
         os_name = "linux",
         arch_name = "x86_64",
         mock_files = {
-            "default_pyproject.toml": """\
-[project]
-dependencies = ["other-pkg"]
-""",
             "pyproject.toml": _CONFIGURE_PYPROJECT,
             "requirements.txt": _CONFIGURE_REQUIREMENTS,
-        } | mock_files,
+        },
         *modules
     )
 
@@ -833,418 +819,53 @@ def _configure_parse(*, hub_name = "pypi_a", pyproject_toml = None):
         requirements_lock = "requirements.txt",
     )
 
-def _test_resolve_dependency_groups(env):
-    pyproject = struct(
-        dependencies = ["main-pkg"],
-        optional_dependencies = {"Docs": ["docs-pkg"]},
-        dependency_groups = {
-            "cycle_a": [{"include-group": "cycle_b"}],
-            "cycle_b": [{"include-group": "cycle_a"}],
-            "dev": [
-                "dev-pkg",
-                {"include-group": "test"},
-            ],
-            "test": ["test-pkg"],
-        },
-    )
-
-    got = resolve_dependency_groups(
-        pyproject,
-        ["default", "optional:docs", "group:dev", "dev"],
-    )
-    env.expect.that_collection(got).contains_exactly([
-        "main-pkg",
-        "docs-pkg",
-        "dev-pkg",
-        "test-pkg",
-        "dev-pkg",
-        "test-pkg",
-    ]).in_order()
-
-    failures = []
-    resolve_dependency_groups(pyproject, ["cycle_a"], _fail = failures.append)
-    env.expect.that_collection(failures).contains_exactly([
-        "Cyclic dependency group include: cycle_a -> cycle_b -> cycle_a",
-    ])
-
-    failures = []
-    resolve_dependency_groups(pyproject, ["missing"], _fail = failures.append)
-    env.expect.that_collection(failures).contains_exactly([
-        "Unknown dependency group 'missing'. Available dependency groups: cycle_a, cycle_b, dev, test; optional dependency groups: docs",
-    ])
-
-_tests.append(_test_resolve_dependency_groups)
-
-def _test_packages_from_dependency_groups(env):
-    mctx = _pypi_mock_mctx(
-        mock_files = {
-            "pyproject.toml": """\
-[project]
-dependencies = ["Simple", "other-pkg>=1.0"]
-
-[dependency-groups]
-dev = ["other.pkg", "missing-pkg"]
-all = [
-    {include-group = "dev"},
-]
-""",
-        },
-    )
-
-    got = packages_from_dependency_groups(
-        mctx,
-        "pyproject.toml",
-        ["default", "all"],
-    )
-    env.expect.that_collection(got).contains_exactly([
-        "missing_pkg",
-        "other_pkg",
-        "simple",
-    ]).in_order()
-
-_tests.append(_test_packages_from_dependency_groups)
-
-def _test_dependency_group_selection_wildcards(env):
-    pyproject = struct(
-        dependencies = ["main-pkg"],
-        optional_dependencies = {
-            "Docs": ["docs-pkg"],
-            "Grpc": ["grpc-pkg"],
-        },
-        dependency_groups = {
-            "dev": ["dev-pkg", "shared-pkg"],
-            "test": ["test-pkg", "shared-pkg"],
-        },
-    )
-
-    got = dependency_group_selection(pyproject, ["*"])
-    env.expect.that_collection(got.packages).contains_exactly([
-        "dev_pkg",
-        "docs_pkg",
-        "grpc_pkg",
-        "main_pkg",
-        "shared_pkg",
-        "test_pkg",
-    ]).in_order()
-    env.expect.that_collection(got.testonly_packages).contains_exactly([])
-    env.expect.that_bool(got.transitive).equals(False)
-
-    got = dependency_group_selection(pyproject, ["optional:*"])
-    env.expect.that_collection(got.packages).contains_exactly([
-        "docs_pkg",
-        "grpc_pkg",
-    ]).in_order()
-
-    got = dependency_group_selection(pyproject, ["group:*"])
-    env.expect.that_collection(got.packages).contains_exactly([
-        "dev_pkg",
-        "shared_pkg",
-        "test_pkg",
-    ]).in_order()
-
-    # The later specific entry overrides the wildcard for group:dev.
-    # shared-pkg is also selected by the non-testonly group:dev, so it stays
-    # non-testonly.
-    got = dependency_group_selection(pyproject, ["*;testonly", "group:dev"])
-    env.expect.that_collection(got.testonly_packages).contains_exactly([
-        "docs_pkg",
-        "grpc_pkg",
-        "main_pkg",
-        "test_pkg",
-    ]).in_order()
-
-    got = dependency_group_selection(pyproject, ["*", "group:test;testonly"])
-    env.expect.that_collection(got.testonly_packages).contains_exactly([
-        "test_pkg",
-    ]).in_order()
-
-    # A later "*" resets earlier specific overrides.
-    got = dependency_group_selection(pyproject, ["group:dev;testonly", "*"])
-    env.expect.that_collection(got.testonly_packages).contains_exactly([])
-
-    # A package selected by both a testonly and a non-testonly group stays
-    # non-testonly.
-    got = dependency_group_selection(pyproject, ["group:dev", "group:test;testonly"])
-    env.expect.that_collection(got.testonly_packages).contains_exactly([
-        "test_pkg",
-    ])
-
-    got = dependency_group_selection(pyproject, ["optional:*;testonly"])
-    env.expect.that_collection(got.testonly_packages).contains_exactly([
-        "docs_pkg",
-        "grpc_pkg",
-    ]).in_order()
-
-    # A later group:* resets earlier group-specific overrides.
-    got = dependency_group_selection(pyproject, ["group:dev;testonly", "group:*"])
-    env.expect.that_collection(got.testonly_packages).contains_exactly([])
-
-    got = dependency_group_selection(pyproject, ["default", "transitive"])
-    env.expect.that_bool(got.transitive).equals(True)
-    env.expect.that_bool(got.transitive_testonly).equals(False)
-
-    got = dependency_group_selection(pyproject, ["transitive;testonly", "default"])
-    env.expect.that_bool(got.transitive).equals(True)
-    env.expect.that_bool(got.transitive_testonly).equals(True)
-
-    failures = []
-    got = dependency_group_selection(pyproject, ["default;unknown"], _fail = failures.append)
-    env.expect.that_collection(got.packages).contains_exactly([])
-    env.expect.that_collection(failures).contains_exactly([
-        "Invalid dependency group specifier 'default;unknown': the only supported modifier is 'testonly'",
-    ])
-
-_tests.append(_test_dependency_group_selection_wildcards)
-
-def _test_dependency_graph_from_uv_lock(env):
-    mctx = _pypi_mock_mctx(
-        mock_files = {
-            "uv.lock": """\
-[[package]]
-name = "Foo"
-version = "1.0.0"
-dependencies = [{name = "Bar"}]
-
-[[package]]
-name = "bar"
-version = "1.0.0"
-
-[package.optional-dependencies]
-extra = [{name = "Baz"}]
-""",
-        },
-    )
-
-    got = dependency_graph_from_uv_lock(mctx, "uv.lock")
-    env.expect.that_dict(got).contains_exactly({
-        "bar": ["baz"],
-        "foo": ["bar"],
-    })
-
-    got = merge_dependency_graphs([
-        {"foo": ["bar"]},
-        {
-            "bar": ["baz"],
-            "foo": ["baz"],
-        },
-    ])
-    env.expect.that_dict(got).contains_exactly({
-        "bar": ["baz"],
-        "foo": ["bar", "baz"],
-    })
-
-_tests.append(_test_dependency_graph_from_uv_lock)
-
-def _test_testonly_packages_from_graph(env):
-    graph = {
-        "prod": ["shared", "prod-only"],
-        "shared": [],
-        "test": ["shared", "test-only"],
-    }
-
-    got = testonly_packages_from_graph(
-        [
-            "orphan",
-            "prod",
-            "prod-only",
-            "shared",
-            "test",
-            "test-only",
-        ],
-        roots = ["prod", "test"],
-        testonly_roots = ["test"],
-        graph = graph,
-    )
-
-    env.expect.that_collection(got).contains_exactly([
-        "test",
-        "test-only",
-    ]).in_order()
-
-_tests.append(_test_testonly_packages_from_graph)
-
-def _test_configure_dependency_groups(env):
+def _test_configure_venvs(env):
     pypi = _configure_parse_modules(
         env,
         _mod(
             name = "rules_python",
-            default = _default_tags_default + [
-                _default(pyproject_toml = "pyproject.toml"),
-            ],
             parse = [_configure_parse()],
             configure = [
-                # The default dependency_groups is ["*"], which selects all
-                # packages listed in pyproject.toml but not transitive_pkg.
-                _configure(hub_name = "pypi_a", venv = "venv_default"),
-                _configure(hub_name = "pypi_a", venv = "venv_dev", dependency_groups = ["dev"]),
-                _configure(hub_name = "pypi_a", venv = "venv_group", dependency_groups = ["group:dev"]),
-                _configure(hub_name = "pypi_a", venv = "venv_optional", dependency_groups = ["optional:other"]),
-                _configure(hub_name = "pypi_a", venv = "venv_bare_optional", dependency_groups = ["other"]),
-                _configure(hub_name = "pypi_a", venv = "venv_all", dependency_groups = ["all"]),
-                _configure(hub_name = "pypi_a", venv = "venv_missing", dependency_groups = ["default", "missing"]),
+                _configure(hub_name = "pypi_a", venv = "venv_default", pyproject_toml = "pyproject.toml"),
+                _configure(hub_name = "pypi_a", venv = "venv_dev", pyproject_toml = "pyproject.toml", dependency_groups = ["dev;testonly"]),
             ],
         ),
     )
 
-    pypi.exposed_venvs().contains_exactly({
-        "venv_all": struct(hub = "pypi_a", packages = ["other_pkg", "simple"], testonly_packages = []),
-        "venv_bare_optional": struct(hub = "pypi_a", packages = ["other_pkg"], testonly_packages = []),
-        "venv_default": struct(hub = "pypi_a", packages = ["other_pkg", "simple"], testonly_packages = []),
-        "venv_dev": struct(hub = "pypi_a", packages = ["other_pkg"], testonly_packages = []),
-        "venv_group": struct(hub = "pypi_a", packages = ["other_pkg"], testonly_packages = []),
-        "venv_missing": struct(hub = "pypi_a", packages = ["simple"], testonly_packages = []),
-        "venv_optional": struct(hub = "pypi_a", packages = ["other_pkg"], testonly_packages = []),
+    pypi.venvs().contains_exactly({
+        "venv_default": "pypi_a",
+        "venv_dev": "pypi_a",
     })
 
-    # The concrete hub is not filtered when the venv has a different name.
+    # The hub is not filtered when the venv has a different name.
     pypi.exposed_packages().contains_exactly({
         "pypi_a": ["other_pkg", "simple", "transitive_pkg"],
+        "venv_default": ["other_pkg", "simple"],
+        "venv_dev": ["other_pkg"],
+    })
+    pypi.testonly_packages().contains_exactly({
+        "venv_default": [],
+        "venv_dev": ["other_pkg"],
     })
 
-_tests.append(_test_configure_dependency_groups)
+_tests.append(_test_configure_venvs)
 
-def _test_configure_union_same_venv(env):
-    pypi = _configure_parse_modules(
-        env,
-        _mod(
-            name = "rules_python",
-            default = _default_tags_default + [
-                _default(pyproject_toml = "pyproject.toml"),
-            ],
-            parse = [_configure_parse()],
-            configure = [
-                _configure(hub_name = "pypi_a", venv = "venv", dependency_groups = ["test"]),
-                _configure(hub_name = "pypi_a", venv = "venv", dependency_groups = ["dev"]),
-            ],
-        ),
-    )
-
-    pypi.exposed_venvs().contains_exactly({
-        "venv": struct(hub = "pypi_a", packages = ["other_pkg", "simple"], testonly_packages = []),
-    })
-
-_tests.append(_test_configure_union_same_venv)
-
-def _test_configure_venv_same_as_hub(env):
-    pypi = _configure_parse_modules(
-        env,
-        _mod(
-            name = "rules_python",
-            default = _default_tags_default + [
-                _default(pyproject_toml = "pyproject.toml"),
-            ],
-            parse = [_configure_parse()],
-            configure = [
-                _configure(hub_name = "pypi_a", venv = "pypi_a", dependency_groups = ["test"]),
-            ],
-        ),
-    )
-
-    pypi.exposed_venvs().contains_exactly({
-        "pypi_a": struct(hub = "pypi_a", packages = ["simple"], testonly_packages = []),
-    })
-
-    # There is no separate repository, so the concrete hub is filtered instead.
-    pypi.exposed_packages().contains_exactly({"pypi_a": ["simple"]})
-
-_tests.append(_test_configure_venv_same_as_hub)
-
-def _test_configure_venv_defaults_to_hub_name(env):
-    pypi = _configure_parse_modules(
-        env,
-        _mod(
-            name = "rules_python",
-            default = _default_tags_default + [
-                _default(pyproject_toml = "pyproject.toml"),
-            ],
-            parse = [_configure_parse()],
-            configure = [
-                _configure(hub_name = "pypi_a", dependency_groups = ["test"]),
-            ],
-        ),
-    )
-
-    pypi.exposed_venvs().contains_exactly({
-        "pypi_a": struct(hub = "pypi_a", packages = ["simple"], testonly_packages = []),
-    })
-    pypi.exposed_packages().contains_exactly({"pypi_a": ["simple"]})
-
-_tests.append(_test_configure_venv_defaults_to_hub_name)
-
-def _test_configure_in_place_ignored_for_non_owner(env):
-    pypi = _configure_parse_modules(
-        env,
-        _mod(
-            name = "my_app",
-            is_root = True,
-        ),
-        _mod(
-            name = "rules_python",
-            is_root = False,
-            parse = [_configure_parse()],
-        ),
-        _mod(
-            name = "other",
-            is_root = False,
-            configure = [
-                _configure(hub_name = "pypi_a", dependency_groups = ["test"]),
-            ],
-        ),
-    )
-
-    # Neither the root module nor the hub's owner module, so the in-place
-    # configuration is ignored.
-    pypi.exposed_venvs().contains_exactly({})
-    pypi.exposed_packages().contains_exactly({
-        "pypi_a": ["other_pkg", "simple", "transitive_pkg"],
-    })
-
-_tests.append(_test_configure_in_place_ignored_for_non_owner)
-
-def _test_configure_in_place_root_wins_over_owner(env):
-    pypi = _configure_parse_modules(
-        env,
-        _mod(
-            name = "my_app",
-            is_root = True,
-            configure = [
-                _configure(hub_name = "pypi_a", dependency_groups = ["test"]),
-            ],
-        ),
-        _mod(
-            name = "rules_python",
-            is_root = False,
-            parse = [_configure_parse(pyproject_toml = "pyproject.toml")],
-            configure = [
-                _configure(hub_name = "pypi_a", dependency_groups = ["dev"]),
-            ],
-        ),
-    )
-
-    pypi.exposed_venvs().contains_exactly({
-        "pypi_a": struct(hub = "pypi_a", packages = ["simple"], testonly_packages = []),
-    })
-    pypi.exposed_packages().contains_exactly({"pypi_a": ["simple"]})
-
-_tests.append(_test_configure_in_place_root_wins_over_owner)
-
-def _test_configure_pyproject_from_parse(env):
+def _test_configure_in_place(env):
     pypi = _configure_parse_modules(
         env,
         _mod(
             name = "rules_python",
             parse = [_configure_parse(pyproject_toml = "pyproject.toml")],
             configure = [
-                _configure(hub_name = "pypi_a", venv = "venv"),
+                _configure(hub_name = "pypi_a", dependency_groups = ["test"]),
             ],
         ),
     )
 
-    pypi.exposed_venvs().contains_exactly({
-        "venv": struct(hub = "pypi_a", packages = ["other_pkg", "simple"], testonly_packages = []),
-    })
+    pypi.venvs().contains_exactly({})
+    pypi.exposed_packages().contains_exactly({"pypi_a": ["simple"]})
 
-_tests.append(_test_configure_pyproject_from_parse)
+_tests.append(_test_configure_in_place)
 
 def _test_parse_pyproject_toml_filters_exposed_packages(env):
     # The hub's own pip.parse(pyproject_toml = ...) determines the default
@@ -1276,170 +897,6 @@ def _test_parse_pyproject_toml_exposes_all_without_pyproject(env):
     })
 
 _tests.append(_test_parse_pyproject_toml_exposes_all_without_pyproject)
-
-def _test_configure_pyproject_precedence(env):
-    # pip.default() takes precedence over the hub's pip.parse().
-    pypi = _configure_parse_modules(
-        env,
-        _mod(
-            name = "rules_python",
-            default = _default_tags_default + [
-                _default(pyproject_toml = "default_pyproject.toml"),
-            ],
-            parse = [_configure_parse(pyproject_toml = "pyproject.toml")],
-            configure = [
-                _configure(hub_name = "pypi_a", venv = "venv_default"),
-                _configure(
-                    hub_name = "pypi_a",
-                    venv = "venv_tag",
-                    pyproject_toml = "pyproject.toml",
-                ),
-            ],
-        ),
-    )
-
-    pypi.exposed_venvs().contains_exactly({
-        "venv_default": struct(hub = "pypi_a", packages = ["other_pkg"], testonly_packages = []),
-        "venv_tag": struct(hub = "pypi_a", packages = ["other_pkg", "simple"], testonly_packages = []),
-    })
-
-_tests.append(_test_configure_pyproject_precedence)
-
-def _test_configure_unknown_hub_fails(env):
-    failures = []
-    pypi = parse_modules(
-        module_ctx = _configure_mock_mctx(
-            _mod(
-                name = "rules_python",
-                parse = [_configure_parse()],
-                configure = [
-                    _configure(hub_name = "unknown", venv = "venv"),
-                ],
-            ),
-        ),
-        _fail = failures.append,
-        available_interpreters = {
-            "python_3_15_host": "unit_test_interpreter_target",
-        },
-        minor_mapping = {"3.15": "3.15.19"},
-    )
-
-    env.expect.that_bool(pypi == None).equals(True)
-    env.expect.that_collection(failures).contains_exactly([
-        "pip.configure() refers to unknown hub 'unknown'. Available hubs: pypi_a",
-    ])
-
-_tests.append(_test_configure_unknown_hub_fails)
-
-def _test_configure_venv_conflicts_with_hub_fails(env):
-    failures = []
-    pypi = parse_modules(
-        module_ctx = _configure_mock_mctx(
-            _mod(
-                name = "rules_python",
-                parse = [
-                    _configure_parse(hub_name = "pypi_a"),
-                    _configure_parse(hub_name = "pypi_b"),
-                ],
-                configure = [
-                    _configure(hub_name = "pypi_a", venv = "pypi_b"),
-                ],
-            ),
-        ),
-        _fail = failures.append,
-        available_interpreters = {
-            "python_3_15_host": "unit_test_interpreter_target",
-        },
-        minor_mapping = {"3.15": "3.15.19"},
-    )
-
-    env.expect.that_bool(pypi == None).equals(True)
-    env.expect.that_collection(failures).contains_exactly([
-        "pip.configure() venv 'pypi_b' conflicts with the existing hub of the same name",
-    ])
-
-_tests.append(_test_configure_venv_conflicts_with_hub_fails)
-
-def _test_configure_venv_conflicts_with_unified_hub_fails(env):
-    failures = []
-    pypi = parse_modules(
-        module_ctx = _configure_mock_mctx(
-            _mod(
-                name = "rules_python",
-                parse = [_configure_parse()],
-                configure = [
-                    _configure(hub_name = "pypi_a", venv = "pypi"),
-                ],
-            ),
-        ),
-        _fail = failures.append,
-        available_interpreters = {
-            "python_3_15_host": "unit_test_interpreter_target",
-        },
-        minor_mapping = {"3.15": "3.15.19"},
-    )
-
-    env.expect.that_bool(pypi == None).equals(True)
-    env.expect.that_collection(failures).contains_exactly([
-        "pip.configure() venv 'pypi' conflicts with the automatically generated unified hub",
-    ])
-
-_tests.append(_test_configure_venv_conflicts_with_unified_hub_fails)
-
-def _test_configure_same_venv_different_hubs_fails(env):
-    failures = []
-    pypi = parse_modules(
-        module_ctx = _configure_mock_mctx(
-            _mod(
-                name = "rules_python",
-                default = _default_tags_default + [
-                    _default(pyproject_toml = "pyproject.toml"),
-                ],
-                parse = [
-                    _configure_parse(hub_name = "pypi_a"),
-                    _configure_parse(hub_name = "pypi_b"),
-                ],
-                configure = [
-                    _configure(hub_name = "pypi_a", venv = "venv"),
-                    _configure(hub_name = "pypi_b", venv = "venv"),
-                ],
-            ),
-        ),
-        _fail = failures.append,
-        available_interpreters = {
-            "python_3_15_host": "unit_test_interpreter_target",
-        },
-        minor_mapping = {"3.15": "3.15.19"},
-    )
-
-    env.expect.that_bool(pypi == None).equals(True)
-    env.expect.that_collection(failures).contains_exactly([
-        "pip.configure() venv 'venv' is used with both hub 'pypi_a' and hub 'pypi_b'",
-    ])
-
-_tests.append(_test_configure_same_venv_different_hubs_fails)
-
-def _test_configure_no_pyproject_exposes_all(env):
-    # Without a pyproject.toml there are no dependency groups to select, so
-    # the venv falls back to exposing every package in the hub, including
-    # transitive packages. This fallback should be removed once pyproject.toml
-    # is mandatory.
-    pypi = _configure_parse_modules(
-        env,
-        _mod(
-            name = "rules_python",
-            parse = [_configure_parse()],
-            configure = [
-                _configure(hub_name = "pypi_a", venv = "venv"),
-            ],
-        ),
-    )
-
-    pypi.exposed_venvs().contains_exactly({
-        "venv": struct(hub = "pypi_a", packages = ["other_pkg", "simple", "transitive_pkg"], testonly_packages = []),
-    })
-
-_tests.append(_test_configure_no_pyproject_exposes_all)
 
 def extension_test_suite(name):
     """Create the test suite.
