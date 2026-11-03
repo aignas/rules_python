@@ -141,8 +141,9 @@ def render_pkg_aliases(
             for whl_name in group_whls
         }
 
+    public = ["//visibility:public"]
     if exposed_packages != None:
-        exposed_packages = [normalize_name(name) for name in exposed_packages]
+        exposed_packages = {normalize_name(name): None for name in exposed_packages}
     internal_visibility = _internal_visibility(aliases, has_groups = bool(requirement_cycles))
 
     files = {
@@ -151,11 +152,7 @@ def render_pkg_aliases(
             aliases = pkg_aliases,
             extra_aliases = extra_hub_aliases.get(normalize_name(name), []),
             group_name = whl_group_mapping.get(normalize_name(name)),
-            visibility = _package_visibility(
-                name = normalize_name(name),
-                exposed_packages = exposed_packages,
-                internal_visibility = internal_visibility,
-            ),
+            visibility = public if exposed_packages == None or normalize_name(name) in exposed_packages else internal_visibility,
             testonly = normalize_name(name) in testonly_packages,
             **kwargs
         ).strip()
@@ -183,12 +180,6 @@ def _internal_visibility(aliases, has_groups = False):
     if has_groups:
         visibility.append("//_groups:__pkg__")
     return visibility
-
-def _package_visibility(*, name, exposed_packages, internal_visibility):
-    if exposed_packages == None or name in exposed_packages:
-        return ["//visibility:public"]
-
-    return internal_visibility
 
 def _major_minor(python_version):
     major, _, tail = python_version.partition(".")

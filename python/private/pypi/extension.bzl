@@ -812,6 +812,10 @@ This is designed to work with dependency management tools like Renovate.
 
 :::{versionadded} 2.3.0
 :::
+
+:::{versionchanged} VERSION_NEXT_FEATURE
+Also used by {obj}`pip.configure` for the hubs of the root module.
+:::
 """,
     ),
     "unified_hub_requirements_bzl": attr.bool(
@@ -1009,11 +1013,18 @@ Label pointing to a pyproject.toml file to read the Python version from.
 When specified, the `requires-python` field is used as the `python_version`
 for this `pip.parse()` call, unless `python_version` is set explicitly.
 
+If the file lists any dependencies, the hub only exposes the listed packages.
+See [Configuring Hub Exposure and Venvs](#pip-configure).
+
 :::{note}
 The version must be specified as `==X.Y.Z` (exact version with full semver).
 :::
 
 :::{versionadded} 2.3.0
+:::
+
+:::{versionchanged} VERSION_NEXT_FEATURE
+The packages listed in the file are used to select the exposed packages.
 :::
 """,
         ),
@@ -1217,8 +1228,8 @@ Each item is one of:
 * `"<name>"`: the dependency group `<name>` if it exists, otherwise the
   optional dependency group `<name>`.
 * `"transitive"`: also expose the dependencies of the selected packages. This
-  uses the {obj}`pip.parse.uv_lock` of the hub. Without a lock file all
-  packages of the hub are exposed.
+  uses the {obj}`pip.parse.uv_lock` of the hub. Without a lock file, the
+  packages that the hub exposes without a `pyproject.toml` are used.
 
 When creating a venv, any item except `"transitive"` may be suffixed with
 `;testonly` to make its packages testonly. If several items select the same
@@ -1243,7 +1254,7 @@ The name of the concrete hub to configure.
             doc = """\
 The `pyproject.toml` file that defines the dependency groups. Defaults to the
 {obj}`pip.parse.pyproject_toml` of the hub, then to
-{obj}`pip.default.pyproject_toml`.
+{obj}`pip.default.pyproject_toml` if the hub is defined by the root module.
 
 If there is no `pyproject.toml`, all packages of the hub are exposed. This
 fallback will be removed once `pyproject.toml` is mandatory.

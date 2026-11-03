@@ -217,7 +217,7 @@ def _test_pip_parse_pyproject_toml(env):
                 os_name = "linux",
                 arch_name = "x86_64",
                 mock_files = {
-                    "pyproject.toml": "[project]\ndependencies = [\"simple\"]\nrequires-python = \"==3.15.19\"\n",
+                    "pyproject.toml": "[project]\nrequires-python = \"==3.15.19\"\n",
                 },
             ),
             available_interpreters = available_interpreters,

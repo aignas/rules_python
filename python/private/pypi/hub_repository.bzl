@@ -59,24 +59,25 @@ def _impl(rctx):
             "%%PACKAGES%%": render.dict(rctx.attr.whl_map, value_repr = lambda x: "None"),
         },
     )
+
+    # The testonly packages are only listed in `all_testonly_requirements`.
+    all_packages = [p for p in bzl_packages if p not in testonly_packages]
     rctx.template("requirements.bzl", rctx.attr._requirements_bzl_template, substitutions = {
         "%%ALL_DATA_REQUIREMENTS%%": render.list([
             macro_tmpl.format(p, "data")
-            for p in bzl_packages
+            for p in all_packages
         ]),
         "%%ALL_REQUIREMENTS%%": render.list([
             macro_tmpl.format(p, "pkg")
-            for p in bzl_packages
-            if p not in testonly_packages
+            for p in all_packages
         ]),
         "%%ALL_TESTONLY_REQUIREMENTS%%": render.list([
             macro_tmpl.format(p, "pkg")
-            for p in bzl_packages
-            if p in testonly_packages
+            for p in testonly_packages
         ]),
         "%%ALL_WHL_REQUIREMENTS_BY_PACKAGE%%": render.dict({
             p: macro_tmpl.format(p, "whl")
-            for p in bzl_packages
+            for p in all_packages
         }),
         "%%MACRO_TMPL%%": macro_tmpl,
     })

@@ -53,6 +53,7 @@ def _exposure(*modules, hubs = None, default_pyproject = None):
             mock_files = {
                 "other.toml": "[project]\ndependencies = [\"other-pkg\"]\n",
                 "pyproject.toml": _PYPROJECT,
+                "python_only.toml": "[project]\nrequires-python = \"==3.11.1\"\n",
                 "uv.lock": _UV_LOCK,
             },
         ),
@@ -78,6 +79,10 @@ def _test_default_exposure(env):
     env.expect.that_dict(got).contains_exactly({
         "hub": ("hub", {"other_pkg": False, "simple": False}),
     })
+
+    # A pyproject.toml without dependencies does not filter the hub.
+    got = _exposure(_module(), hubs = {"hub": _hub(pyproject = "python_only.toml")})
+    env.expect.that_dict(got).contains_exactly({})
 
 _tests.append(_test_default_exposure)
 

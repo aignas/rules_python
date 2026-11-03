@@ -74,6 +74,29 @@ def _test_testonly_aliases(env):
 
 _tests.append(_test_testonly_aliases)
 
+def _test_testonly_group_aliases(env):
+    got = {}
+    pkg_aliases(
+        name = "foo",
+        actual = "repo",
+        group_name = "my_group",
+        testonly = True,
+        native = struct(
+            alias = lambda name, **kwargs: got.setdefault(name, kwargs.get("testonly", False)),
+        ),
+    )
+
+    # The private targets are used by the non-testonly group libraries.
+    env.expect.that_dict(got).contains_at_least({
+        "foo": True,
+        "pkg": True,
+        "whl": True,
+        "_pkg": False,
+        "_whl": False,
+    })
+
+_tests.append(_test_testonly_group_aliases)
+
 def _test_config_setting_aliases(env):
     # Use this function as it is used in pip_repository
     got = {}

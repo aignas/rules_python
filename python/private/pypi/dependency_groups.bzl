@@ -204,8 +204,9 @@ def _reachable(graph, roots):
     seen = {root: None for root in roots}
     stack = list(seen)
 
-    # Every node is pushed onto the stack at most once.
-    max_nodes = len(seen) + len(graph)
+    # Every node is pushed onto the stack at most once and each push after
+    # the roots follows an edge.
+    max_nodes = len(seen)
     for deps in graph.values():
         max_nodes += len(deps)
     for _ in range(max_nodes):

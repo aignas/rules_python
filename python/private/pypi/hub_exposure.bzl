@@ -121,8 +121,14 @@ def hub_exposure(module_ctx, *, hubs, default_pyproject = None, _fail = fail):
             configured[venv] = struct(hub = hub, packages = packages)
 
     for hub, info in hubs.items():
-        if hub not in configured and info.pyproject:
-            configured[hub] = struct(hub = hub, packages = select(hub, info.pyproject, ["*"]))
+        if hub in configured or not info.pyproject:
+            continue
+
+        # A pyproject.toml that is only used for `requires-python` does not
+        # filter the hub.
+        packages = select(hub, info.pyproject, ["*"])
+        if packages:
+            configured[hub] = struct(hub = hub, packages = packages)
 
     return configured
 

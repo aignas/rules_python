@@ -213,7 +213,8 @@ def pkg_aliases(
         elif target_name in (WHEEL_FILE, PY_SRCS_LABEL):
             kwargs["visibility"] = ["//visibility:private"]
 
-        kwargs.update(_testonly_kwargs(testonly))
+        # The private targets are used by the non-testonly `//_groups` libraries.
+        kwargs.update(_testonly_kwargs(testonly and not target_name.startswith("_")))
         _native.alias(
             name = target_name,
             actual = _actual,

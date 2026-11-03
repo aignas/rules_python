@@ -8,9 +8,7 @@ def read_pyproject(module_ctx, pyproject):
 
     The file is parsed with a pure-Starlark TOML decoder; no Python
     interpreter is required. The raw `requires-python` value is returned
-    as-is so that callers can decide how to interpret it. Dependency values
-    are returned as written so that callers can parse requirement strings
-    with the same logic they use for lock files.
+    as-is so that callers can decide how to interpret it.
 
     Args:
         module_ctx: the module extension context (needs `path` and `read`).

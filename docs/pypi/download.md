@@ -140,8 +140,8 @@ concrete hub instead. Prefer `@pypi//<pkg>` labels in new code.
 :::{versionadded} VERSION_NEXT_FEATURE
 :::
 
-When a hub is created with `pip.parse(pyproject_toml = ...)`, the hub exposes
-only the packages listed in that file: the `[project] dependencies`,
+When a hub is created with `pip.parse(pyproject_toml = ...)` and that file
+lists dependencies, the hub exposes only the packages listed in it: the `[project] dependencies`,
 `[project.optional-dependencies]` and PEP 735 `[dependency-groups]` tables.
 Packages that are only pulled in transitively are still used by the wheels
 that need them, but their hub aliases are not public:
@@ -239,8 +239,9 @@ pip.configure(
 )
 ```
 
-Testonly packages are left out of `all_requirements` in the generated
-`requirements.bzl` and listed in `all_testonly_requirements` instead. A
+Testonly packages are left out of the `all_*requirements` lists in the
+generated `requirements.bzl` and listed in `all_testonly_requirements`
+instead. A
 package selected by both a testonly and a non-testonly group is not testonly.
 
 `;testonly` can't be used when changing a hub in place, because the wheels of
