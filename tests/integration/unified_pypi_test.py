@@ -80,6 +80,7 @@ class UnifiedPypiTest(runner.TestCase):
             "test",
             "//:test_all_requirements",
             "//:test_all_testonly_requirements",
+            "//:test_testonly_venv",
         )
 
     def test_expose_venv_disjoint_package_cquery_succeeds_but_build_fails(self):

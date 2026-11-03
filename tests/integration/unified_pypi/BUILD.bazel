@@ -127,6 +127,17 @@ py_test(
     deps = all_requirements,
 )
 
+# six is testonly in pypi_b_test, so @pypi//six is testonly as well.
+py_test(
+    name = "test_testonly_venv",
+    srcs = ["test_six.py"],
+    config_settings = {
+        "@rules_python//python/config_settings:venv": "pypi_b_test",
+    },
+    main = "test_six.py",
+    deps = ["@pypi//six"],
+)
+
 py_test(
     name = "test_all_testonly_requirements",
     srcs = ["test_six.py"],

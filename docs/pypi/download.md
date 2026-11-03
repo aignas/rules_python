@@ -176,14 +176,16 @@ A `pip.configure` tag changes the packages that a hub exposes:
 ```starlark
 pip.configure(
     hub_name = "pypi_hub",
-    dependency_groups = ["default", "group:dev;testonly"],
+    dependency_groups = ["default", "group:dev"],
 )
 ```
 
 The {obj}`pip.configure.dependency_groups` attribute selects the packages and
 defaults to `["*"]`, which selects every group. Multiple tags for the same hub
 are combined. Only the root module and the module that created the hub can
-change a hub; if both do, the root module wins.
+change a hub; if both do, the root module wins. A self reference such as
+`my-project[test]` in the `pyproject.toml` selects the optional dependencies
+of the project.
 
 Packages that are not part of the hub are ignored, so a single
 `pyproject.toml` can list tools that are missing from the lock file.
@@ -222,12 +224,12 @@ pip.configure(
 ```
 
 The dependencies are read from the {obj}`pip.parse.uv_lock` of the hub.
-Without a `uv.lock`, the dependencies are unknown and all packages of the hub
-are exposed, which is the behavior without a `pyproject.toml`.
+Without a `uv.lock`, the dependencies are unknown and the hub falls back to
+the packages it would expose without a `pyproject.toml`.
 
 #### Testonly Packages
 
-Append `;testonly` to a selector to make its packages testonly:
+Append `;testonly` to a selector to make the packages of a venv testonly:
 
 ```starlark
 pip.configure(
@@ -240,6 +242,10 @@ pip.configure(
 Testonly packages are left out of `all_requirements` in the generated
 `requirements.bzl` and listed in `all_testonly_requirements` instead. A
 package selected by both a testonly and a non-testonly group is not testonly.
+
+`;testonly` can't be used when changing a hub in place, because the wheels of
+the hub depend on its aliases. In the [Unified @pypi Hub](unified-pypi-hub), a
+package is testonly if it is testonly in any of the hubs or venvs.
 
 With a `uv.lock`, a package is only testonly if no non-testonly package
 depends on it. This also applies to the transitive dependencies, so in the

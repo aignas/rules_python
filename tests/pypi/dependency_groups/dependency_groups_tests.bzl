@@ -6,9 +6,11 @@ load("//python/private/pypi:dependency_groups.bzl", "select_dependency_groups", 
 _tests = []
 
 _PYPROJECT = struct(
+    name = "my-project",
     dependencies = ["main-pkg>=1.0"],
     optional_dependencies = {
         "Docs": ["docs-pkg"],
+        "all": ["My_Project[docs, grpc]"],
         "grpc": ["grpc-pkg"],
     },
     dependency_groups = {
@@ -29,6 +31,7 @@ def _test_select(env):
         (["group:test"], ["shared_pkg", "test_pkg"]),
         (["dev"], ["dev_pkg", "shared_pkg", "test_pkg"]),
         (["grpc"], ["grpc_pkg"]),
+        (["all"], ["docs_pkg", "grpc_pkg"]),
         (["optional:*"], ["docs_pkg", "grpc_pkg"]),
         (["group:*"], ["dev_pkg", "shared_pkg", "test_pkg"]),
         (["*"], ["dev_pkg", "docs_pkg", "grpc_pkg", "main_pkg", "shared_pkg", "test_pkg"]),
@@ -61,7 +64,7 @@ _tests.append(_test_select_testonly)
 
 def _test_select_errors(env):
     for specs, want in [
-        (["missing"], "Unknown dependency group 'missing'. Available groups: default, group:dev, group:test, optional:docs, optional:grpc"),
+        (["missing"], "Unknown dependency group 'missing'. Available groups: default, group:dev, group:test, optional:all, optional:docs, optional:grpc"),
         (["default;foo"], "Invalid dependency group specifier 'default;foo': the only supported modifier is 'testonly'"),
         (["transitive;testonly"], "The 'transitive' specifier does not support the 'testonly' modifier"),
     ]:
@@ -69,6 +72,7 @@ def _test_select_errors(env):
         env.expect.that_collection(failures).contains_exactly([want])
 
     _, failures = _select(["default"], pyproject = struct(
+        name = None,
         dependencies = [],
         optional_dependencies = {},
         dependency_groups = {
@@ -80,6 +84,7 @@ def _test_select_errors(env):
     env.expect.that_collection(failures).contains_exactly(["Cyclic dependency group includes: a, b"])
 
     _, failures = _select(["default"], pyproject = struct(
+        name = None,
         dependencies = [],
         optional_dependencies = {},
         dependency_groups = {"a": [{"include-group": "b"}]},

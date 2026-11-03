@@ -102,12 +102,21 @@ _tests.append(_test_venvs)
 
 def _test_in_place(env):
     got = _exposure(
-        _module(configure = [_configure(dependency_groups = ["dev;testonly"])]),
+        _module(configure = [_configure(dependency_groups = ["dev"])]),
         hubs = {"hub": _hub(pyproject = "pyproject.toml")},
     )
     env.expect.that_dict(got).contains_exactly({
-        "hub": ("hub", {"other_pkg": True}),
+        "hub": ("hub", {"other_pkg": False}),
     })
+
+    # The wheels depend on the aliases of the hub, so they can't be testonly.
+    got = _exposure(
+        _module(configure = [_configure(dependency_groups = ["dev;testonly"])]),
+        hubs = {"hub": _hub(pyproject = "pyproject.toml")},
+    )
+    env.expect.that_collection(got).contains_exactly([
+        "pip.configure() can only use ';testonly' when creating a venv, set 'venv' to a name different from the hub 'hub'",
+    ])
 
 _tests.append(_test_in_place)
 
@@ -155,6 +164,17 @@ def _test_pyproject_precedence(env):
     env.expect.that_dict(got).contains_exactly({
         "from_parse": ("hub", {"simple": False}),
         "hub": ("hub", {"other_pkg": False, "simple": False}),
+    })
+
+    # pip.default(pyproject_toml) is not used for the hubs of other modules.
+    got = _exposure(
+        _module(),
+        _module(name = "dep", is_root = False, configure = [_configure(venv = "venv", dependency_groups = ["default"])]),
+        hubs = {"hub": _hub(module_name = "dep")},
+        default_pyproject = "other.toml",
+    )
+    env.expect.that_dict(got).contains_exactly({
+        "venv": ("hub", {"other_pkg": False, "simple": False}),
     })
 
 _tests.append(_test_pyproject_precedence)

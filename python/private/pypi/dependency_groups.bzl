@@ -62,13 +62,23 @@ def select_dependency_groups(pyproject, specs, _fail = fail):
         for key in keys:
             selected[key] = testonly
 
+    # A self reference like `my-project[test]` selects the optional
+    # dependencies, but only one level deep.
+    project = normalize_name(pyproject.name or "")
     packages = {}
     for key, testonly in selected.items():
         for req in groups[key]:
-            name = requirement(req).name_
-            if not name:
-                continue
-            packages[name] = packages.get(name, True) and testonly
+            req = requirement(req)
+            names = [req.name_]
+            if req.name_ == project:
+                names = [
+                    requirement(r).name_
+                    for extra in req.extras
+                    for r in groups.get("optional:" + extra, [])
+                ]
+            for name in names:
+                if name:
+                    packages[name] = packages.get(name, True) and testonly
 
     return struct(packages = packages, transitive = transitive)
 

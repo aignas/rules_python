@@ -552,7 +552,8 @@ def _create_unified_hub_repo(mods):
     packages = {}
     extra_aliases = {}
 
-    # A package is testonly only if it is testonly in all hubs.
+    # An alias can't be less testonly than what it points to, so a package is
+    # testonly if it is testonly in any hub.
     testonly = {}
 
     for hub_name in hubs:
@@ -563,7 +564,7 @@ def _create_unified_hub_repo(mods):
                 packages[norm_pkg] = []
             if hub_name not in packages[norm_pkg]:
                 packages[norm_pkg].append(hub_name)
-            testonly[norm_pkg] = testonly.get(norm_pkg, True) and pkg_name in hub_testonly
+            testonly[norm_pkg] = testonly.get(norm_pkg, False) or pkg_name in hub_testonly
 
             extra = mods.extra_aliases.get(repos[hub_name], {}).get(norm_pkg, [])
             for alias_name in extra:
@@ -684,6 +685,8 @@ def _pip_impl(module_ctx):
             platform_config_settings = mods.platform_config_settings.get(hub_name, {}),
             groups = mods.hub_group_map.get(hub_name),
             testonly_packages = mods.testonly_packages.get(repo_name, []),
+            # Only the hubs and venvs with a custom exposure have an entry.
+            hide_unexposed_packages = repo_name in mods.testonly_packages,
         )
 
     _create_unified_hub_repo(mods)
@@ -1219,8 +1222,9 @@ Each item is one of:
   uses the {obj}`pip.parse.uv_lock` of the hub. Without a lock file all
   packages of the hub are exposed.
 
-Any item except `"transitive"` may be suffixed with `;testonly` to make its
-packages testonly. If several items select the same group, the last one wins.
+When creating a venv, any item except `"transitive"` may be suffixed with
+`;testonly` to make its packages testonly. If several items select the same
+group, the last one wins.
 See [Configuring Hub Exposure and Venvs](#pip-configure) for examples.
 
 :::{versionadded} VERSION_NEXT_FEATURE

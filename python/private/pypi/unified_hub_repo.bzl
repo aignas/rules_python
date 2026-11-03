@@ -138,7 +138,7 @@ unified_hub_repo = repository_rule(
         ),
         "testonly_packages": attr.string_list(
             default = [],
-            doc = "Packages that are testonly in every hub that provides them.",
+            doc = "Packages that are testonly in at least one hub.",
         ),
     },
     doc = "Private repository rule creating the automatic Unified PyPI Hub.",
