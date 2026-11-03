@@ -63,15 +63,14 @@ def hub_exposure(module_ctx, *, hubs, default_pyproject = None, _fail = fail):
 
     # The root module wins over the owner of the hub when both configure the
     # hub in place. Other modules can only create new venvs.
+    root_modules = [mod for mod in module_ctx.modules if mod.is_root]
+    root_name = root_modules[0].name if root_modules else None
     root_configured = {
         tag.hub_name: None
-        for mod in module_ctx.modules
-        if mod.is_root
+        for mod in root_modules
         for tag in mod.tags.configure
         if tag.venv in ("", tag.hub_name)
     }
-
-    root_module = [mod.name for mod in module_ctx.modules if mod.is_root][:1]
 
     configured = {}
     for mod in module_ctx.modules:
@@ -89,7 +88,7 @@ def hub_exposure(module_ctx, *, hubs, default_pyproject = None, _fail = fail):
             if venv != hub and venv in hubs:
                 _fail("pip.configure() venv '{}' conflicts with the existing hub of the same name".format(venv))
                 return None
-            if venv == hub and [d for d in tag.dependency_groups if d.endswith(";testonly")]:
+            if venv == hub and any([group.endswith(";testonly") for group in tag.dependency_groups]):
                 # The wheel repositories depend on the aliases of the hub, so
                 # those must not be testonly.
                 _fail("pip.configure() can only use ';testonly' when creating a venv, set 'venv' to a name different from the hub '{}'".format(hub))
@@ -109,7 +108,7 @@ def hub_exposure(module_ctx, *, hubs, default_pyproject = None, _fail = fail):
                 hub,
                 tag.pyproject_toml or
                 hubs[hub].pyproject or
-                (default_pyproject if [hubs[hub].module_name] == root_module else None),
+                (default_pyproject if hubs[hub].module_name == root_name else None),
                 tag.dependency_groups,
             )
             if venv in configured:

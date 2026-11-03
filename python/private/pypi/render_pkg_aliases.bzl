@@ -141,7 +141,8 @@ def render_pkg_aliases(
             for whl_name in group_whls
         }
 
-    exposed_packages = _normalize_package_names(exposed_packages)
+    if exposed_packages != None:
+        exposed_packages = [normalize_name(name) for name in exposed_packages]
     internal_visibility = _internal_visibility(aliases, has_groups = bool(requirement_cycles))
 
     files = {
@@ -164,15 +165,6 @@ def render_pkg_aliases(
     if requirement_cycles:
         files["_groups/BUILD.bazel"] = generate_group_library_build_bazel("", requirement_cycles)
     return files
-
-def _normalize_package_names(packages):
-    if packages == None:
-        return None
-
-    return {
-        normalize_name(package): None
-        for package in packages
-    }
 
 def _internal_visibility(aliases, has_groups = False):
     repo_names = {}

@@ -122,9 +122,9 @@ def _parse_modules(env, **kwargs):
             default_hub = subjects.str,
             exposed_packages = subjects.dict,
             hub_group_map = subjects.dict,
+            hub_repos = subjects.dict,
             hub_whl_map = subjects.dict,
             testonly_packages = subjects.dict,
-            venvs = subjects.dict,
             unified_hub_requirements_bzl = subjects.bool,
             whl_libraries = subjects.dict,
             whl_mods = subjects.dict,
@@ -832,7 +832,8 @@ def _test_configure_venvs(env):
         ),
     )
 
-    pypi.venvs().contains_exactly({
+    pypi.hub_repos().contains_exactly({
+        "pypi_a": "pypi_a",
         "venv_default": "pypi_a",
         "venv_dev": "pypi_a",
     })
@@ -862,7 +863,7 @@ def _test_configure_in_place(env):
         ),
     )
 
-    pypi.venvs().contains_exactly({})
+    pypi.hub_repos().contains_exactly({"pypi_a": "pypi_a"})
     pypi.exposed_packages().contains_exactly({"pypi_a": ["simple"]})
 
 _tests.append(_test_configure_in_place)

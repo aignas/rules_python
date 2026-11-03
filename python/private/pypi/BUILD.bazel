@@ -224,7 +224,6 @@ bzl_library(
     deps = [
         ":render_pkg_aliases",
         ":whl_config_setting",
-        "//python/private:normalize_name",
         "//python/private:text_util",
     ],
 )

@@ -228,7 +228,7 @@ def build_config(
                 unified_hub_requirements_bzl = True
             pyproject_toml = tag.pyproject_toml
             if pyproject_toml:
-                if mod.is_root or not defaults["pyproject_toml"]:
+                if mod.is_root:
                     defaults["pyproject_toml"] = pyproject_toml
                 pyproject = read_pyproject(module_ctx, pyproject_toml)
                 if pyproject.requires_python:
@@ -509,13 +509,12 @@ You cannot use both the additive_build_content and additive_build_content_file a
 
     # A venv is a filtered view of a hub. If it has the same name as its hub,
     # the hub itself is filtered.
-    venvs = {}
+    hub_repos = {hub: hub for hub in hubs}
     testonly_packages = {}
     for repo, info in exposure.items():
+        hub_repos[repo] = info.hub
         exposed_packages[repo] = sorted(info.packages)
         testonly_packages[repo] = sorted([name for name, testonly in info.packages.items() if testonly])
-        if repo != info.hub:
-            venvs[repo] = info.hub
 
     return struct(
         config = config,
@@ -526,8 +525,8 @@ You cannot use both the additive_build_content and additive_build_content_file a
         facts = simpleapi_cache.get_facts(),
         hub_group_map = hub_group_map,
         hub_whl_map = hub_whl_map,
+        hub_repos = hub_repos,
         testonly_packages = testonly_packages,
-        venvs = venvs,
         unified_hub_requirements_bzl = config.unified_hub_requirements_bzl,
         whl_libraries = whl_libraries,
         whl_mods = whl_mods,
@@ -544,8 +543,7 @@ def _create_unified_hub_repo(mods):
     if "pypi" in mods.hub_whl_map:
         return
 
-    repos = {hub: hub for hub in mods.hub_whl_map} | mods.venvs
-    hubs = sorted(repos)
+    hubs = sorted(mods.hub_repos)
     if mods.default_hub and mods.default_hub not in hubs:
         fail("default_hub '%s' is not a defined PyPI hub. Available hubs: %s" % (mods.default_hub, ", ".join(hubs)))
 
@@ -566,7 +564,7 @@ def _create_unified_hub_repo(mods):
                 packages[norm_pkg].append(hub_name)
             testonly[norm_pkg] = testonly.get(norm_pkg, False) or pkg_name in hub_testonly
 
-            extra = mods.extra_aliases.get(repos[hub_name], {}).get(norm_pkg, [])
+            extra = mods.extra_aliases.get(mods.hub_repos[hub_name], {}).get(norm_pkg, [])
             for alias_name in extra:
                 qual_alias = "%s:%s" % (norm_pkg, alias_name)
                 if qual_alias not in extra_aliases:
@@ -672,7 +670,7 @@ def _pip_impl(module_ctx):
         whl_library(name = name, **args)
 
     # The venvs reuse the hub's wheels and only differ in the exposed packages.
-    for repo_name, hub_name in ({hub: hub for hub in mods.hub_whl_map} | mods.venvs).items():
+    for repo_name, hub_name in mods.hub_repos.items():
         hub_repository(
             name = repo_name,
             repo_name = repo_name,
