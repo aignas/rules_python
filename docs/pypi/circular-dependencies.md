@@ -106,3 +106,29 @@ Alternatively, one could use `rules_python`'s patching features to remove one
 leg of the dependency manually, for instance, by making
 `apache-airflow-providers-postgres` not explicitly depend on `apache-airflow` or
 perhaps `apache-airflow-providers-common-sql`.
+
+## Grouping the cycles automatically
+
+With a {attr}`pip.parse.uv_lock` or a {attr}`pip.parse.pylock` that records the
+dependencies, set {attr}`pip.parse.experimental_automatic_requirement_cycles`
+to find the cycles in the dependency graph of the lock file and group them
+automatically:
+
+```starlark
+pip.parse(
+    hub_name = "pypi",
+    python_version = "3.13",
+    uv_lock = "//:uv.lock",
+    experimental_automatic_requirement_cycles = True,
+)
+```
+
+The groups are named `auto_<first member>`, e.g. `auto_sphinx`; the members
+can be the extras of the packages, e.g. `foo[bar]`, when a cycle goes through
+an extra. The groups in {attr}`pip.parse.experimental_requirement_cycles` take
+in the cycles that they overlap with.
+
+The graph of all of the lock files of a hub is used, so the groups are the
+same for all of the Python versions, and the markers of the dependencies are
+not used, so a cycle is grouped on all of the platforms. A `pylock.toml` needs
+to record the dependencies of the packages, which not all tools do.

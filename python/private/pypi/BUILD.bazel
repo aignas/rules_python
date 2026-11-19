@@ -113,6 +113,15 @@ bzl_library(
 )
 
 bzl_library(
+    name = "cycles",
+    srcs = ["cycles.bzl"],
+    deps = [
+        ":labels",
+        "//python/private:normalize_name",
+    ],
+)
+
+bzl_library(
     name = "deps",
     srcs = ["deps.bzl"],
     deps = ["//python/private:bazel_tools"],
@@ -155,6 +164,7 @@ bzl_library(
     name = "extension",
     srcs = ["extension.bzl"],
     deps = [
+        ":cycles",
         ":default_platforms",
         ":hub_builder",
         ":hub_exposure",
@@ -214,6 +224,7 @@ bzl_library(
     srcs = ["hub_builder.bzl"],
     deps = [
         ":attrs",
+        ":cycles",
         ":hash",
         ":labels",
         ":parse_requirements",

@@ -8,6 +8,7 @@ load("//python/private:text_util.bzl", "render")
 load("//python/private:version.bzl", "version")
 load("//python/private:version_label.bzl", "version_label")
 load(":attrs.bzl", "use_isolated")
+load(":cycles.bzl", "automatic_requirement_cycles")
 load(":hash.bzl", "hash")
 load(":labels.bzl", "group_member")
 load(":parse_requirements.bzl", "parse_requirements")
@@ -31,6 +32,7 @@ def hub_builder(
         whl_overrides,
         package_settings = {},
         build_mode = None,
+        cycle_graphs = None,
         minor_mapping,
         available_interpreters,
         simpleapi_download_fn,
@@ -47,6 +49,8 @@ def hub_builder(
             for each package.
         build_mode: {type}`callable | None` - returns the build mode of a
             normalized package name.
+        cycle_graphs: {type}`list[dict] | None` - the dependency graphs to
+            group the dependency cycles automatically.
         minor_mapping: {type}`dict[str, str]` the mapping between minor and full versions.
         available_interpreters: {type}`dict[str, Label]` The dictionary of available
             interpreters that have been registered using the `python` bzlmod extension.
@@ -107,6 +111,7 @@ def hub_builder(
         _whl_overrides = whl_overrides,
         _package_settings = package_settings,
         _build_mode = build_mode or (lambda _: ""),
+        _cycle_graphs = cycle_graphs,
         _logger = logger,
         _minor_mapping = minor_mapping,
         _available_interpreters = available_interpreters,
@@ -141,7 +146,12 @@ def _build(self):
         whl_map = whl_map,
         # Maps a wheel to a list of groups
         # dict[str group_name, list[str]]
-        group_map = self._group_map,
+        group_map = {
+            # The automatic groups may have the packages that the hub does
+            # not have, e.g. the ones for the other Python versions.
+            name: [m for m in members if m.partition("[")[0] in whl_map]
+            for name, members in self._group_map.items()
+        },
         # The per-package aliases for the hub to create.
         # dict[str package, list[str]]
         extra_aliases = {
@@ -231,7 +241,10 @@ def _pip_parse(self, module_ctx, pip_attr, default_envsubst = [], python_version
         config = self._config,
         target_platforms = pip_attr.target_platforms or ["{os}_{arch}"],
     )
-    _add_group_map(self, pip_attr.experimental_requirement_cycles)
+    requirement_cycles = pip_attr.experimental_requirement_cycles
+    if self._cycle_graphs != None:
+        requirement_cycles = automatic_requirement_cycles(self._cycle_graphs, requirement_cycles)
+    _add_group_map(self, requirement_cycles)
     _add_extra_aliases(self, pip_attr.extra_hub_aliases)
     _create_whl_repos(
         self,
