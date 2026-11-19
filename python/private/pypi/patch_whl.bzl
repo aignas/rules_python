@@ -21,6 +21,7 @@ the RECORD file natively in Starlark and repack using Bazel's zipper
 """
 
 load("//python/private:repo_utils.bzl", "repo_utils")
+load("//python/private:version.bzl", pep440 = "version")
 load(":parse_whl_name.bzl", "parse_whl_name")
 
 _DUMMY_SHA256 = "sha256=0"
@@ -62,17 +63,40 @@ def get_whl_patches(whl_patches, filename):
     """Select the patches that apply to a wheel filename.
 
     Args:
-        whl_patches: Patch labels mapped to JSON-encoded wheel names and strip levels.
+        whl_patches: Patch labels mapped to JSON-encoded args with the strip
+            level (`patch_strip`) and the wheel file names (`whls`) or the
+            package versions (`versions`, `*` for all versions) that the patch
+            applies to. The versions are compared with the PEP 440 `==`
+            semantics, so `1.2` matches `1.2.0` and `1.2.0+local`.
         filename: The wheel filename to match.
 
     Returns:
         A dictionary of matching patch labels mapped to strip levels.
     """
     patches = {}
+    version = None
     for patch_file, json_args in whl_patches.items():
-        patch_dst = struct(**json.decode(json_args))
-        if filename in patch_dst.whls:
-            patches[patch_file] = patch_dst.patch_strip
+        patch_dst = json.decode(json_args)
+        if filename in patch_dst.get("whls", []):
+            patches[patch_file] = patch_dst["patch_strip"]
+            continue
+
+        versions = patch_dst.get("versions", [])
+        if not versions:
+            continue
+
+        if "*" in versions:
+            patches[patch_file] = patch_dst["patch_strip"]
+            continue
+
+        if version == None:
+            version = parse_whl_name(filename).version
+        whl_version = pep440.parse(version)
+        for v in versions:
+            want = pep440.parse(v)
+            if whl_version and want and pep440.is_eq(whl_version, want) or v == version:
+                patches[patch_file] = patch_dst["patch_strip"]
+                break
     return patches
 
 def patch_whl(rctx, *, whl_path, patches):

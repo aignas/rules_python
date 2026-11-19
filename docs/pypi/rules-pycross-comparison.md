@@ -91,16 +91,9 @@ pip.whl_mods(
     data_exclude_glob = ["site-packages/tests/**"],
 )
 
-# planned: patch a package by name
-# pip.override(
-#     hub_name = "uv_deps",
-#     package = "matplotlib",
-#     patches = ["//:matplotlib.patch"],
-#     patch_strip = 1,
-# )
-# Today: one `pip.override` per wheel file, e.g. one for each platform.
 pip.override(
-    file = "matplotlib-3.10.9-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    hub_name = "uv_deps",
+    package = "matplotlib",
     patches = ["//:matplotlib.patch"],
     patch_strip = 1,
 )
@@ -121,7 +114,7 @@ The `BUILD.bazel` files keep using `@uv_deps//ipython`,
 | `ignore_dependencies` | none | planned |
 | `extra_dependencies` | {attr}`pip.whl_mods.data` (runfiles only) | partial, planned |
 | `install_exclude_globs` | {attr}`pip.whl_mods.srcs_exclude_glob`, {attr}`pip.whl_mods.data_exclude_glob`, {attr}`pip.parse.pip_data_exclude` | have; the globs start with `site-packages/` |
-| `post_install_patches` | {attr}`pip.override.patches` for a wheel file name | partial, per-package: planned |
+| `post_install_patches` | {attr}`pip.override.package` with {attr}`pip.override.patches` | have; the wheel is patched before it is extracted |
 | `site_paths`, `bin_paths`, `data_paths`, `include_paths` | a fixed `site-packages`, `bin`, `data`, `include` layout | not needed |
 | `wheel_library_tags` | none | planned |
 | `precompile` | the {flag}`--precompile` flag for all packages | partial |
@@ -216,7 +209,7 @@ module. Do not depend on the same distribution from both in one binary.
 | extras targets | requires {gh-pr}`4490` and {gh-pr}`4523` | have |
 | `ignore_dependencies`, `extra_dependencies`, `wheel_library_tags` | none | planned |
 | per-package `precompile` | global flags | partial |
-| `post_install_patches` | {attr}`pip.override.patches` per wheel file | partial |
+| `post_install_patches` | {attr}`pip.override.package` | have |
 | `install_exclude_globs` | {obj}`pip.whl_mods`, {attr}`pip.parse.pip_data_exclude` | have |
 | `build_mode` | {attr}`pip.parse.download_only` for `"never"` | partial |
 | `build_target` | none | planned |

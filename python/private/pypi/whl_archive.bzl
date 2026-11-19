@@ -72,9 +72,9 @@ A label-keyed-string dict with patch files as keys and json-strings as values.
 The keys are labels to the patch file to apply.
 
 The values describe what to apply the patch to and how to apply it.
-It is encoded as `json.encode(struct([whls], patch_strip])`,
-where `whls` is a `list[str`] of wheel filenames, and `patch_strip`
-is a number.
+It is encoded as `json.encode(struct([whls], [versions], patch_strip])`,
+where `whls` is a `list[str`] of wheel filenames, `versions` is a `list[str]`
+of package versions (`*` for all versions) and `patch_strip` is a number.
 
 So it will look something like this:
 ```
