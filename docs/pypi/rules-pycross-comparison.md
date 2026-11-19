@@ -186,8 +186,10 @@ all of them. You can define more platforms with {obj}`pip.default`.
 * Packages that are not available on every target platform are left out of
   `all_requirements`. rules_pycross includes them for the platforms where they
   are available.
-* Dependency cycles have to be listed in
-  {attr}`pip.parse.experimental_requirement_cycles`.
+* Dependency cycles are grouped automatically with
+  {attr}`pip.parse.experimental_automatic_requirement_cycles` or listed in
+  {attr}`pip.parse.experimental_requirement_cycles`; a whole cycle is one
+  group, without the marker-gated dependencies of rules_pycross.
 * `rules_python` does not install wheels in build actions; it extracts them
   in repository rules.
 
@@ -222,7 +224,7 @@ module. Do not depend on the same distribution from both in one binary.
 | one file with two hashes | files are looked up by the lock file hash | have |
 | glibc, musl and macOS version flags | {obj}`pip.default` platforms | partial |
 | `unavailable_package_mode` | {attr}`pip.parse.unavailable_package_mode`; no `fail_at_execution` | partial |
-| automatic dependency cycles | {attr}`pip.parse.experimental_requirement_cycles` | planned |
+| automatic dependency cycles | {attr}`pip.parse.experimental_automatic_requirement_cycles` | have |
 | uv `conflicts` | an error; use a separate hub for each conflicting group | gap |
 | per-repo transitions | none; the {flag}`--venv` flag selects a hub for the unified `@pypi` hub | gap |
 | `modules_mapping` without wheels | Gazelle `modules_mapping` | partial |

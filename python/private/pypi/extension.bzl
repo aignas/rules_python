@@ -22,6 +22,7 @@ load("//python/private:auth.bzl", "AUTH_ATTRS")
 load("//python/private:normalize_name.bzl", "normalize_name")
 load("//python/private:pyproject_utils.bzl", "read_pyproject", "version_from_requires_python")
 load("//python/private:repo_utils.bzl", "repo_utils")
+load(":cycles.bzl", "pylock_graph", "uv_lock_graph")
 load(":default_platforms.bzl", "default_platforms")
 load(":hub_builder.bzl", "hub_builder")
 load(":hub_exposure.bzl", "add_extras", "hub_exposure")
@@ -225,6 +226,20 @@ You cannot use both the additive_build_content and additive_build_content_file a
     simpleapi_cache = pypi_cache(mctx = module_ctx)
 
     is_pypi_hub_reserved = module_ctx.getenv("RULES_PYTHON_PYPI_HUB_RESERVED", "0") == "1"
+
+    # The dependency graphs of the lock files of each hub, so that the
+    # dependency cycles are grouped the same way for all of the Python
+    # versions of a hub.
+    cycle_graphs = {}
+    for mod in module_ctx.modules:
+        for pip_attr in mod.tags.parse:
+            if not pip_attr.experimental_automatic_requirement_cycles:
+                continue
+            graphs = cycle_graphs.setdefault(pip_attr.hub_name, [])
+            if pip_attr.uv_lock:
+                graphs.append(uv_lock_graph(toml.decode(module_ctx.read(pip_attr.uv_lock))))
+            elif pip_attr.pylock:
+                graphs.append(pylock_graph(toml.decode(module_ctx.read(pip_attr.pylock))))
     renamed_default_hub = None
 
     # The hub names as declared by the users, before the reserved `pypi` hub is
@@ -280,6 +295,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
                     whl_overrides = whl_overrides_for_hub(whl_overrides, pip_attr.hub_name),
                     package_settings = package_settings_for_hub(whl_overrides, pip_attr.hub_name),
                     build_mode = build_mode_for_hub(whl_overrides, pip_attr.hub_name),
+                    cycle_graphs = cycle_graphs.get(pip_attr.hub_name),
                     simpleapi_download_fn = simpleapi_download,
                     simpleapi_cache = simpleapi_cache,
                     # TODO @aignas 2025-09-06: do not use kwargs
@@ -802,6 +818,20 @@ def _pip_parse_ext_attrs(**kwargs):
         A dict of attributes.
     """
     attrs = dict({
+        "experimental_automatic_requirement_cycles": attr.bool(
+            doc = """\
+Group the packages that form dependency cycles automatically, so that they do
+not need to be listed in {attr}`experimental_requirement_cycles`. The cycles
+are found in the dependency graph of the {attr}`uv_lock` or the {attr}`pylock`
+(if it records the dependencies) of all of the `pip.parse` calls of the hub,
+using the dependencies and the optional dependencies of the packages. The
+groups are named `auto_<first package>`; the groups in
+{attr}`experimental_requirement_cycles` take in the cycles that they overlap
+with. Set it on all of the `pip.parse` calls of a hub.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
+        ),
         "experimental_extra_index_urls": attr.string_list(
             doc = """\
 May be removed in future releases.

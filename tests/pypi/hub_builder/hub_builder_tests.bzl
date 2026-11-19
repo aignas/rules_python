@@ -53,6 +53,7 @@ def hub_builder(
         minor_mapping = {},
         whl_overrides = {},
         build_mode = None,
+        cycle_graphs = None,
         simpleapi_download_fn = None,
         log_printer = None,
         available_interpreters = {}):
@@ -89,6 +90,7 @@ def hub_builder(
         ),
         whl_overrides = whl_overrides,
         build_mode = build_mode,
+        cycle_graphs = cycle_graphs,
         minor_mapping = minor_mapping or {"3.15": "3.15.19"},
         available_interpreters = available_interpreters or {
             "python_3_15_host": "unit_test_interpreter_target",
@@ -311,6 +313,32 @@ def _test_unavailable_package_mode_mismatch(env):
     ])
 
 _tests.append(_test_unavailable_package_mode_mismatch)
+
+def _test_automatic_requirement_cycles(env):
+    builder = hub_builder(env, cycle_graphs = [{"bar": ["foo"], "foo": ["bar"]}])
+    builder.pip_parse(
+        _mock_mctx(
+            os_name = "osx",
+            arch_name = "aarch64",
+            mock_files = {
+                "uv.lock": """{"package":[
+{"name":"foo","source":{"registry":"https://pypi.org/simple"},"version":"1.0","dependencies":[{"name":"bar"}],"wheels":[{"hash":"sha256:deadbeef","url":"https://files.pythonhosted.org/packages/foo-1.0-py3-none-any.whl"}]},
+{"name":"bar","source":{"registry":"https://pypi.org/simple"},"version":"1.0","dependencies":[{"name":"foo"}],"wheels":[{"hash":"sha256:deadbaaf","url":"https://files.pythonhosted.org/packages/bar-1.0-py3-none-any.whl"}]}
+]}""",
+            },
+        ),
+        _parse(
+            hub_name = "pypi",
+            python_version = "3.15",
+            requirements_lock = None,
+            uv_lock = "uv.lock",
+        ),
+    )
+    pypi = builder.build()
+
+    pypi.group_map().contains_exactly({"auto_bar": ["bar", "foo"]})
+
+_tests.append(_test_automatic_requirement_cycles)
 
 def _test_uv_lock_conflicting_versions(env):
     logs = {}

@@ -1,0 +1,3 @@
+load(":cycles_tests.bzl", "cycles_test_suite")
+
+cycles_test_suite(name = "cycles_tests")
