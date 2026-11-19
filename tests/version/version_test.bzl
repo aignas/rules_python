@@ -113,6 +113,63 @@ def _test_normalize_local(env):
 
 _tests.append(_test_normalize_local)
 
+def _test_normalize_local_integers(env):
+    env.expect.that_str(version.normalize("1.0+001.a.002")).equals("1.0+1.a.2")
+
+_tests.append(_test_normalize_local_integers)
+
+def _test_normalize_uppercase_v(env):
+    env.expect.that_str(version.normalize("V1.0")).equals("1.0")
+
+_tests.append(_test_normalize_uppercase_v)
+
+def _test_parse_invalid(env):
+    for input in [
+        "",
+        " ",
+        "v",
+        "1!",
+        "+local",
+        ".1",
+        "1.",
+        "1..2",
+        "*",
+        ".*",
+        "1.*.*",
+        "1.0 .*",
+        # Prefix matching is only for the public versions without suffixes
+        "1.0a1.*",
+        "1.0.post1.*",
+        "1.0.dev1.*",
+        "1.0+local.*",
+        # Placeholders can only be normalized
+        "{BUILD_TIMESTAMP}",
+        "1.{BUILD_TIMESTAMP}",
+        "1.0+{BUILD_USER}",
+    ]:
+        env.expect.where(input = input).that_bool(version.parse(input) == None).equals(True)
+
+_tests.append(_test_parse_invalid)
+
+def _test_parse_prefix(env):
+    got = version.parse("1.0.*")
+    env.expect.that_bool(got.is_prefix).equals(True)
+    env.expect.that_str(got.string).equals("1.0")
+
+    env.expect.that_bool(version.parse("1.0").is_prefix).equals(False)
+
+_tests.append(_test_parse_prefix)
+
+def _test_normalize_placeholders(env):
+    for input, want in {
+        "1.0+{BUILD_USER}": "1.0+{BUILD_USER}",
+        "1.0.dev{BUILD_TIMESTAMP}": "1.0.dev{BUILD_TIMESTAMP}",
+        "{VERSION}": "{VERSION}",
+    }.items():
+        env.expect.that_str(version.normalize(input)).equals(want)
+
+_tests.append(_test_normalize_placeholders)
+
 def _test_ordering(env):
     want = [
         # Taken from https://peps.python.org/pep-0440/#summary-of-permitted-suffixes-and-relative-ordering

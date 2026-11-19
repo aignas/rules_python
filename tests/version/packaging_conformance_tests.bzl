@@ -8,6 +8,7 @@ load("@rules_testing//lib:test_suite.bzl", "test_suite")
 load("//python/private:version.bzl", "version")  # buildifier: disable=bzl-visibility
 load(
     ":packaging_cases.bzl",
+    "INVALID_VERSIONS",
     "MATRIX",
     "MATRIX_VERSIONS",
     "NORMALIZED_VERSIONS",
@@ -40,6 +41,12 @@ def _test_packaging_valid_versions(env):
     env.expect.that_collection(failures).contains_exactly([])
 
 _tests.append(_test_packaging_valid_versions)
+
+def _test_packaging_invalid_versions(env):
+    failures = [v for v in INVALID_VERSIONS if version.parse(v) != None]
+    env.expect.that_collection(failures).contains_exactly([])
+
+_tests.append(_test_packaging_invalid_versions)
 
 def _test_packaging_normalized_versions(env):
     failures = []

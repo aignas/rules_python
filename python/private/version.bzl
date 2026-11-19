@@ -249,6 +249,9 @@ def accept_alnum(parser):
     for i in range(start, len(parser.input) + 1):
         if not accept(parser, _isalnum, _lower) and not accept_placeholder(parser):
             if i - start >= 1:
+                if ctx["norm"].isdigit():
+                    # PEP 440: Integer Normalization
+                    ctx["norm"] = str(int(ctx["norm"]))
                 return parser.accept()
             break
 
@@ -297,20 +300,13 @@ def accept_separator_alnum(parser):
     Returns:
       whether a separator and an alphanumeric string were accepted.
     """
-    ctx = parser.open_context()
+    parser.open_context()
 
     # PEP 440: Local version segments
     if not accept(parser, _in([".", "-", "_"]), "."):
         return parser.discard()
 
     if accept_alnum(parser):
-        # First character is separator; skip it.
-        value = ctx["norm"][1:]
-
-        # PEP 440: Integer Normalization
-        if value.isdigit():
-            value = str(int(value))
-            ctx["norm"] = ctx["norm"][0] + value
         return parser.accept()
 
     return parser.discard()
@@ -560,19 +556,20 @@ def _parse(version_str, strict = True, _fail = fail):
 
     if not strict:
         is_prefix = version.endswith(".*")
-        version = version.strip(" .*")  # PEP 440: Leading and Trailing Whitespace and ".*"
+        if is_prefix:
+            version = version[:-len(".*")]
 
     parser = _new(version)
-    accept(parser, _is("v"), "")  # PEP 440: Preceding v character
+    accept(parser, _in(["v", "V"]), "")  # PEP 440: Preceding v character
     accept_epoch(parser)
-    accept_release(parser)
+    has_release = accept_release(parser)
     accept_prerelease(parser)
     accept_postrelease(parser)
     accept_devrelease(parser)
     accept_local(parser)
 
     parser_ctx = parser.context()
-    if parser.input[parser_ctx["start"]:]:
+    if not has_release or parser.input[parser_ctx["start"]:]:
         if strict:
             _fail(
                 "Failed to parse PEP 440 version identifier '%s'." % parser.input,
@@ -613,6 +610,13 @@ def parse(version_str, strict = False, _fail = fail):
 
     parts = _parse(version_str, strict = strict, _fail = _fail)
     if not parts:
+        return None
+
+    if "{" in parts["norm"]:
+        if strict:
+            _fail("Cannot parse a version with placeholders: {}".format(version_str))
+
+        # The placeholders can be normalized, but they cannot be compared.
         return None
 
     if parts["is_prefix"] and (parts["local"] or parts["post"] or parts["dev"] or parts["pre"]):
