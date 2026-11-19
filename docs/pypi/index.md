@@ -13,6 +13,7 @@ Using PyPI packages (aka "pip install") involves the following main steps:
 With the advanced topics covered separately:
 * Dealing with [circular dependencies](./circular-dependencies).
 * Handling [multi-platform dependencies](../howto/multi-platform-pypi-deps).
+* [Migrating from rules_pycross](./rules-pycross-comparison).
 
 ```{toctree}
 lock
@@ -29,4 +30,5 @@ use
 circular-dependencies
 patch
 ../howto/multi-platform-pypi-deps
+rules-pycross-comparison
 ```
