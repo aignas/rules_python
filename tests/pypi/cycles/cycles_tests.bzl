@@ -31,15 +31,25 @@ _tests.append(_test_scc)
 
 def _test_graphs(env):
     env.expect.that_dict(uv_lock_graph({"package": [
-        {"dependencies": [{"name": "sphinxcontrib-serializinghtml"}], "dev-dependencies": {"dev": [{"name": "bar"}]}, "name": "Sphinx", "optional-dependencies": {"docs": [{"name": "Foo"}]}},
+        # The workspace members are not in the hub
+        {"dependencies": [{"name": "sphinx"}], "name": "my-project", "source": {"virtual": "."}},
+        {
+            "dependencies": [{"name": "sphinxcontrib-serializinghtml"}, {"name": "my-project"}],
+            # The development dependencies are not used
+            "dev-dependencies": {"dev": [{"name": "bar"}]},
+            "name": "Sphinx",
+            "optional-dependencies": {"Docs": [{"extra": ["bar"], "name": "Foo"}]},
+        },
         {"dependencies": [{"name": "sphinx"}], "name": "sphinxcontrib-serializinghtml"},
     ]})).contains_exactly({
-        "sphinx": ["sphinxcontrib_serializinghtml", "foo"],
+        "sphinx": ["sphinxcontrib_serializinghtml"],
+        "sphinx[docs]": ["sphinx", "foo", "foo[bar]"],
         "sphinxcontrib_serializinghtml": ["sphinx"],
     })
     env.expect.that_dict(pylock_graph({"packages": [
         {"dependencies": [{"name": "b"}, {"url": "https://example.org/x.whl"}], "name": "a"},
         {"name": "b"},
+        {"directory": {"path": "."}, "name": "my-project"},
     ]})).contains_exactly({
         "a": ["b"],
         "b": [],
@@ -60,14 +70,24 @@ def _test_automatic_requirement_cycles(env):
         "auto_x": ["x", "y"],
     })
 
-    # The user groups take in the overlapping cycles
+    # The user groups take in the overlapping cycles. The members are matched
+    # exactly, so `p` is not the same as `p[extra]`.
     env.expect.that_dict(automatic_requirement_cycles(graphs, {
         "mine": ["P[extra]", "z"],
         "other": ["r"],
+        "third": ["q"],
     })).contains_exactly({
         "auto_a": ["a", "b"],
         "auto_x": ["x", "y"],
-        "mine": ["P[extra]", "z", "r", "q"],
+        "mine": ["p[extra]", "z"],
+        "other": ["r", "q", "p"],
+    })
+
+    # A cycle through an extra groups the extra
+    env.expect.that_dict(automatic_requirement_cycles([
+        {"a": [], "a[x]": ["a", "b"], "b": ["a[x]"]},
+    ])).contains_exactly({
+        "auto_a_x": ["a[x]", "b"],
     })
 
 _tests.append(_test_automatic_requirement_cycles)

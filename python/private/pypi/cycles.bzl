@@ -1,30 +1,60 @@
 """Find the dependency cycles in the lock files to group the packages automatically."""
 
 load("//python/private:normalize_name.bzl", "normalize_name")
+load(":labels.bzl", "group_member")
+
+def _add_edge(graph, node, dep):
+    edges = graph.setdefault(node, [])
+    if dep not in edges:
+        edges.append(dep)
+
+def _dep_nodes(dep):
+    """The nodes of a dependency entry, e.g. `foo` and `foo[bar]`."""
+    name = normalize_name(dep["name"])
+    extras = dep.get("extra", [])
+    if type(extras) == type(""):
+        extras = [extras]
+    return [name] + [group_member("{}[{}]".format(name, e)) for e in extras]
 
 def uv_lock_graph(uv_lock):
     """Get the dependency graph of a uv.lock file.
 
-    The edges are the dependencies and the optional dependencies, because all
-    of the extras are enabled; the development dependencies are not used.
+    The nodes are the packages, e.g. `foo`, and their extras, e.g. `foo[bar]`,
+    like the targets of the hub. An extra depends on its package and on its
+    optional dependencies. The development dependencies and the workspace
+    members (the `virtual` and `editable` sources), which are not in the hub,
+    are not used.
 
     Args:
         uv_lock: {type}`dict` the decoded uv.lock contents.
 
     Returns:
-        {type}`dict[str, list[str]]` the normalized dependency names of each
-        normalized package name.
+        {type}`dict[str, list[str]]` the dependencies of each node.
     """
+    roots = {
+        normalize_name(pkg["name"]): None
+        for pkg in uv_lock.get("package", [])
+        if "virtual" in pkg.get("source", {}) or "editable" in pkg.get("source", {})
+    }
     graph = {}
     for pkg in uv_lock.get("package", []):
-        deps = list(pkg.get("dependencies", []))
-        for group in pkg.get("optional-dependencies", {}).values():
-            deps.extend(group)
-        edges = graph.setdefault(normalize_name(pkg["name"]), [])
-        for dep in deps:
-            name = normalize_name(dep["name"])
-            if name not in edges:
-                edges.append(name)
+        name = normalize_name(pkg["name"])
+        if name in roots:
+            continue
+        graph.setdefault(name, [])
+        for dep in pkg.get("dependencies", []):
+            if normalize_name(dep["name"]) in roots:
+                continue
+            for node in _dep_nodes(dep):
+                _add_edge(graph, name, node)
+        for extra, deps in pkg.get("optional-dependencies", {}).items():
+            node = group_member("{}[{}]".format(name, extra))
+            _add_edge(graph, node, name)
+            for dep in deps:
+                if normalize_name(dep["name"]) in roots:
+                    continue
+                for dep_node in _dep_nodes(dep):
+                    _add_edge(graph, node, dep_node)
     return graph
 
 def pylock_graph(pylock):
@@ -39,13 +69,14 @@ def pylock_graph(pylock):
     """
     graph = {}
     for pkg in pylock.get("packages", []):
-        edges = graph.setdefault(normalize_name(pkg["name"]), [])
+        if "directory" in pkg:
+            continue
+        name = normalize_name(pkg["name"])
+        graph.setdefault(name, [])
         for dep in pkg.get("dependencies", []):
             if "name" not in dep:
                 continue
-            name = normalize_name(dep["name"])
-            if name not in edges:
-                edges.append(name)
+            _add_edge(graph, name, normalize_name(dep["name"]))
     return graph
 
 def strongly_connected_components(graph):
@@ -122,6 +153,9 @@ def strongly_connected_components(graph):
                 if len(component) > 1:
                     components.append(sorted(component))
 
+        if work:
+            fail("BUG: the strongly connected components were not found in {} steps".format(max_steps))
+
     return sorted(components)
 
 def automatic_requirement_cycles(graphs, requirement_cycles = {}):
@@ -141,14 +175,16 @@ def automatic_requirement_cycles(graphs, requirement_cycles = {}):
     graph = {}
     for g in graphs:
         for name, edges in g.items():
-            merged = graph.setdefault(name, [])
+            graph.setdefault(name, [])
             for dep in edges:
-                if dep not in merged:
-                    merged.append(dep)
+                _add_edge(graph, name, dep)
 
-    ret = {name: list(members) for name, members in requirement_cycles.items()}
+    ret = {
+        name: [group_member(m) for m in members]
+        for name, members in requirement_cycles.items()
+    }
     group_by_member = {
-        normalize_name(member.partition("[")[0]): name
+        member: name
         for name, members in ret.items()
         for member in members
     }
@@ -159,18 +195,21 @@ def automatic_requirement_cycles(graphs, requirement_cycles = {}):
             if m in group_by_member
         })
         if not user_groups:
-            ret["auto_" + component[0]] = component
+            name = "auto_" + component[0].replace("[", "_").replace("]", "")
+            if name in ret:
+                fail("The automatic group '{}' clashes with a group in 'experimental_requirement_cycles'".format(name))
+            ret[name] = component
             continue
 
-        # The first user group takes in the cycle, the members of the other
-        # overlapping user groups are moved there too.
-        target = user_groups[0]
+        # A cycle needs to be in a single group, so the first user group takes
+        # in the cycle and the other user groups that it overlaps with.
+        target = ret[user_groups[0]]
         for other in user_groups[1:]:
-            ret[target].extend(ret.pop(other))
+            target.extend([m for m in ret.pop(other) if m not in target])
         for m in component:
-            if group_by_member.get(m) == None:
-                ret[target].append(m)
-        for m in ret[target]:
-            group_by_member[normalize_name(m.partition("[")[0])] = target
+            if m not in target:
+                target.append(m)
+        for m in target:
+            group_by_member[m] = user_groups[0]
 
     return ret

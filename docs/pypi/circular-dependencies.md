@@ -123,6 +123,12 @@ pip.parse(
 )
 ```
 
-The groups are named `auto_<first package>`. The groups in
-{attr}`pip.parse.experimental_requirement_cycles` take in the cycles that they
-overlap with.
+The groups are named `auto_<first member>`, e.g. `auto_sphinx`; the members
+can be the extras of the packages, e.g. `foo[bar]`, when a cycle goes through
+an extra. The groups in {attr}`pip.parse.experimental_requirement_cycles` take
+in the cycles that they overlap with.
+
+The graph of all of the lock files of a hub is used, so the groups are the
+same for all of the Python versions, and the markers of the dependencies are
+not used, so a cycle is grouped on all of the platforms. A `pylock.toml` needs
+to record the dependencies of the packages, which not all tools do.

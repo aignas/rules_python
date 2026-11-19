@@ -115,7 +115,10 @@ bzl_library(
 bzl_library(
     name = "cycles",
     srcs = ["cycles.bzl"],
-    deps = ["//python/private:normalize_name"],
+    deps = [
+        ":labels",
+        "//python/private:normalize_name",
+    ],
 )
 
 bzl_library(

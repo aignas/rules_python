@@ -235,11 +235,22 @@ You cannot use both the additive_build_content and additive_build_content_file a
         for pip_attr in mod.tags.parse:
             if not pip_attr.experimental_automatic_requirement_cycles:
                 continue
-            graphs = cycle_graphs.setdefault(pip_attr.hub_name, [])
+            graphs = cycle_graphs.setdefault((mod.name, pip_attr.hub_name), {})
+            lock = pip_attr.uv_lock or pip_attr.pylock
+            if lock in graphs:
+                continue
+            graph = None
             if pip_attr.uv_lock:
-                graphs.append(uv_lock_graph(toml.decode(module_ctx.read(pip_attr.uv_lock))))
+                graph = uv_lock_graph(toml.decode(module_ctx.read(pip_attr.uv_lock)))
             elif pip_attr.pylock:
-                graphs.append(pylock_graph(toml.decode(module_ctx.read(pip_attr.pylock))))
+                graph = pylock_graph(toml.decode(module_ctx.read(pip_attr.pylock)))
+            if not graph or not [edges for edges in graph.values() if edges]:
+                print((
+                    "WARNING: pip.parse(hub_name = '{}', experimental_automatic_requirement_cycles = True) " +
+                    "has no dependency graph, it needs a 'uv_lock' or a 'pylock' with the dependencies"
+                ).format(pip_attr.hub_name))  # buildifier: disable=print
+                continue
+            graphs[lock] = graph
     renamed_default_hub = None
 
     # The hub names as declared by the users, before the reserved `pypi` hub is
@@ -295,7 +306,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
                     whl_overrides = whl_overrides_for_hub(whl_overrides, pip_attr.hub_name),
                     package_settings = package_settings_for_hub(whl_overrides, pip_attr.hub_name),
                     build_mode = build_mode_for_hub(whl_overrides, pip_attr.hub_name),
-                    cycle_graphs = cycle_graphs.get(pip_attr.hub_name),
+                    cycle_graphs = cycle_graphs[(mod.name, pip_attr.hub_name)].values() if (mod.name, pip_attr.hub_name) in cycle_graphs else None,
                     simpleapi_download_fn = simpleapi_download,
                     simpleapi_cache = simpleapi_cache,
                     # TODO @aignas 2025-09-06: do not use kwargs
@@ -824,10 +835,11 @@ Group the packages that form dependency cycles automatically, so that they do
 not need to be listed in {attr}`experimental_requirement_cycles`. The cycles
 are found in the dependency graph of the {attr}`uv_lock` or the {attr}`pylock`
 (if it records the dependencies) of all of the `pip.parse` calls of the hub,
-using the dependencies and the optional dependencies of the packages. The
-groups are named `auto_<first package>`; the groups in
-{attr}`experimental_requirement_cycles` take in the cycles that they overlap
-with. Set it on all of the `pip.parse` calls of a hub.
+using the dependencies and the extras of the packages. The groups are named
+`auto_<first member>`; the groups in {attr}`experimental_requirement_cycles`
+take in the cycles that they overlap with. Setting it on one of the
+`pip.parse` calls of a hub enables it for the hub. The markers of the
+dependencies are not used, so a cycle is grouped on all of the platforms.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",

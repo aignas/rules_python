@@ -146,7 +146,12 @@ def _build(self):
         whl_map = whl_map,
         # Maps a wheel to a list of groups
         # dict[str group_name, list[str]]
-        group_map = self._group_map,
+        group_map = {
+            # The automatic groups may have the packages that the hub does
+            # not have, e.g. the ones for the other Python versions.
+            name: [m for m in members if m.partition("[")[0] in whl_map]
+            for name, members in self._group_map.items()
+        },
         # The per-package aliases for the hub to create.
         # dict[str package, list[str]]
         extra_aliases = {
