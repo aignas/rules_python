@@ -1,0 +1,32 @@
+load("//python:py_binary.bzl", "py_binary")
+load("//python:py_library.bzl", "py_library")
+load("//python:py_test.bzl", "py_test")
+
+py_library(
+    name = "workloads",
+    srcs = [
+        "starlark_shim.py",
+        "workloads.py",
+    ],
+    data = [
+        "//python/private:enum.bzl",
+        "//python/private:version.bzl",
+        "//python/private/pypi:bzl",
+    ],
+    deps = ["//python/runfiles"],
+)
+
+# Print the benchmark results with:
+#
+#     bazel run //tests/perf:benchmark
+py_binary(
+    name = "benchmark",
+    srcs = ["benchmark.py"],
+    deps = [":workloads"],
+)
+
+py_test(
+    name = "steps_test",
+    srcs = ["steps_test.py"],
+    deps = [":workloads"],
+)
