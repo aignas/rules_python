@@ -26,7 +26,6 @@ load(":default_platforms.bzl", "default_platforms")
 load(":hub_builder.bzl", "hub_builder")
 load(":hub_exposure.bzl", "add_extras", "hub_exposure")
 load(":hub_repository.bzl", "hub_repository", "whl_config_settings_to_json")
-load(":parse_whl_name.bzl", "parse_whl_name")
 load(":pep508_env.bzl", "env")
 load(":pip_repository_attrs.bzl", "ATTRS")
 load(":platform.bzl", _plat = "platform")
@@ -34,6 +33,7 @@ load(":pypi_cache.bzl", "pypi_cache")
 load(":simpleapi_download.bzl", "simpleapi_download")
 load(":unified_hub_repo.bzl", "unified_hub_repo")
 load(":whl_library.bzl", "whl_library")
+load(":whl_overrides.bzl", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")
 
 def _whl_mods_impl(whl_mods_dict):
     """Implementation of the pip.whl_mods tag class.
@@ -214,36 +214,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
 
     config = build_config(module_ctx = module_ctx, enable_pipstar_extract = enable_pipstar_extract)
 
-    # TODO @aignas 2025-06-03: Merge override API with the builder?
-    _overriden_whl_set = {}
-    whl_overrides = {}
-    for module in module_ctx.modules:
-        for attr in module.tags.override:
-            if not module.is_root:
-                # Overrides are only supported in root modules. Silently
-                # ignore the override:
-                continue
-
-            if not attr.file.endswith(".whl"):
-                fail("Only whl overrides are supported at this time")
-
-            whl_name = normalize_name(parse_whl_name(attr.file).distribution)
-
-            if attr.file in _overriden_whl_set:
-                fail("Duplicate module overrides for '{}'".format(attr.file))
-            _overriden_whl_set[attr.file] = None
-
-            for patch in attr.patches:
-                if whl_name not in whl_overrides:
-                    whl_overrides[whl_name] = {}
-
-                if patch not in whl_overrides[whl_name]:
-                    whl_overrides[whl_name][patch] = struct(
-                        patch_strip = attr.patch_strip,
-                        whls = [],
-                    )
-
-                whl_overrides[whl_name][patch].whls.append(attr.file)
+    whl_overrides = parse_whl_overrides(module_ctx.modules)
 
     # Used to track all the different pip hubs and the spoke pip Python
     # versions.
@@ -301,7 +272,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
                     name = hub_name,
                     module_name = mod.name,
                     config = config,
-                    whl_overrides = whl_overrides,
+                    whl_overrides = whl_overrides_for_hub(whl_overrides, hub_name),
                     simpleapi_download_fn = simpleapi_download,
                     simpleapi_cache = simpleapi_cache,
                     # TODO @aignas 2025-09-06: do not use kwargs
@@ -373,6 +344,13 @@ You cannot use both the additive_build_content and additive_build_content_file a
             pyproject = hub_pyproject.get(hub.name),
             packages = out.whl_map.keys(),
         )
+
+    errors = unmatched_whl_overrides(whl_overrides, {
+        name: hub.packages
+        for name, hub in hubs.items()
+    })
+    if errors:
+        fail("\n".join(errors))
 
     exposure = hub_exposure(
         module_ctx,
@@ -1072,8 +1050,30 @@ _override_tag = tag_class(
             doc = """\
 The Python distribution file name which needs to be patched. This will be
 applied to all repositories that setup this distribution via the pip.parse tag
-class.""",
-            mandatory = True,
+class.
+
+Exactly one of `file` or {attr}`package` needs to be set.""",
+        ),
+        "hub_name": attr.string(
+            doc = """\
+The hub that the {attr}`package` override applies to. If empty, it applies to
+all of the hubs.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
+        ),
+        "package": attr.string(
+            doc = """\
+The package which needs to be patched, e.g. `foo`, or a specific version of it,
+e.g. `foo@1.2.3`. The version is matched against the version in the wheel file
+name. The patches apply to all of the wheels of the package, including the
+wheels that are built from an sdist, so that a single override works on all of
+the platforms.
+
+Exactly one of {attr}`file` or `package` needs to be set.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
         ),
         "patch_strip": attr.int(
             default = 0,

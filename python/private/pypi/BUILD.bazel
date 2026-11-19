@@ -159,7 +159,6 @@ bzl_library(
         ":hub_builder",
         ":hub_exposure",
         ":hub_repository",
-        ":parse_whl_name",
         ":pep508_env",
         ":pip_repository_attrs",
         ":platform",
@@ -167,6 +166,7 @@ bzl_library(
         ":simpleapi_download",
         ":unified_hub_repo",
         ":whl_library",
+        ":whl_overrides",
         "//python/private:auth",
         "//python/private:normalize_name",
         "//python/private:pyproject_utils",
@@ -571,6 +571,15 @@ bzl_library(
     deps = [
         ":whl_library_deps_targets",
         ":whl_library_srcs",
+    ],
+)
+
+bzl_library(
+    name = "whl_overrides",
+    srcs = ["whl_overrides.bzl"],
+    deps = [
+        ":parse_whl_name",
+        "//python/private:normalize_name",
     ],
 )
 

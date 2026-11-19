@@ -18,6 +18,7 @@ load("@rules_testing//lib:test_suite.bzl", "test_suite")
 load(
     "//python/private/pypi:patch_whl.bzl",
     "fix_record_content",
+    "get_whl_patches",
     "patched_whl_name",
     "zipper_params_content",
 )  # buildifier: disable=bzl-visibility
@@ -155,6 +156,28 @@ def _test_zipper_params_unsupported_names(env):
     env.expect.that_bool(got_nl == None).equals(True)
 
 _tests.append(_test_zipper_params_unsupported_names)
+
+def _test_get_whl_patches(env):
+    whl_patches = {
+        "//:all.patch": json.encode({"patch_strip": 1, "versions": ["*"]}),
+        "//:file.patch": json.encode({"patch_strip": 0, "whls": ["foo-1.0-py3-none-any.whl"]}),
+        "//:v2.patch": json.encode({"patch_strip": 2, "versions": ["2.0"]}),
+    }
+
+    for filename, want in {
+        "foo-1.0-cp313-cp313-manylinux_2_17_x86_64.whl": {"//:all.patch": 1},
+        "foo-1.0-py3-none-any.whl": {"//:all.patch": 1, "//:file.patch": 0},
+        "foo-2.0-py3-none-any.whl": {"//:all.patch": 1, "//:v2.patch": 2},
+    }.items():
+        env.expect.where(filename = filename).that_dict(get_whl_patches(whl_patches, filename)).contains_exactly(want)
+
+    # The args written by older versions only have `whls`
+    env.expect.that_dict(get_whl_patches(
+        {"//:file.patch": json.encode({"patch_strip": 0, "whls": ["foo-1.0-py3-none-any.whl"]})},
+        "foo-1.0-py3-none-any.whl",
+    )).contains_exactly({"//:file.patch": 0})
+
+_tests.append(_test_get_whl_patches)
 
 def patch_whl_test_suite(name):
     """Create the test suite.

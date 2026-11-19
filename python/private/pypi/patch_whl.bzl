@@ -62,17 +62,31 @@ def get_whl_patches(whl_patches, filename):
     """Select the patches that apply to a wheel filename.
 
     Args:
-        whl_patches: Patch labels mapped to JSON-encoded wheel names and strip levels.
+        whl_patches: Patch labels mapped to JSON-encoded args with the strip
+            level (`patch_strip`) and the wheel file names (`whls`) or the
+            package versions (`versions`, `*` for all versions) that the patch
+            applies to.
         filename: The wheel filename to match.
 
     Returns:
         A dictionary of matching patch labels mapped to strip levels.
     """
     patches = {}
+    version = None
     for patch_file, json_args in whl_patches.items():
-        patch_dst = struct(**json.decode(json_args))
-        if filename in patch_dst.whls:
-            patches[patch_file] = patch_dst.patch_strip
+        patch_dst = json.decode(json_args)
+        if filename in patch_dst.get("whls", []):
+            patches[patch_file] = patch_dst["patch_strip"]
+            continue
+
+        versions = patch_dst.get("versions", [])
+        if not versions:
+            continue
+
+        if version == None:
+            version = parse_whl_name(filename).version
+        if "*" in versions or version in versions:
+            patches[patch_file] = patch_dst["patch_strip"]
     return patches
 
 def patch_whl(rctx, *, whl_path, patches):
