@@ -157,7 +157,7 @@ all of them. You can define more platforms with {obj}`pip.default`.
 | `@repo//pkg` | `@hub//pkg` |
 | `@repo//pkg:[]`, `@repo//pkg:[extra]` | the same, requires {gh-pr}`4490` |
 | `@repo//pkg:wheel` | `@hub//pkg:whl` |
-| `@repo//pkg:sdist` | planned |
+| `@repo//pkg:sdist` | `@hub//pkg:sdist`, with a `uv.lock` or a `pylock.toml` |
 | `@repo//pkg:dist_info` | `@hub//pkg:dist_info` |
 | `@repo//pkg:data` | `@hub//pkg:data` |
 | `@repo//:requirements.bzl` | `@hub//:requirements.bzl` |
@@ -215,7 +215,7 @@ module. Do not depend on the same distribution from both in one binary.
 | `install_exclude_globs` | {obj}`pip.whl_mods`, {attr}`pip.parse.pip_data_exclude` | have |
 | `build_mode` | {attr}`pip.override.build_mode` | have |
 | `build_target` | {attr}`pip.override.replace_with` | have |
-| `:sdist` target | none | planned |
+| `:sdist` target | `@hub//pkg:sdist` (lock files only) | have |
 | sdist builds in build actions, build backends, cross-compilation | `pip wheel` on the host | planned: extension point |
 | Rust builds (`maturin`, `setuptools-rust`) | none | gap |
 | `pre_build_patches` | none | planned |

@@ -358,6 +358,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
     hub_whl_map = {}
     hub_group_map = {}
     unavailable_package_modes = {}
+    hub_sdists = {}
     exposed_packages = {}
     extra_aliases = {}
     whl_libraries = {}
@@ -375,6 +376,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
         extra_aliases[hub.name] = out.extra_aliases
         hub_group_map[hub.name] = out.group_map
         unavailable_package_modes[hub.name] = out.unavailable_package_mode
+        hub_sdists[hub.name] = out.sdists
         hub_whl_map[hub.name] = out.whl_map
         hubs[hub.name] = struct(
             module_name = hub.module_name,
@@ -416,6 +418,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
         hub_group_map = hub_group_map,
         hub_whl_map = hub_whl_map,
         unavailable_package_modes = unavailable_package_modes,
+        hub_sdists = hub_sdists,
         unified_hub_requirements_bzl = config.unified_hub_requirements_bzl,
         whl_libraries = whl_libraries,
         whl_mods = whl_mods,
@@ -567,6 +570,10 @@ def _pip_impl(module_ctx):
             # The hubs configured with `pip.configure` hide the other packages.
             hide_unexposed_packages = hub_name in mods.configured_hubs,
             unavailable_package_mode = mods.unavailable_package_modes.get(hub_name, "error"),
+            sdists = {
+                name: json.encode(by_version)
+                for name, by_version in mods.hub_sdists.get(hub_name, {}).items()
+            },
         )
 
     _create_unified_hub_repo(mods)

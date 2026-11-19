@@ -72,7 +72,7 @@ def lock_entry(
         direct_requirement = direct_requirement,
     )
 
-def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_args = None, build_mode = None):
+def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_args = None, build_mode = None, sdists = None):
     """Select the distributions of the locked packages for each platform.
 
     Args:
@@ -85,6 +85,8 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
             through.
         build_mode: {type}`callable | None` returns the build mode of a
             normalized package name, `always` ignores the wheels.
+        sdists: {type}`dict[str, struct] | None` if set, the {func}`lock_dist`
+            sdist of each normalized package name is added to it.
 
     Returns:
         {type}`list[struct]` The same format as `parse_requirements`.
@@ -94,6 +96,8 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
         name = entry.name
         version = entry.version
         norm_name = normalize_name(name)
+        if sdists != None and entry.sdist:
+            sdists[norm_name] = entry.sdist
         info = packages.setdefault(norm_name, {
             "resolved_srcs": [],
             "versions": {},

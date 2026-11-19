@@ -25,6 +25,23 @@ package(default_visibility = ["//visibility:public"])
 exports_files(["requirements.bzl"])
 """
 
+def _render_sdist(by_version):
+    """Render the `sdist` target, which selects the sdist by the Python version."""
+    labels = {v: None for v in by_version.values()}
+    if len(labels) == 1:
+        actual = repr(labels.keys()[0])
+    else:
+        actual = render.select({
+            "//_config:is_cp{}".format(version.replace(".", "")): label
+            for version, label in sorted(by_version.items())
+        })
+    return """
+alias(
+    name = "sdist",
+    actual = {},
+)
+""".format(actual)
+
 def _impl(rctx):
     if rctx.attr.hide_unexposed_packages:
         bzl_packages = rctx.attr.packages
@@ -45,6 +62,10 @@ def _impl(rctx):
         # Only rendered when it is not the default
         unavailable_package_mode = "" if rctx.attr.unavailable_package_mode == "error" else rctx.attr.unavailable_package_mode,
     )
+    for name, by_version in rctx.attr.sdists.items():
+        path = "{}/BUILD.bazel".format(name)
+        if path in aliases:
+            aliases[path] += _render_sdist(json.decode(by_version))
     for path, contents in aliases.items():
         rctx.file(path, contents)
 
@@ -105,6 +126,9 @@ unless `hide_unexposed_packages` is set.
         "repo_name": attr.string(
             mandatory = True,
             doc = "The apparent name of the repo. This is needed because in bzlmod, the name attribute becomes the canonical name.",
+        ),
+        "sdists": attr.string_dict(
+            doc = "The JSON encoded labels of the sdist of each package for each Python version.",
         ),
         "unavailable_package_mode": attr.string(
             default = "error",

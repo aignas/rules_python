@@ -79,6 +79,7 @@ def hub_builder(
         # dict[str package, None]
         _exposed_packages = {},  # modified by _add_exposed_packages
         _unavailable_package_mode = {},  # modified by _pip_parse
+        _sdists = {},  # modified by _pip_parse
         # Map of the per-package aliases.
         # The nested dict is a dict acting as a set.
         # dict[str whl_name, dict[str alias_name, bool]]
@@ -136,6 +137,7 @@ def _build(self):
         exposed_packages = [],
         whl_libraries = {},
         unavailable_package_mode = "error",
+        sdists = {},
     )
     if self._logger.failed():
         return ret
@@ -172,6 +174,9 @@ def _build(self):
         whl_libraries = self._whl_libraries,
         # What to do when a package is not available.
         unavailable_package_mode = self._unavailable_package_mode.get("mode", "error"),
+        # The sdist file of each package for each Python version.
+        # dict[str package, dict[str version, str label]]
+        sdists = self._sdists,
     )
 
 def _pip_parse(self, module_ctx, pip_attr, default_envsubst = [], python_version = None):
@@ -606,6 +611,7 @@ def _create_whl_repos(
     """
     logger = self._logger
     platforms = self._platforms[python_version]
+    sdists = {}
     if getattr(pip_attr, "pylock", None) and (
         pip_attr.requirements_lock or pip_attr.requirements_by_platform or
         pip_attr.requirements_linux or pip_attr.requirements_darwin or pip_attr.requirements_windows
@@ -630,12 +636,31 @@ def _create_whl_repos(
         pylock = getattr(pip_attr, "pylock", None),
         local_wheels = getattr(pip_attr, "local_wheels", []),
         build_mode = self._build_mode,
+        sdists = sdists,
         platforms = platforms,
         extra_pip_args = pip_attr.extra_pip_args,
         get_index_urls = self._get_index_urls.get(python_version),
         toml_decode = getattr(self._config, "toml_decode", None),
         logger = logger,
     )
+
+    for name, dist in sdists.items():
+        # A lazily downloaded file for the `:sdist` target of the hub.
+        repo_name = "{}_{}_{}_file".format(self.name, version_label(python_version), whl_repo_name(dist.filename, dist.digest))
+        self._whl_libraries[repo_name] = {
+            "filename": dist.filename,
+            "integrity": hash.integrity(dist.digest),
+            "sdist_file": True,
+            "urls": [dist.url],
+        } | {
+            k: v
+            for k, v in {
+                "auth_patterns": self._config.auth_patterns or pip_attr.auth_patterns,
+                "netrc": self._config.netrc or pip_attr.netrc,
+            }.items()
+            if v
+        }
+        self._sdists.setdefault(name, {})[_major_minor_version(python_version)] = "@{}//:{}".format(repo_name, dist.filename)
 
     _add_exposed_packages(self, {
         whl.name: None
