@@ -16,6 +16,7 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//python:py_binary.bzl", "py_binary")
 load("//python:py_library.bzl", "py_library")
 load("//python/private:distribution_filegroup.bzl", "distribution_filegroup")
+load(":extra_dep.bzl", "requested_extra")
 
 package(default_visibility = ["//:__subpackages__"])
 
@@ -33,6 +34,13 @@ py_library(
         "wheel_record_rewriter.py",
     ],
     visibility = ["//tests:__subpackages__"],
+)
+
+# The extra requested by the `extra_dep` targets in the whl repositories.
+requested_extra(
+    name = "requested_extra",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
 )
 
 alias(
@@ -108,6 +116,16 @@ bzl_library(
     name = "deps",
     srcs = ["deps.bzl"],
     deps = ["//python/private:bazel_tools"],
+)
+
+bzl_library(
+    name = "extra_dep",
+    srcs = ["extra_dep.bzl"],
+    deps = [
+        "//python/private:py_cc_link_params_info",
+        "//python/private:py_info",
+        "//python/private:reexports",
+    ],
 )
 
 bzl_library(
@@ -365,6 +383,7 @@ bzl_library(
     name = "pkg_aliases",
     srcs = ["pkg_aliases.bzl"],
     deps = [
+        ":extra_dep",
         ":labels",
         ":whl_library_deps_targets",
         "//python:py_library",
@@ -623,8 +642,8 @@ bzl_library(
     srcs = ["whl_library_deps_targets.bzl"],
     deps = [
         ":env_marker_setting",
+        ":extra_dep",
         ":labels",
-        ":missing_package",
         ":pep508_deps",
         "//python:py_library",
         "//python/private:normalize_name",

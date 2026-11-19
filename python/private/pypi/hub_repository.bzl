@@ -15,7 +15,7 @@
 ""
 
 load("//python/private:text_util.bzl", "render")
-load(":render_pkg_aliases.bzl", "available_extras", "render_multiplatform_pkg_aliases")
+load(":render_pkg_aliases.bzl", "render_multiplatform_pkg_aliases")
 load(":whl_config_setting.bzl", "whl_config_setting")
 
 _BUILD_FILE_CONTENTS = """\
@@ -57,9 +57,7 @@ def _impl(rctx):
         "config.bzl",
         rctx.attr._config_template,
         substitutions = {
-            # The available extras of each package for the spoke repositories
-            # to check if the extras of their dependencies are available.
-            "%%PACKAGES%%": render.dict(available_extras(whl_map), value_repr = render.list),
+            "%%PACKAGES%%": render.dict(rctx.attr.whl_map, value_repr = lambda x: "None"),
         },
     )
     rctx.template("requirements.bzl", rctx.attr._requirements_bzl_template, substitutions = {
