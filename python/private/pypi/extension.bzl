@@ -227,6 +227,10 @@ You cannot use both the additive_build_content and additive_build_content_file a
     is_pypi_hub_reserved = module_ctx.getenv("RULES_PYTHON_PYPI_HUB_RESERVED", "0") == "1"
     renamed_default_hub = None
 
+    # The hub names as declared by the users, before the reserved `pypi` hub is
+    # renamed.
+    declared_hub_names = {}
+
     for mod in module_ctx.modules:
         for pip_attr in mod.tags.parse:
             python_version = pip_attr.python_version
@@ -267,12 +271,13 @@ You cannot use both the additive_build_content and additive_build_content_file a
                         ),
                     )  # buildifier: disable=print
 
+            declared_hub_names[hub_name] = pip_attr.hub_name
             if hub_name not in pip_hub_map:
                 builder = hub_builder(
                     name = hub_name,
                     module_name = mod.name,
                     config = config,
-                    whl_overrides = whl_overrides_for_hub(whl_overrides, hub_name),
+                    whl_overrides = whl_overrides_for_hub(whl_overrides, pip_attr.hub_name),
                     simpleapi_download_fn = simpleapi_download,
                     simpleapi_cache = simpleapi_cache,
                     # TODO @aignas 2025-09-06: do not use kwargs
@@ -346,7 +351,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
         )
 
     errors = unmatched_whl_overrides(whl_overrides, {
-        name: hub.packages
+        declared_hub_names.get(name, name): hub.packages
         for name, hub in hubs.items()
     })
     if errors:
@@ -1052,12 +1057,17 @@ The Python distribution file name which needs to be patched. This will be
 applied to all repositories that setup this distribution via the pip.parse tag
 class.
 
-Exactly one of `file` or {attr}`package` needs to be set.""",
+Exactly one of `file` or {attr}`pip.override.package` needs to be set.
+
+:::{versionchanged} VERSION_NEXT_FEATURE
+It is no longer mandatory, use {attr}`pip.override.package` to patch all of the
+wheels of a package.
+:::""",
         ),
         "hub_name": attr.string(
             doc = """\
-The hub that the {attr}`package` override applies to. If empty, it applies to
-all of the hubs.
+The hub that the {attr}`pip.override.package` override applies to. If empty,
+it applies to all of the hubs.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",
@@ -1065,12 +1075,13 @@ all of the hubs.
         "package": attr.string(
             doc = """\
 The package which needs to be patched, e.g. `foo`, or a specific version of it,
-e.g. `foo@1.2.3`. The version is matched against the version in the wheel file
-name. The patches apply to all of the wheels of the package, including the
-wheels that are built from an sdist, so that a single override works on all of
-the platforms.
+e.g. `foo@1.2.3`. The version is compared with the version in the wheel file
+name using the PEP 440 `==` semantics, so `foo@1.2` matches `foo-1.2.0+cpu`. A
+version that matches no wheel is ignored. The patches apply to all of the wheels
+of the package, including the wheels that are built from an sdist, so that a
+single override works on all of the platforms.
 
-Exactly one of {attr}`file` or `package` needs to be set.
+Exactly one of {attr}`pip.override.file` or `package` needs to be set.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",

@@ -57,7 +57,10 @@ def parse_whl_overrides(modules, *, _fail = fail):
                     patches[patch].whls.append(attr.file)
                 continue
 
-            name, _, version = attr.package.partition("@")
+            name, sep, version = attr.package.partition("@")
+            if (sep and not version) or not name or [c for c in "=<>!~ ;[".elems() if c in attr.package]:
+                _fail("pip.override(package = '{}') needs to be a package name or '<name>@<version>'".format(attr.package))
+                continue
             whl_name = normalize_name(name)
             key = (attr.hub_name, whl_name, version)
             if key in seen_packages:
@@ -71,7 +74,7 @@ def parse_whl_overrides(modules, *, _fail = fail):
             patches = packages.setdefault(attr.hub_name, {}).setdefault(whl_name, {})
             for patch in attr.patches:
                 if patch in patches and patches[patch].patch_strip != attr.patch_strip:
-                    _fail("The patch '{}' for package '{}' is used with different 'patch_strip' values".format(patch, attr.package))
+                    _fail("The patch '{}' for package '{}' is used with different 'patch_strip' values, use a copy of the patch file".format(patch, attr.package))
                     continue
                 patches.setdefault(patch, struct(
                     patch_strip = attr.patch_strip,
@@ -110,14 +113,16 @@ def whl_overrides_for_hub(overrides, hub_name, *, _fail = fail):
                     continue
 
                 if existing.patch_strip != args.patch_strip:
-                    _fail("The patch '{}' for package '{}' is used with different 'patch_strip' values".format(patch, whl_name))
+                    _fail("The patch '{}' for package '{}' is used with different 'patch_strip' values, use a copy of the patch file".format(patch, whl_name))
                     continue
 
-                whl_patches[patch] = struct(
-                    patch_strip = existing.patch_strip,
-                    whls = getattr(existing, "whls", []),
-                    versions = getattr(existing, "versions", []) + args.versions,
-                )
+                merged = {
+                    "patch_strip": existing.patch_strip,
+                    "versions": getattr(existing, "versions", []) + args.versions,
+                }
+                if getattr(existing, "whls", None):
+                    merged["whls"] = existing.whls
+                whl_patches[patch] = struct(**merged)
 
     return ret
 

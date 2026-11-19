@@ -47,7 +47,7 @@ def _test_file_and_package(env):
 
     env.expect.that_dict(_encode(whl_overrides_for_hub(got, "pypi"))).contains_exactly({
         "foo": {
-            "//:all.patch": {"patch_strip": 0, "versions": ["*", "2.0"], "whls": []},
+            "//:all.patch": {"patch_strip": 0, "versions": ["*", "2.0"]},
             "//:file.patch": {"patch_strip": 1, "whls": ["foo-1.0-py3-none-any.whl"]},
             "//:v2.patch": {"patch_strip": 0, "versions": ["2.0"]},
         },
@@ -81,6 +81,8 @@ def _test_errors(env):
         ([_override(file = "foo-1.0-py3-none-any.whl", package = "foo")], "pip.override needs exactly one of 'file' or 'package'"),
         ([_override(file = "foo-1.0-py3-none-any.whl", hub_name = "pypi")], "does not support 'hub_name'"),
         ([_override(file = "foo-1.0.tar.gz")], "Only whl overrides are supported"),
+        ([_override(package = "foo@", patches = ["//:a.patch"])], "needs to be a package name or '<name>@<version>'"),
+        ([_override(package = "foo==1.0", patches = ["//:a.patch"])], "needs to be a package name or '<name>@<version>'"),
         (
             [_override(package = "foo", patches = ["//:a.patch"]), _override(package = "foo", patches = ["//:b.patch"])],
             "Duplicate module overrides for package 'foo'",
@@ -105,7 +107,7 @@ def _test_errors(env):
     env.expect.that_collection(failures).contains_exactly([])
     whl_overrides_for_hub(got, "pypi", _fail = failures.append)
     env.expect.that_collection(failures).contains_exactly([
-        "The patch '//:a.patch' for package 'foo' is used with different 'patch_strip' values",
+        "The patch '//:a.patch' for package 'foo' is used with different 'patch_strip' values, use a copy of the patch file",
     ])
 
 _tests.append(_test_errors)

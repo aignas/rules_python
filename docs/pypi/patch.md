@@ -27,7 +27,7 @@ can be limited to a version (`foo@1.2.3`) and to a hub
 ```starlark
 pip.override(
     package = "matplotlib",
-    hub_name = "pypi",
+    hub_name = "my_deps",
     patch_strip = 1,
     patches = ["//patches:matplotlib.patch"],
 )

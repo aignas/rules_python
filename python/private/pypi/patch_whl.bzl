@@ -21,6 +21,7 @@ the RECORD file natively in Starlark and repack using Bazel's zipper
 """
 
 load("//python/private:repo_utils.bzl", "repo_utils")
+load("//python/private:version.bzl", pep440 = "version")
 load(":parse_whl_name.bzl", "parse_whl_name")
 
 _DUMMY_SHA256 = "sha256=0"
@@ -65,7 +66,8 @@ def get_whl_patches(whl_patches, filename):
         whl_patches: Patch labels mapped to JSON-encoded args with the strip
             level (`patch_strip`) and the wheel file names (`whls`) or the
             package versions (`versions`, `*` for all versions) that the patch
-            applies to.
+            applies to. The versions are compared with the PEP 440 `==`
+            semantics, so `1.2` matches `1.2.0` and `1.2.0+local`.
         filename: The wheel filename to match.
 
     Returns:
@@ -83,10 +85,18 @@ def get_whl_patches(whl_patches, filename):
         if not versions:
             continue
 
+        if "*" in versions:
+            patches[patch_file] = patch_dst["patch_strip"]
+            continue
+
         if version == None:
             version = parse_whl_name(filename).version
-        if "*" in versions or version in versions:
-            patches[patch_file] = patch_dst["patch_strip"]
+        whl_version = pep440.parse(version)
+        for v in versions:
+            want = pep440.parse(v)
+            if whl_version and want and pep440.is_eq(whl_version, want) or v == version:
+                patches[patch_file] = patch_dst["patch_strip"]
+                break
     return patches
 
 def patch_whl(rctx, *, whl_path, patches):

@@ -167,7 +167,11 @@ def _test_get_whl_patches(env):
     for filename, want in {
         "foo-1.0-cp313-cp313-manylinux_2_17_x86_64.whl": {"//:all.patch": 1},
         "foo-1.0-py3-none-any.whl": {"//:all.patch": 1, "//:file.patch": 0},
+        "foo-2.0+cpu-py3-none-any.whl": {"//:all.patch": 1, "//:v2.patch": 2},
         "foo-2.0-py3-none-any.whl": {"//:all.patch": 1, "//:v2.patch": 2},
+        # The versions are compared with the PEP 440 `==` semantics
+        "foo-2.0.0-py3-none-any.whl": {"//:all.patch": 1, "//:v2.patch": 2},
+        "foo-2.0.1-py3-none-any.whl": {"//:all.patch": 1},
     }.items():
         env.expect.where(filename = filename).that_dict(get_whl_patches(whl_patches, filename)).contains_exactly(want)
 
