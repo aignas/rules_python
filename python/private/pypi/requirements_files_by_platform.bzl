@@ -112,7 +112,7 @@ def requirements_files_by_platform(
         uv_lock
     ):
         fail_fn(
-            "A 'requirements_lock' or 'uv_lock' attribute must be specified, a platform-specific lockfiles " +
+            "A 'requirements_lock', 'uv_lock' or 'pylock' attribute must be specified, a platform-specific lockfiles " +
             "via 'requirements_by_platform' or an os-specific lockfiles must be specified " +
             "via 'requirements_*' attributes",
         )

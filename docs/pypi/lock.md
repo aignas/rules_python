@@ -9,7 +9,9 @@
 {attr}`pip.parse.uv_lock` or {attr}`pip_parse.uv_lock` is supported under
 both `bzlmod` and `WORKSPACE`.
 
-#{gh-issue}`2787` tracks `pylock.toml` support.
+`pylock.toml` (PEP 751) files, e.g. exported with
+`uv export --format pylock.toml`, can be consumed with
+{attr}`pip.parse.pylock` under `bzlmod`.
 :::
 
 ## requirements.txt

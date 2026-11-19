@@ -258,6 +258,30 @@ def _test_uv_lock_build_modes(env):
 
 _tests.append(_test_uv_lock_build_modes)
 
+def _test_pylock(env):
+    builder = hub_builder(env)
+    builder.pip_parse(
+        _mock_mctx(
+            os_name = "osx",
+            arch_name = "aarch64",
+            mock_files = {
+                "pylock.toml": """{"lock-version":"1.0","packages":[{"name":"simple","version":"0.0.1","index":"https://pypi.org/simple","wheels":[{"url":"https://files.pythonhosted.org/packages/simple-0.0.1-py3-none-any.whl","hashes":{"sha256":"deadbeef"}}]}]}""",
+            },
+        ),
+        _parse(
+            hub_name = "pypi",
+            python_version = "3.15",
+            requirements_lock = None,
+            pylock = "pylock.toml",
+        ),
+    )
+    pypi = builder.build()
+
+    pypi.exposed_packages().contains_exactly(["simple"])
+    pypi.whl_libraries().keys().contains_exactly(["pypi_315_simple_py3_none_any_deadbeef"])
+
+_tests.append(_test_pylock)
+
 def _test_uv_lock_conflicting_versions(env):
     logs = {}
     builder = hub_builder(

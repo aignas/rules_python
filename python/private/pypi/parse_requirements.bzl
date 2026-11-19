@@ -35,6 +35,7 @@ load(":lock_model.bzl", "lock_requirements")
 load(":parse_requirements_txt.bzl", "parse_requirements_txt")
 load(":pep508_evaluate.bzl", "evaluate")
 load(":pep508_requirement.bzl", "requirement")
+load(":pylock.bzl", "pylock_entries")
 load(":select_whl.bzl", "select_whl")
 load(":uv_lock.bzl", "uv_lock_entries")
 
@@ -47,6 +48,7 @@ def parse_requirements(
         get_index_urls = None,
         extract_url_srcs = True,
         uv_lock = None,
+        pylock = None,
         local_wheels = [],
         build_mode = None,
         toml_decode = None,
@@ -72,9 +74,11 @@ def parse_requirements(
             If provided, the function will use the uv.lock file as the primary
             source for package metadata and perform a consistency check against
             requirements files if both are provided.
+        pylock: {type}`str | None` an optional label/file path to the
+            pylock.toml file, which is used instead of the requirements files.
         local_wheels: {type}`list[Label]` the local wheels to use instead of
             the locked wheels of the same package version. Only supported
-            with the `uv_lock`.
+            with the `uv_lock` or the `pylock`.
         build_mode: {type}`callable | None` returns the build mode of a
             normalized package name, `always` ignores the wheels.
         toml_decode: {type}`callable | None` A function to decode TOML
@@ -94,6 +98,25 @@ def parse_requirements(
            `target_platforms`, `filename`, `digest`, `url`, `yanked`. The `digest`
            is a `<algo>:<digest>` string or empty if the artifact digest is unknown.
     """
+    if pylock and toml_decode:
+        all_platforms = _get_all_platforms(requirements_by_platform) if requirements_by_platform else sorted(platforms.keys())
+        ret = lock_requirements(
+            pylock_entries(
+                toml_decode(ctx.read(pylock)),
+                all_platforms = all_platforms,
+                platforms = platforms,
+                local_wheels = local_wheels,
+                logger = logger,
+            ),
+            all_platforms = all_platforms,
+            platforms = platforms,
+            extra_pip_args = extra_pip_args,
+            logger = logger,
+            build_mode = build_mode,
+        )
+        logger.debug(lambda: "Parsed {} packages from pylock.toml".format(len(ret)))
+        return ret
+
     lock = toml_decode(ctx.read(uv_lock)) if uv_lock and toml_decode else None
 
     # NOTE: an empty uv.lock falls back to the requirements files.
@@ -116,7 +139,7 @@ def parse_requirements(
         return ret
 
     if local_wheels:
-        logger.fail("The local wheels are only supported with a 'uv_lock'")
+        logger.fail("The local wheels are only supported with a 'uv_lock' or a 'pylock'")
         return []
 
     return _parse_requirements_from_req_files(

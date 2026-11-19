@@ -43,7 +43,7 @@ def _test_fail_no_requirements(env):
         fail_fn = errors.append,
     )
     env.expect.that_str(errors[0]).equals("""\
-A 'requirements_lock' or 'uv_lock' attribute must be specified, a platform-specific lockfiles via 'requirements_by_platform' or an os-specific lockfiles must be specified via 'requirements_*' attributes""")
+A 'requirements_lock', 'uv_lock' or 'pylock' attribute must be specified, a platform-specific lockfiles via 'requirements_by_platform' or an os-specific lockfiles must be specified via 'requirements_*' attributes""")
 
 _tests.append(_test_fail_no_requirements)
 
