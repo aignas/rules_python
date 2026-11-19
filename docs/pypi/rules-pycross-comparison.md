@@ -109,7 +109,7 @@ The `BUILD.bazel` files keep using `@uv_deps//ipython`,
 |---|---|---|
 | `build_mode` | {attr}`pip.override.build_mode` | have; the sdists are built with `pip` on the host |
 | `build_target` | {attr}`pip.override.replace_with` with a target that installs the wheel, e.g. `pycross_wheel_library` | have |
-| `build_backend`, `extra_build_tools`, `build_tools_repo`, `site_hooks`, `pre_build_patches` | none | planned: an extension point for an sdist builder, such as rules_pycross |
+| `build_backend`, `extra_build_tools`, `build_tools_repo`, `site_hooks`, `pre_build_patches` | the macro of {attr}`pip.override.experimental_sdist_builder` can implement them, e.g. with rules_pycross | experimental extension point |
 | `ignore_dependencies` | {attr}`pip.override.ignore_dependencies` | have |
 | `extra_dependencies` | {attr}`pip.override.extra_dependencies`, which also accepts markers | have |
 | `install_exclude_globs` | {attr}`pip.whl_mods.srcs_exclude_glob`, {attr}`pip.whl_mods.data_exclude_glob`, {attr}`pip.parse.pip_data_exclude` | have; the globs start with `site-packages/` |
@@ -175,8 +175,8 @@ all of them. You can define more platforms with {obj}`pip.default`.
   (`always`) and {attr}`pip.parse.download_only` to forbid it for a hub.
 * Replace a package with your own target, like `build_target` in
   rules_pycross, with {attr}`pip.override.replace_with`.
-* Planned: an extension point that lets another ruleset, such as
-  rules_pycross, build the sdist in a build action.
+* {attr}`pip.override.experimental_sdist_builder` lets another ruleset, such as
+  rules_pycross, build the sdists in build actions.
 
 ## Differences in behaviour
 
@@ -216,9 +216,9 @@ module. Do not depend on the same distribution from both in one binary.
 | `build_mode` | {attr}`pip.override.build_mode` | have |
 | `build_target` | {attr}`pip.override.replace_with` | have |
 | `:sdist` target | `@hub//pkg:sdist` (lock files only) | have |
-| sdist builds in build actions, build backends, cross-compilation | `pip wheel` on the host | planned: extension point |
+| sdist builds in build actions, build backends, cross-compilation | {attr}`pip.override.experimental_sdist_builder` | experimental extension point |
 | Rust builds (`maturin`, `setuptools-rust`) | none | gap |
-| `pre_build_patches` | none | planned |
+| `pre_build_patches` | the sdist builder macro | experimental extension point |
 | `local_wheels` | {attr}`pip.parse.local_wheels` with a {attr}`pip.parse.uv_lock` | have |
 | Simple API for files without URLs, `netrc` | {attr}`pip.default.index_url`, {attr}`pip.default.netrc`, {attr}`pip.default.auth_patterns` | have |
 | one file with two hashes | files are looked up by the lock file hash | have |
@@ -232,4 +232,4 @@ module. Do not depend on the same distribution from both in one binary.
 | `pycross_wheel_library`, `pycross_wheel_zipimport_library`, `pycross_wheel_transform`, `pycross_repaired_wheel` | wheels are extracted in repository rules | out of scope |
 | `pycross_wheel_cc_import`, `pycross_wheel_headers` | see [the headers how-to](../howto/pypi-headers) | have |
 | `dist_info`, entry points, `venvs_site_packages`, namespace packages, free-threading | the same | have |
-| reproducible repositories | the wheel repositories; not the sdist builds | partial |
+| reproducible repositories | the wheel repositories; the sdists built with `pip` are not, use {attr}`pip.override.experimental_sdist_builder` | partial |

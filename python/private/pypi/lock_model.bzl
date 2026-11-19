@@ -39,7 +39,9 @@ def lock_entry(
         wheels = [],
         local_wheels = [],
         sdist = None,
-        direct_requirement = ""):
+        direct_requirement = "",
+        requires_dist = None,
+        provides_extra = []):
     """A single locked package.
 
     Args:
@@ -53,6 +55,10 @@ def lock_entry(
         local_wheels: {type}`list[struct]` the {func}`lock_dist` local wheels,
             which are preferred over the `wheels`.
         sdist: {type}`struct | None` the {func}`lock_dist` sdist.
+        requires_dist: {type}`list[str] | None` the dependencies as PEP 508
+            requirements, like the `Requires-Dist` in the `METADATA`, if the
+            lock file records them.
+        provides_extra: {type}`list[str]` the extras of the package.
         direct_requirement: {type}`str` a direct reference that `pip` builds
             the package from (e.g. `git+https://...@<commit>`), used when
             there are no files to download.
@@ -70,6 +76,8 @@ def lock_entry(
         local_wheels = local_wheels,
         sdist = sdist,
         direct_requirement = direct_requirement,
+        requires_dist = requires_dist,
+        provides_extra = provides_extra,
     )
 
 def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_args = None, build_mode = None, sdists = None):
@@ -161,7 +169,13 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
         # Only record the sdists of the entries that are used on a platform,
         # an ambiguous sdist is left out.
         if sdists != None and entry.sdist and plat_to_src:
-            dist = struct(sdist = entry.sdist, index_url = entry.index_url)
+            dist = struct(
+                sdist = entry.sdist,
+                index_url = entry.index_url,
+                version = version,
+                requires_dist = entry.requires_dist,
+                provides_extra = entry.provides_extra,
+            )
             if sdists.get(norm_name, dist) != dist:
                 logger.warn(lambda: "The lock file has more than one sdist for '{}', the ':sdist' target is not created".format(name))
                 sdists[norm_name] = None

@@ -21,6 +21,7 @@ def parse_whl_overrides(modules, *, _fail = fail):
     settings = {}
     build_modes = {}
     replacements = {}
+    sdist_builders = {}
     seen_files = {}
     seen_packages = {}
     for module in modules:
@@ -96,8 +97,17 @@ def parse_whl_overrides(modules, *, _fail = fail):
                 _fail("pip.override(package = '{}') needs 'replace_with' to set 'replace_with_whl' or 'replace_with_dist_info'".format(attr.package))
                 continue
 
+            if attr.experimental_sdist_builder or attr.experimental_sdist_builder_symbol:
+                if not (attr.experimental_sdist_builder and attr.experimental_sdist_builder_symbol) or version or attr.replace_with:
+                    _fail("pip.override(package = '{}') needs both 'experimental_sdist_builder' and 'experimental_sdist_builder_symbol', no version and no 'replace_with'".format(attr.package))
+                    continue
+                sdist_builders.setdefault(attr.hub_name, {})[whl_name] = struct(
+                    bzl = str(attr.experimental_sdist_builder),
+                    symbol = attr.experimental_sdist_builder_symbol,
+                )
+
             if name == "*" and (attr.patches or attr.ignore_dependencies or attr.extra_dependencies or attr.tags):
-                _fail("pip.override(package = '*') only supports 'build_mode'")
+                _fail("pip.override(package = '*') only supports 'build_mode' and the sdist builder")
                 continue
 
             if attr.build_mode:
@@ -125,7 +135,7 @@ def parse_whl_overrides(modules, *, _fail = fail):
                     extra_dependencies = attr.extra_dependencies,
                     extra_tags = attr.tags,
                 )
-            elif not attr.patches and not attr.build_mode and not attr.replace_with:
+            elif not attr.patches and not attr.build_mode and not attr.replace_with and not attr.experimental_sdist_builder:
                 _fail("pip.override(package = '{}') does not set anything".format(attr.package))
                 continue
 
@@ -148,7 +158,26 @@ def parse_whl_overrides(modules, *, _fail = fail):
         settings = settings,
         build_modes = build_modes,
         replacements = replacements,
+        sdist_builders = sdist_builders,
     )
+
+def sdist_builder_for_hub(overrides, hub_name):
+    """Get the sdist builders of the packages in a hub.
+
+    A package uses the first of: the builder of the package for the hub, of
+    `*` for the hub, of the package for all hubs and of `*` for all hubs.
+
+    Args:
+        overrides: {type}`struct` the result of {func}`parse_whl_overrides`.
+        hub_name: {type}`str` the name of the hub.
+
+    Returns:
+        {type}`callable` that returns the builder (a struct with the `bzl` label
+        and the `symbol`) of a normalized package name or `None`.
+    """
+    hub = overrides.sdist_builders.get(hub_name, {})
+    all_hubs = overrides.sdist_builders.get("", {})
+    return lambda name: hub.get(name) or hub.get("*") or all_hubs.get(name) or all_hubs.get("*")
 
 def replacements_for_hub(overrides, hub_name):
     """Get the packages of a hub that are replaced by user targets.
@@ -258,7 +287,7 @@ def unmatched_whl_overrides(overrides, hub_packages):
     errors = []
     for hub_name, packages in sorted(overrides.packages.items() + [
         (hub_name, modes)
-        for hub_name, modes in overrides.build_modes.items()
+        for hub_name, modes in overrides.build_modes.items() + overrides.sdist_builders.items()
         if hub_name not in overrides.packages
     ]):
         packages = [p for p in packages if p != "*"]

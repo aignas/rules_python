@@ -186,6 +186,9 @@ def _test_sdists(env):
         "foo": struct(
             index_url = "",
             sdist = lock_dist(filename = "foo-2.0.tar.gz", url = "https://example.org/foo-2.0.tar.gz", digest = ""),
+            version = "2.0",
+            requires_dist = None,
+            provides_extra = [],
         ),
     })
     env.expect.that_collection(failures).contains_exactly([

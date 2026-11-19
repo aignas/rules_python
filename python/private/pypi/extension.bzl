@@ -34,7 +34,7 @@ load(":pypi_cache.bzl", "pypi_cache")
 load(":simpleapi_download.bzl", "simpleapi_download")
 load(":unified_hub_repo.bzl", "unified_hub_repo")
 load(":whl_library.bzl", "whl_library")
-load(":whl_overrides.bzl", "build_mode_for_hub", "package_settings_for_hub", "parse_whl_overrides", "replacements_for_hub", "unmatched_whl_overrides", "whl_overrides_for_hub")
+load(":whl_overrides.bzl", "build_mode_for_hub", "package_settings_for_hub", "parse_whl_overrides", "replacements_for_hub", "sdist_builder_for_hub", "unmatched_whl_overrides", "whl_overrides_for_hub")
 
 def _whl_mods_impl(whl_mods_dict):
     """Implementation of the pip.whl_mods tag class.
@@ -308,6 +308,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
                     build_mode = build_mode_for_hub(whl_overrides, pip_attr.hub_name),
                     cycle_graphs = cycle_graphs[(mod.name, pip_attr.hub_name)].values() if (mod.name, pip_attr.hub_name) in cycle_graphs else None,
                     replacements = replacements_for_hub(whl_overrides, pip_attr.hub_name),
+                    sdist_builder = sdist_builder_for_hub(whl_overrides, pip_attr.hub_name),
                     simpleapi_download_fn = simpleapi_download,
                     simpleapi_cache = simpleapi_cache,
                     # TODO @aignas 2025-09-06: do not use kwargs
@@ -1179,6 +1180,50 @@ How to get the wheels of the {attr}`pip.override.package`:
 Use `package = "*"` to set it for all of the packages. The wheels are built
 with `pip` on the host when the repositories are fetched, so `always` builds a
 wheel for the host platform.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
+        ),
+        "experimental_sdist_builder": attr.label(
+            doc = """\
+A `.bzl` file with a macro that builds the {attr}`pip.override.package` (or all
+of the packages with `package = "*"`) from its sdist instead of `pip`, e.g. in
+build actions with the build backends of rules_pycross. It is used for the
+packages that would be built from an sdist (see
+{attr}`pip.override.build_mode`) and that have the sdist in the
+{attr}`pip.parse.uv_lock` or the {attr}`pip.parse.pylock`.
+
+The macro, {attr}`pip.override.experimental_sdist_builder_symbol`, is loaded in
+a repository of the hub and called with:
+* `name`: the name of a target with the sources of the package that provides
+  `PyInfo`, e.g. a library that installs the built wheel. It must not depend
+  on the other packages of the hub, the dependencies come from the lock file.
+* `sdist`: the label of the sdist file.
+* `package_name` and `version`: the name and the version of the package.
+* `whl_name`: the name of a target with the built wheel file.
+* `dist_info_name`: the name of a target with the `.dist-info` files, e.g.
+  the `entry_points.txt`.
+* `visibility`: the visibility of the targets.
+
+The macro needs to accept `**kwargs`, so that new arguments can be added, and
+it needs to wrap its own labels with `Label()`, because it is called from a
+repository of the hub. The `whl_name` target may be a directory, but the
+`dist_info_name` target needs a regular `entry_points.txt` file for
+`py_console_script_binary`. The dependencies of the package come from the
+`uv.lock`; the dependencies in a `pylock.toml` are not used, so use
+{attr}`pip.override.extra_dependencies`. The patches and the `pip.whl_mods`
+cannot be used with it. It is used with {attr}`pip.parse.download_only` too,
+because it does not build on the host.
+
+This is experimental and the arguments may change, e.g. to pass the build
+backend of the sdist.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
+        ),
+        "experimental_sdist_builder_symbol": attr.string(
+            doc = """\
+The name of the macro in the {attr}`pip.override.experimental_sdist_builder`.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",
