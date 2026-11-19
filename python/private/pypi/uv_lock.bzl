@@ -108,12 +108,14 @@ def uv_lock_entries(uv_lock, *, all_platforms, platforms, local_wheels = [], _fa
     entries = []
     for i, pkg in enumerate(uv_lock["package"]):
         name = pkg["name"]
-        locked_version = pep440.parse(pkg["version"])
-        local = [
-            whl
-            for version, whl in local_by_name.get(normalize_name(name), [])
-            if version and locked_version and pep440.is_eq(version, locked_version)
-        ]
+        local = []
+        if normalize_name(name) in local_by_name:
+            locked_version = pep440.parse(pkg["version"])
+            local = [
+                whl
+                for version, whl in local_by_name[normalize_name(name)]
+                if version and locked_version and pep440.is_eq(version, locked_version)
+            ]
         for whl in local:
             used_local_wheels[whl.file] = None
         source = pkg.get("source") or {}
@@ -130,9 +132,9 @@ def uv_lock_entries(uv_lock, *, all_platforms, platforms, local_wheels = [], _fa
             target_platforms = package_platforms[i],
             index_url = index_url,
             extras = sorted(extras_map.get(name, [])),
-            wheels = [_uv_lock_dist(wheel) for wheel in pkg.get("wheels", [])],
+            wheels = [_uv_lock_dist(wheel) for wheel in pkg.get("wheels", []) if "url" in wheel],
             local_wheels = local,
-            sdist = _uv_lock_dist(sdist) if sdist else None,
+            sdist = _uv_lock_dist(sdist) if sdist and "url" in sdist else None,
             direct_requirement = _uv_lock_git_requirement(source["git"]) if source.get("git") else "",
         ))
 
@@ -155,11 +157,12 @@ def local_wheels_by_name(local_wheels):
     """
     ret = {}
     for label in local_wheels:
-        parsed = parse_whl_name(label.name)
+        _, _, filename = label.name.rpartition("/")
+        parsed = parse_whl_name(filename)
         ret.setdefault(normalize_name(parsed.distribution), []).append((
             pep440.parse(parsed.version),
             lock_dist(
-                filename = label.name,
+                filename = filename,
                 url = "",
                 digest = "",
                 file = str(label),

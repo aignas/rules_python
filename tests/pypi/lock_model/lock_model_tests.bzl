@@ -92,6 +92,36 @@ def _test_local_wheels(env):
 
 _tests.append(_test_local_wheels)
 
+def _test_local_wheels_per_platform(env):
+    failures = []
+    entries = uv_lock_entries(
+        {"package": [
+            {"name": "foo", "version": "1.0", "wheels": [
+                {"url": "https://example.org/foo-1.0-py3-none-any.whl"},
+                # A `path` source has no URL and is ignored
+                {"path": "dist/foo-1.0-cp313-cp313-manylinux_2_17_x86_64.whl"},
+            ]},
+        ]},
+        all_platforms = sorted(_PLATFORMS),
+        platforms = _PLATFORMS,
+        # The label may be in a subdirectory of the package
+        local_wheels = [Label("//:dist/foo-1.0-cp313-cp313-manylinux_2_17_x86_64.whl")],
+        _fail = failures.append,
+    )
+    env.expect.that_collection(failures).contains_exactly([])
+
+    # The local wheel is only used on the platforms that it supports
+    env.expect.that_collection([
+        (s.filename, s.target_platforms, getattr(s, "whl_file", None))
+        for r in _requirements(entries)
+        for s in r.srcs
+    ]).contains_exactly([
+        ("foo-1.0-cp313-cp313-manylinux_2_17_x86_64.whl", ["linux_x86_64"], str(Label("//:dist/foo-1.0-cp313-cp313-manylinux_2_17_x86_64.whl"))),
+        ("foo-1.0-py3-none-any.whl", ["osx_aarch64"], None),
+    ])
+
+_tests.append(_test_local_wheels_per_platform)
+
 def lock_model_test_suite(name):
     """Create the test suite.
 

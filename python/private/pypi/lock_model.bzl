@@ -114,7 +114,9 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
 
             best_wheel = None
             for whls in [entry.local_wheels, entry.wheels]:
-                if not whls or best_wheel:
+                if best_wheel:
+                    break
+                if not whls:
                     continue
                 best_wheel = select_whl(
                     whls = whls,

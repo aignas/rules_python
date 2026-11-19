@@ -196,7 +196,7 @@ def _test_uv_lock_local_wheels(env):
             python_version = "3.15",
             requirements_lock = None,
             uv_lock = "uv.lock",
-            # The version is compared after normalization
+            # The version `1.0` is equal to the locked `1.0.0`
             local_wheels = [Label("//:foo-1.0-py3-none-any.whl")],
         ),
     )
