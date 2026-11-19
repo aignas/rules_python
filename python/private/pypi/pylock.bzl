@@ -13,9 +13,9 @@ def pylock_entries(pylock, *, all_platforms, platforms, local_wheels = [], logge
     All of the extras, the default groups and the dependency groups that the
     lock file lists are selected. A package is used on the platforms where its
     `marker` is true; the dependency graph is not used, as the standard
-    requires. The `vcs` (git) sources and the `archive` sources with a
-    `subdirectory` are built by pip, the other `archive` sources are wheels
-    or sdists and the `directory` sources are the local projects, which are
+    requires. The `vcs` sources and the `archive` sources that are not wheels
+    are built by pip from their URL, the `archive` wheels are used like the
+    other wheels and the `directory` sources are the local projects, which are
     ignored.
 
     Args:
@@ -69,6 +69,10 @@ def pylock_entries(pylock, *, all_platforms, platforms, local_wheels = [], logge
         version = pkg.get("version", "")
         if "directory" in pkg:
             # A local project, e.g. the project that the lock file is for.
+            logger.debug(lambda: "Ignoring the pylock.toml package '{}' from the directory '{}'".format(
+                name,
+                pkg["directory"].get("path"),
+            ))
             continue
 
         direct_requirement = ""
@@ -81,10 +85,11 @@ def pylock_entries(pylock, *, all_platforms, platforms, local_wheels = [], logge
             archive = pkg["archive"]
             if "url" not in archive:
                 return _fail("The pylock.toml package '{}' has an 'archive' without a 'url', which is not supported".format(name))
-            if archive.get("subdirectory"):
-                # The downloaded archive is built from the root, so let pip
-                # handle the subdirectory.
-                direct_requirement = "{}#subdirectory={}".format(archive["url"], archive["subdirectory"])
+            if not _dist(archive).filename.endswith(".whl"):
+                # Let pip build the archive from its URL with the hash, so
+                # that it verifies the download and does not use a wheel
+                # from the index instead.
+                direct_requirement = _archive_requirement(archive)
                 archive = None
         if not version and not direct_requirement:
             return _fail("The pylock.toml package '{}' has no 'version'".format(name))
@@ -117,11 +122,7 @@ def pylock_entries(pylock, *, all_platforms, platforms, local_wheels = [], logge
         sdist = pkg.get("sdist")
         wheels = pkg.get("wheels", [])
         if archive:
-            dist = _dist(archive)
-            if dist.filename.endswith(".whl"):
-                wheels = wheels + [archive]
-            else:
-                sdist = archive | {"name": _sdist_filename(name, version, dist.filename)}
+            wheels = wheels + [archive]
         if [d for d in wheels + ([sdist] if sdist else []) if "url" not in d]:
             logger.warn(lambda: "The pylock.toml package '{}' has files without a 'url', which are ignored, use the 'local_wheels' instead".format(name))
         entries.append(lock_entry(
@@ -147,20 +148,28 @@ def pylock_entries(pylock, *, all_platforms, platforms, local_wheels = [], logge
 
 def _vcs_requirement(name, vcs, *, _fail):
     """Turn a `vcs` source into a pip direct reference."""
-    if vcs.get("type") != "git" or not vcs.get("url") or not vcs.get("commit-id"):
-        return _fail("The pylock.toml package '{}' has a 'vcs' source that is not git with a 'url' and a 'commit-id', which is not supported".format(name))
+    if vcs.get("type") not in ["git", "hg", "svn", "bzr"] or not vcs.get("url") or not vcs.get("commit-id"):
+        return _fail("The pylock.toml package '{}' needs a 'vcs' source of the 'git', 'hg', 'svn' or 'bzr' type with a 'url' (not a 'path') and a 'commit-id'".format(name))
 
-    requirement = "git+{}@{}".format(vcs["url"], vcs["commit-id"])
+    url = vcs["url"]
+    if not url.startswith(vcs["type"] + "+"):
+        url = "{}+{}".format(vcs["type"], url)
+    requirement = "{}@{}".format(url, vcs["commit-id"])
     if vcs.get("subdirectory"):
         requirement += "#subdirectory={}".format(vcs["subdirectory"])
     return requirement
 
-def _sdist_filename(name, version, filename):
-    """Name an archive like an sdist, so that it can be named and built."""
-    for ext in [".tar.gz", ".zip", ".tar.bz2", ".tar.xz", ".tgz"]:
-        if filename.endswith(ext):
-            return "{}-{}{}".format(normalize_name(name), version, ext)
-    return "{}-{}.tar.gz".format(normalize_name(name), version)
+def _archive_requirement(archive):
+    """Turn an `archive` source into a pip direct reference with its hash."""
+    fragments = [
+        "{}={}".format(algo, hex_digest)
+        for algo, hex_digest in sorted(archive.get("hashes", {}).items())
+    ][:1]
+    if archive.get("subdirectory"):
+        fragments.append("subdirectory={}".format(archive["subdirectory"]))
+    if not fragments:
+        return archive["url"]
+    return "{}#{}".format(archive["url"], "&".join(fragments))
 
 def _requires_python(specifiers, env):
     """Evaluate a `requires-python` specifier set, e.g. `>=3.9,<4`."""
