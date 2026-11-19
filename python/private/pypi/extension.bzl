@@ -34,7 +34,7 @@ load(":pypi_cache.bzl", "pypi_cache")
 load(":simpleapi_download.bzl", "simpleapi_download")
 load(":unified_hub_repo.bzl", "unified_hub_repo")
 load(":whl_library.bzl", "whl_library")
-load(":whl_overrides.bzl", "build_mode_for_hub", "package_settings_for_hub", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")
+load(":whl_overrides.bzl", "build_mode_for_hub", "package_settings_for_hub", "parse_whl_overrides", "replacements_for_hub", "unmatched_whl_overrides", "whl_overrides_for_hub")
 
 def _whl_mods_impl(whl_mods_dict):
     """Implementation of the pip.whl_mods tag class.
@@ -307,6 +307,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
                     package_settings = package_settings_for_hub(whl_overrides, pip_attr.hub_name),
                     build_mode = build_mode_for_hub(whl_overrides, pip_attr.hub_name),
                     cycle_graphs = cycle_graphs[(mod.name, pip_attr.hub_name)].values() if (mod.name, pip_attr.hub_name) in cycle_graphs else None,
+                    replacements = replacements_for_hub(whl_overrides, pip_attr.hub_name),
                     simpleapi_download_fn = simpleapi_download,
                     simpleapi_cache = simpleapi_cache,
                     # TODO @aignas 2025-09-06: do not use kwargs
@@ -1240,6 +1241,35 @@ patches.""",
             doc = """\
 A list of patches to apply to the repository *after* 'whl_library' is extracted
 and BUILD.bazel file is generated.""",
+        ),
+        "replace_with": attr.label(
+            doc = """\
+A target that replaces the {attr}`pip.override.package` in the hub, e.g. a
+`py_library` with the sources of the package or a library that installs a
+wheel that is built from source. The hub targets of the package, e.g.
+`@pypi//foo`, `@pypi//foo:[]` and the extras targets, use it on all of the
+platforms and Python versions; the package is not downloaded. The dependencies
+of the target are not changed; use {attr}`pip.override.extra_dependencies` to
+add the dependencies on the other packages of the hub.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
+        ),
+        "replace_with_dist_info": attr.label(
+            doc = """\
+The `dist_info` target of the {attr}`pip.override.replace_with` package, e.g.
+the files with the `entry_points.txt` for `py_console_script_binary`.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
+        ),
+        "replace_with_whl": attr.label(
+            doc = """\
+The wheel file of the {attr}`pip.override.replace_with` package for the
+`@pypi//foo:whl` target.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
         ),
         "tags": attr.string_list(
             doc = """\

@@ -573,9 +573,17 @@ bzl_library(
     deps = [
         ":patch_whl",
         ":pip_archive",
+        ":replaced_whl_repo",
         ":whl_archive",
+        ":whl_deps_repo",
         ":whl_file_repo",
     ],
+)
+
+bzl_library(
+    name = "replaced_whl_repo",
+    srcs = ["replaced_whl_repo.bzl"],
+    deps = [":labels"],
 )
 
 bzl_library(
