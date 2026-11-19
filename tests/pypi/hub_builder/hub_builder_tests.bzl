@@ -55,6 +55,7 @@ def hub_builder(
         build_mode = None,
         cycle_graphs = None,
         replacements = {},
+        sdist_builder = None,
         simpleapi_download_fn = None,
         log_printer = None,
         available_interpreters = {}):
@@ -93,6 +94,7 @@ def hub_builder(
         build_mode = build_mode,
         cycle_graphs = cycle_graphs,
         replacements = replacements,
+        sdist_builder = sdist_builder,
         minor_mapping = minor_mapping or {"3.15": "3.15.19"},
         available_interpreters = available_interpreters or {
             "python_3_15_host": "unit_test_interpreter_target",
@@ -398,6 +400,52 @@ def _test_replace_with(env):
     })
 
 _tests.append(_test_replace_with)
+
+def _test_sdist_builder(env):
+    builder = hub_builder(env, sdist_builder = lambda name: struct(bzl = "@@//:builder.bzl", symbol = "build") if name == "foo" else None)
+    builder.pip_parse(
+        _mock_mctx(
+            os_name = "osx",
+            arch_name = "aarch64",
+            mock_files = {
+                "uv.lock": """{"package":[
+{"name":"foo","source":{"registry":"https://pypi.org/simple"},"version":"1.0","dependencies":[{"name":"bar","marker":"sys_platform == 'darwin'"}],"optional-dependencies":{"x":[{"name":"bar","extra":["y"]}]},"sdist":{"hash":"sha256:deadbeef","url":"https://files.pythonhosted.org/packages/foo-1.0.tar.gz"}},
+{"name":"bar","source":{"registry":"https://pypi.org/simple"},"version":"1.0","sdist":{"hash":"sha256:deadb00f","url":"https://files.pythonhosted.org/packages/bar-1.0.tar.gz"}}
+]}""",
+            },
+        ),
+        _parse(
+            hub_name = "pypi",
+            python_version = "3.15",
+            requirements_lock = None,
+            uv_lock = "uv.lock",
+        ),
+    )
+    pypi = builder.build()
+
+    pypi.whl_libraries().keys().contains_exactly([
+        "pypi_315_foo_sdist_deadbeef_built",
+        # `bar` has no builder and is built with pip
+        "pypi_315_bar_sdist_deadb00f",
+        "pypi_bar_sdist_deadb00f_file",
+        "pypi_foo_sdist_deadbeef_file",
+    ])
+    pypi.whl_libraries().get("pypi_315_foo_sdist_deadbeef_built", factory = subjects.dict).contains_exactly({
+        "config_load": "@pypi//:config.bzl",
+        "dep_template": "@pypi//{name}:{target}",
+        "metadata_name": "foo",
+        "metadata_version": "1.0",
+        "provides_extra": ["x"],
+        "requires_dist": [
+            "bar; sys_platform == 'darwin'",
+            "bar[y]; extra == \"x\"",
+        ],
+        "sdist": "@pypi_foo_sdist_deadbeef_file//:foo-1.0.tar.gz",
+        "sdist_builder": "@@//:builder.bzl",
+        "sdist_builder_symbol": "build",
+    })
+
+_tests.append(_test_sdist_builder)
 
 def _test_uv_lock_conflicting_versions(env):
     logs = {}

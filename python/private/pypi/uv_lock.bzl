@@ -136,6 +136,8 @@ def uv_lock_entries(uv_lock, *, all_platforms, platforms, local_wheels = [], _fa
             local_wheels = local,
             sdist = _uv_lock_dist(sdist) if sdist and "url" in sdist else None,
             direct_requirement = _uv_lock_git_requirement(source["git"]) if source.get("git") else "",
+            requires_dist = _uv_lock_requires_dist(pkg),
+            provides_extra = sorted(pkg.get("optional-dependencies", {}).keys()),
         ))
 
     for whls in local_by_name.values():
@@ -168,6 +170,27 @@ def local_wheels_by_name(local_wheels):
                 file = str(label),
             ),
         ))
+    return ret
+
+def _uv_lock_requires_dist(pkg):
+    """The dependencies of a uv.lock package as `Requires-Dist` lines."""
+    ret = []
+    for extra, deps in [("", pkg.get("dependencies", []))] + sorted(pkg.get("optional-dependencies", {}).items()):
+        for dep in deps:
+            line = dep["name"]
+            extras = dep.get("extra", [])
+            if type(extras) == type(""):
+                extras = [extras]
+            if extras:
+                line += "[{}]".format(",".join(extras))
+            markers = []
+            if dep.get("marker"):
+                markers.append("({})".format(dep["marker"]) if extra else dep["marker"])
+            if extra:
+                markers.append("extra == \"{}\"".format(extra))
+            if markers:
+                line += "; " + " and ".join(markers)
+            ret.append(line)
     return ret
 
 def _uv_lock_dist(dist):

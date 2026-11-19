@@ -126,3 +126,33 @@ sdist, `@pypi//foo:sdist`, with a build backend and installed with
 packages that have an sdist in the {attr}`pip.parse.uv_lock` or the
 {attr}`pip.parse.pylock` and they are downloaded only when they are used;
 the unified `@pypi` hub does not have them.
+
+## Building sdists with another ruleset
+
+By default, the sdists are built with `pip` on the host when the repositories
+are fetched. {attr}`pip.override.experimental_sdist_builder` and
+{attr}`pip.override.experimental_sdist_builder_symbol` name a macro that builds
+them in build actions instead, e.g. with the build backends and the toolchains
+of another ruleset, such as rules_pycross:
+
+```starlark
+pip.override(
+    package = "*",
+    experimental_sdist_builder = "//build:sdist.bzl",
+    experimental_sdist_builder_symbol = "sdist_builder",
+)
+```
+
+```starlark
+# build/sdist.bzl
+def sdist_builder(*, name, sdist, package_name, version, whl_name, dist_info_name, visibility, **kwargs):
+    # Build the wheel from the `sdist` file into the `whl_name` target and
+    # create the `name` library that installs it and the `dist_info_name`
+    # target with its `.dist-info` files.
+    ...
+```
+
+The macro is used for the packages that would be built from an sdist (see
+{attr}`pip.override.build_mode`) and that have the sdist in the lock file. The
+hub targets of the package, e.g. its extras, use the dependencies from the
+lock file.

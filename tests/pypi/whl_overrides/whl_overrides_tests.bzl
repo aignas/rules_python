@@ -18,8 +18,12 @@ def _override(
         build_mode = "",
         replace_with = None,
         replace_with_whl = None,
-        replace_with_dist_info = None):
+        replace_with_dist_info = None,
+        experimental_sdist_builder = None,
+        experimental_sdist_builder_symbol = ""):
     return struct(
+        experimental_sdist_builder = experimental_sdist_builder,
+        experimental_sdist_builder_symbol = experimental_sdist_builder_symbol,
         build_mode = build_mode,
         replace_with = replace_with,
         replace_with_dist_info = replace_with_dist_info,

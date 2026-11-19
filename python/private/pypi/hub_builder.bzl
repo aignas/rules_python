@@ -34,6 +34,7 @@ def hub_builder(
         build_mode = None,
         cycle_graphs = None,
         replacements = {},
+        sdist_builder = None,
         minor_mapping,
         available_interpreters,
         simpleapi_download_fn,
@@ -54,6 +55,8 @@ def hub_builder(
             group the dependency cycles automatically.
         replacements: {type}`dict[str, struct]` - the packages that are
             replaced by the user targets.
+        sdist_builder: {type}`callable | None` - returns the sdist builder of a
+            normalized package name.
         minor_mapping: {type}`dict[str, str]` the mapping between minor and full versions.
         available_interpreters: {type}`dict[str, Label]` The dictionary of available
             interpreters that have been registered using the `python` bzlmod extension.
@@ -118,6 +121,7 @@ def hub_builder(
         _build_mode = lambda name: "" if name in replacements else (build_mode or (lambda _: ""))(name),
         _cycle_graphs = cycle_graphs,
         _replacements = replacements,
+        _sdist_builder = sdist_builder or (lambda _: None),
         _logger = logger,
         _minor_mapping = minor_mapping,
         _available_interpreters = available_interpreters,
@@ -644,6 +648,7 @@ def _create_whl_repos(
         logger = logger,
     )
 
+    sdist_files = {}
     for name, sdist in sdists.items():
         if not sdist:
             continue
@@ -668,6 +673,7 @@ def _create_whl_repos(
             if v
         }
         self._sdists.setdefault(name, {})[_major_minor_version(python_version)] = "@{}//:{}".format(repo_name, dist.filename)
+        sdist_files[name] = struct(label = "@{}//:{}".format(repo_name, dist.filename), info = sdist)
 
     _add_exposed_packages(self, {
         whl.name: None
@@ -757,7 +763,24 @@ def _create_whl_repos(
                 interpreter = interpreter,
                 enable_pipstar_extract = enable_pipstar_extract,
             )
-            if repo and build_mode == "always" and not repo.args.get("whl_file") and not repo.args.get("filename", "").endswith(".whl"):
+            builder = self._sdist_builder(whl.name)
+            if repo and builder and repo.args.get("urls") and not repo.args.get("filename", "").endswith(".whl") and whl.name in sdist_files:
+                # Build the sdist with the user provided macro instead of pip.
+                sdist = sdist_files[whl.name]
+                repo = struct(
+                    repo_name = repo.repo_name + "_built",
+                    config_settings = repo.config_settings,
+                    args = whl_library_args | {
+                        "metadata_name": whl.name,
+                        "metadata_version": sdist.info.version,
+                        "provides_extra": sdist.info.provides_extra,
+                        "requires_dist": sdist.info.requires_dist or [],
+                        "sdist": sdist.label,
+                        "sdist_builder": builder.bzl,
+                        "sdist_builder_symbol": builder.symbol,
+                    },
+                )
+            elif repo and build_mode == "always" and not repo.args.get("whl_file") and not repo.args.get("filename", "").endswith(".whl"):
                 # pip may find a wheel on the index even if the sdist is
                 # downloaded, so do not let it use one.
                 repo.args["extra_pip_args"] = repo.args.get("extra_pip_args", []) + [

@@ -14,6 +14,7 @@
 
 ""
 
+load(":built_whl_repo.bzl", "built_whl_repo")
 load(":patch_whl.bzl", "get_whl_patches", "patched_whl_name")
 load(":pip_archive.bzl", "pip_archive", "pip_archive_attrs")
 load(":replaced_whl_repo.bzl", "replaced_whl_repo")
@@ -71,7 +72,31 @@ def whl_library(name, repo = None, **kwargs):
     # compatibility shim for cases for repo_prefix is still used by the called
     kwargs.setdefault("dep_template", "@{}{{name}}//:{{target}}".format(kwargs.pop("repo_prefix", "")))
 
-    if replace_with:
+    sdist_builder = kwargs.pop("sdist_builder", None)
+    if sdist_builder:
+        # The package is built from its sdist by the user provided macro.
+        metadata_name = kwargs.pop("metadata_name")
+        metadata_version = kwargs.pop("metadata_version")
+        built_whl_repo(
+            name = name + "_srcs",
+            builder = sdist_builder,
+            builder_symbol = kwargs.pop("sdist_builder_symbol"),
+            sdist = kwargs.pop("sdist"),
+            package_name = metadata_name,
+            version = metadata_version,
+        )
+        whl_deps_repo(
+            name = name,
+            repo = "@{}_srcs//:BUILD.bazel".format(name),
+            metadata = json.encode({
+                "name": metadata_name,
+                "provides_extra": kwargs.pop("provides_extra", []),
+                "requires_dist": kwargs.pop("requires_dist", []),
+                "version": metadata_version,
+            }),
+            **_filter(kwargs, whl_deps_attrs)
+        )
+    elif replace_with:
         # The package is provided by the user targets.
         replaced_whl_repo(
             name = name + "_srcs",

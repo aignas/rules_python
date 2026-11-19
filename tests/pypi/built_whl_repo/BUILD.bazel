@@ -1,0 +1,3 @@
+load(":built_whl_repo_tests.bzl", "built_whl_repo_test_suite")
+
+built_whl_repo_test_suite(name = "built_whl_repo_tests")
