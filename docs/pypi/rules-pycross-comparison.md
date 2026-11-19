@@ -230,7 +230,7 @@ module. Do not depend on the same distribution from both in one binary.
 | glibc, musl and macOS version flags | {obj}`pip.default` platforms | partial |
 | `unavailable_package_mode` | an error | partial |
 | automatic dependency cycles | {attr}`pip.parse.experimental_requirement_cycles` | planned |
-| uv `conflicts` | an error that explains the cause | gap |
+| uv `conflicts` | an error; use a separate hub for each conflicting group | gap |
 | per-repo transitions | none; the {flag}`--venv` flag selects a hub for the unified `@pypi` hub | gap |
 | `modules_mapping` without wheels | Gazelle `modules_mapping` | partial |
 | git sources | `pip` at fetch time, needs `git` on the host | have |

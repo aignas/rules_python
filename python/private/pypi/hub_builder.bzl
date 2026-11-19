@@ -369,8 +369,9 @@ def _add_whl_library(self, *, python_version, whl, repo):
     if repo.config_setting in mapping and mapping[repo.config_setting] != repo_name:
         self._logger.fail(lambda: (
             "Attempting to override an existing repo '{}' for config setting '{}' with a new repo '{}'. " +
-            "This happens when the lock file has more than one version of '{}' for the same platform, " +
-            "e.g. with the uv `[tool.uv] conflicts` setting, which is not supported."
+            "This happens when the lock file has more than one entry (e.g. different versions or sources) " +
+            "of '{}' for the same platform, e.g. with the uv `[tool.uv] conflicts` setting, which is not " +
+            "supported. Use a separate hub for each of the conflicting groups."
         ).format(
             mapping[repo.config_setting],
             repo.config_setting,
@@ -378,8 +379,8 @@ def _add_whl_library(self, *, python_version, whl, repo):
             whl.name,
         ))
         return
-    else:
-        mapping[repo.config_setting] = repo_name
+
+    mapping[repo.config_setting] = repo_name
 
 ### end of setters, below we have various functions to implement the public methods
 

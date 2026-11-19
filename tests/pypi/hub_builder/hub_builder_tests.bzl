@@ -204,9 +204,8 @@ def _test_uv_lock_conflicting_versions(env):
     )
 
     env.expect.that_collection(logs.get("rules_python:unit-test FAIL:", [])).has_size(1)
-    env.expect.that_str(logs["rules_python:unit-test FAIL:"][0]).contains(
-        "This happens when the lock file has more than one version of 'foo' for the same platform",
-    )
+    env.expect.that_str(logs["rules_python:unit-test FAIL:"][0]).contains("of 'foo' for the same platform")
+    env.expect.that_str(logs["rules_python:unit-test FAIL:"][0]).contains("`[tool.uv] conflicts`")
 
 _tests.append(_test_uv_lock_conflicting_versions)
 
