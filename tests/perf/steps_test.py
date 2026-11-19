@@ -12,10 +12,10 @@ from tests.perf.workloads import workloads
 # If you have made the code faster, lower the budget so that it stays that way.
 _BUDGETS = {
     # keep sorted
-    "evaluate: long marker": 10300,
+    "evaluate: long marker": 5150,
     "evaluate: os_name == 'posix' and sys_platform == 'linux'": 610,
     "evaluate: python_version < '3.11' and extra == 'dev' (non-strict)": 575,
-    "evaluate: python_version >= '3.8'": 2100,
+    "evaluate: python_version >= '3.8'": 490,
     "evaluate: sys_platform == 'win32'": 300,
     "tokenize: long marker": 2900,
     "tokenize: python_version >= '3.8'": 200,
@@ -24,11 +24,11 @@ _BUDGETS = {
     "version.is_ge(3.11.4, 3.8)": 59,
     "version.is_lt(3.11.4, 3.8)": 52,
     "version.key(3.11.4)": 28,
-    "version.normalize('2023.07.19')": 1050,
+    "version.normalize('2023.07.19')": 27,
     "version.parse('#1 SMP Debian')": 700,
     "version.parse('1!2.0.0rc1.post3.dev4+ubuntu.7')": 1670,
-    "version.parse('3.11.*')": 875,
-    "version.parse('3.11.4')": 980,
+    "version.parse('3.11.*')": 60,
+    "version.parse('3.11.4')": 61,
     "version.parse('3.13.0rc1')": 1125,
 }
 

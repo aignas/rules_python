@@ -170,6 +170,35 @@ def _test_normalize_placeholders(env):
 
 _tests.append(_test_normalize_placeholders)
 
+def _test_parse_release_only(env):
+    # The versions with only the release segment are not parsed by the full
+    # parser, which is used if there is the `v` prefix.
+    for input in [
+        "0",
+        "1",
+        "3.11",
+        "3.11.4",
+        "03.011.04",
+        "2023.07.19",
+        "1.2.3.4.5.6",
+        "3.11.*",
+        " 3.11 ",
+    ]:
+        got = version.parse(input)
+        want = version.parse("v" + input.strip())
+        env.expect.where(input = input).that_str(got.string).equals(want.string)
+        env.expect.where(input = input).that_collection(got.release).contains_exactly(want.release).in_order()
+        env.expect.where(input = input).that_bool(got.is_prefix).equals(want.is_prefix)
+        env.expect.where(input = input).that_bool(version.key(got) == version.key(want)).equals(True)
+        env.expect.where(input = input).that_str(
+            version.normalize(input.removesuffix(".*")),
+        ).equals(want.string)
+
+    for input in ["", ".", "..", ".1", "1.", "1..2", "1. 2"]:
+        env.expect.where(input = input).that_bool(version.parse(input) == None).equals(True)
+
+_tests.append(_test_parse_release_only)
+
 def _test_ordering(env):
     want = [
         # Taken from https://peps.python.org/pep-0440/#summary-of-permitted-suffixes-and-relative-ordering
