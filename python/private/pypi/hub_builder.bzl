@@ -367,13 +367,17 @@ def _add_whl_library(self, *, python_version, whl, repo):
 
     mapping = self._whl_map.setdefault(whl.name, {})
     if repo.config_setting in mapping and mapping[repo.config_setting] != repo_name:
-        fail(
-            "attempting to override an existing repo '{}' for config setting '{}' with a new repo '{}'".format(
-                mapping[repo.config_setting],
-                repo.config_setting,
-                repo_name,
-            ),
-        )
+        self._logger.fail(lambda: (
+            "Attempting to override an existing repo '{}' for config setting '{}' with a new repo '{}'. " +
+            "This happens when the lock file has more than one version of '{}' for the same platform, " +
+            "e.g. with the uv `[tool.uv] conflicts` setting, which is not supported."
+        ).format(
+            mapping[repo.config_setting],
+            repo.config_setting,
+            repo_name,
+            whl.name,
+        ))
+        return
     else:
         mapping[repo.config_setting] = repo_name
 
