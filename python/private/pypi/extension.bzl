@@ -33,7 +33,7 @@ load(":pypi_cache.bzl", "pypi_cache")
 load(":simpleapi_download.bzl", "simpleapi_download")
 load(":unified_hub_repo.bzl", "unified_hub_repo")
 load(":whl_library.bzl", "whl_library")
-load(":whl_overrides.bzl", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")
+load(":whl_overrides.bzl", "package_settings_for_hub", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")
 
 def _whl_mods_impl(whl_mods_dict):
     """Implementation of the pip.whl_mods tag class.
@@ -278,6 +278,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
                     module_name = mod.name,
                     config = config,
                     whl_overrides = whl_overrides_for_hub(whl_overrides, pip_attr.hub_name),
+                    package_settings = package_settings_for_hub(whl_overrides, pip_attr.hub_name),
                     simpleapi_download_fn = simpleapi_download,
                     simpleapi_cache = simpleapi_cache,
                     # TODO @aignas 2025-09-06: do not use kwargs
@@ -1051,6 +1052,15 @@ cannot have a child module that uses the same `hub_name`.
 # 'archive_override', 'git_override' bzlmod functions.
 _override_tag = tag_class(
     attrs = {
+        "extra_dependencies": attr.string_list(
+            doc = """\
+Extra dependencies of the {attr}`pip.override.package` as PEP 508 requirements, e.g.
+`["bar", "baz[extra]; sys_platform == 'linux'"]`. They are added to the
+`Requires-Dist` of the package and need to be in the same hub.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
+        ),
         "file": attr.string(
             doc = """\
 The Python distribution file name which needs to be patched. This will be
@@ -1067,7 +1077,18 @@ wheels of a package.
         "hub_name": attr.string(
             doc = """\
 The hub that the {attr}`pip.override.package` override applies to. If empty,
-it applies to all of the hubs.
+it applies to all of the hubs. The settings for a hub are added to the settings
+for all of the hubs.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
+        ),
+        "ignore_dependencies": attr.string_list(
+            doc = """\
+The names of the dependencies of the {attr}`pip.override.package` to ignore,
+e.g. to drop a dependency that is not needed or to break a dependency cycle.
+All of the `Requires-Dist` lines of these packages are removed, including the
+ones for the extras. They need to be package names in the same hub.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",
@@ -1096,7 +1117,14 @@ patches.""",
             doc = """\
 A list of patches to apply to the repository *after* 'whl_library' is extracted
 and BUILD.bazel file is generated.""",
-            mandatory = True,
+        ),
+        "tags": attr.string_list(
+            doc = """\
+Extra tags to set on the generated `py_library` targets of the
+{attr}`pip.override.package`.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
         ),
     },
     doc = """\

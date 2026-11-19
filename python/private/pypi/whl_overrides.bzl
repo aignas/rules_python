@@ -2,6 +2,7 @@
 
 load("//python/private:normalize_name.bzl", "normalize_name")
 load(":parse_whl_name.bzl", "parse_whl_name")
+load(":pep508_requirement.bzl", "requirement")
 
 def parse_whl_overrides(modules, *, _fail = fail):
     """Collect the `pip.override` tags of the root module.
@@ -17,6 +18,7 @@ def parse_whl_overrides(modules, *, _fail = fail):
     """
     files = {}
     packages = {}
+    settings = {}
     seen_files = {}
     seen_packages = {}
     for module in modules:
@@ -31,6 +33,14 @@ def parse_whl_overrides(modules, *, _fail = fail):
                 continue
 
             if attr.file:
+                if attr.ignore_dependencies or attr.extra_dependencies or attr.tags:
+                    _fail("pip.override(file = '{}') only supports 'patches', use 'package' for the other settings".format(attr.file))
+                    continue
+
+                if not attr.patches:
+                    _fail("pip.override(file = '{}') needs 'patches'".format(attr.file))
+                    continue
+
                 if attr.hub_name:
                     _fail("pip.override(file = '{}') applies to all hubs and does not support 'hub_name'".format(attr.file))
                     continue
@@ -71,6 +81,29 @@ def parse_whl_overrides(modules, *, _fail = fail):
                 continue
             seen_packages[key] = None
 
+            if attr.ignore_dependencies or attr.extra_dependencies or attr.tags:
+                if version:
+                    _fail("pip.override(package = '{}') cannot set 'ignore_dependencies', 'extra_dependencies' or 'tags' for a single version".format(attr.package))
+                    continue
+
+                bad = [
+                    dep
+                    for dep in attr.ignore_dependencies
+                    if requirement(dep).name_ != normalize_name(dep) or normalize_name(dep) == whl_name
+                ]
+                if bad:
+                    _fail("pip.override(package = '{}').ignore_dependencies needs the names of other packages, got: {}".format(attr.package, bad))
+                    continue
+
+                settings.setdefault(attr.hub_name, {})[whl_name] = struct(
+                    ignore_dependencies = attr.ignore_dependencies,
+                    extra_dependencies = attr.extra_dependencies,
+                    extra_tags = attr.tags,
+                )
+            elif not attr.patches:
+                _fail("pip.override(package = '{}') does not set anything".format(attr.package))
+                continue
+
             patches = packages.setdefault(attr.hub_name, {}).setdefault(whl_name, {})
             for patch in attr.patches:
                 if patch in patches and patches[patch].patch_strip != attr.patch_strip:
@@ -84,7 +117,32 @@ def parse_whl_overrides(modules, *, _fail = fail):
     return struct(
         files = files,
         packages = packages,
+        settings = settings,
     )
+
+def package_settings_for_hub(overrides, hub_name):
+    """Get the settings of the packages in a hub.
+
+    The settings for the hub are added to the settings for all hubs.
+
+    Args:
+        overrides: {type}`struct` the result of {func}`parse_whl_overrides`.
+        hub_name: {type}`str` the name of the hub.
+
+    Returns:
+        {type}`dict[str, dict]` the `whl_library` args for each package name.
+    """
+    all_hubs = overrides.settings.get("", {})
+    this_hub = overrides.settings.get(hub_name, {})
+    ret = {}
+    for whl_name in all_hubs.keys() + this_hub.keys():
+        if whl_name in ret:
+            continue
+        ret[whl_name] = {}
+        for field in ["ignore_dependencies", "extra_dependencies", "extra_tags"]:
+            values = getattr(all_hubs.get(whl_name), field, []) + getattr(this_hub.get(whl_name), field, [])
+            ret[whl_name][field] = {v: None for v in values}.keys()
+    return ret
 
 def whl_overrides_for_hub(overrides, hub_name, *, _fail = fail):
     """Get the patches of the packages in a hub.
@@ -150,5 +208,23 @@ def unmatched_whl_overrides(overrides, hub_packages):
                     whl_name,
                     " in hub '{}'".format(hub_name) if hub_name else "",
                 ))
+
+    for hub_name, packages in sorted(overrides.settings.items()):
+        hubs = [hub_name] if hub_name else hub_packages.keys()
+        for whl_name, setting in sorted(packages.items()):
+            for field, values in [
+                ("ignore_dependencies", setting.ignore_dependencies),
+                ("extra_dependencies", setting.extra_dependencies),
+            ]:
+                for value in values:
+                    dep = requirement(value).name_
+                    for h in hubs:
+                        if h in hub_packages and whl_name in hub_packages[h] and dep not in hub_packages[h]:
+                            errors.append("pip.override(package = '{}').{} refers to '{}', which is not in hub '{}'".format(
+                                whl_name,
+                                field,
+                                dep,
+                                h,
+                            ))
 
     return errors

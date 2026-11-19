@@ -28,7 +28,7 @@ use
 :maxdepth: 1
 
 circular-dependencies
-patch
+override
 ../howto/multi-platform-pypi-deps
 rules-pycross-comparison
 ```

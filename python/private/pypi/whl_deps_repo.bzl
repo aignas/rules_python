@@ -18,12 +18,21 @@ For example if your whl depends on `numpy` and your Python package repo is named
 `pip` so that you would normally do `@pip//numpy`, then this should be: `@pip//{name}`.
 """,
     ),
+    "extra_dependencies": attr.string_list(
+        doc = "Extra `Requires-Dist` lines (PEP 508 requirements) to add to the dependencies.",
+    ),
+    "extra_tags": attr.string_list(
+        doc = "Extra tags to set on the generated targets.",
+    ),
     "group_deps": attr.string_list(
         doc = "List of dependencies to skip in order to break the cycles within a dependency group.",
         default = [],
     ),
     "group_name": attr.string(
         doc = "Name of the group, if any.",
+    ),
+    "ignore_dependencies": attr.string_list(
+        doc = "The names of the dependencies to remove from the `Requires-Dist` lines.",
     ),
 }
 
@@ -54,6 +63,9 @@ def _whl_deps_repo_impl(rctx):
         requires_dist = metadata.requires_dist,
         group_deps = rctx.attr.group_deps,
         group_name = rctx.attr.group_name,
+        ignore_dependencies = rctx.attr.ignore_dependencies,
+        extra_dependencies = rctx.attr.extra_dependencies,
+        extra_tags = rctx.attr.extra_tags,
         repo = rctx.attr.repo or (
             str(rctx.attr.metadata_file) if rctx.attr.metadata_file else None
         ),
