@@ -282,6 +282,36 @@ def _test_pylock(env):
 
 _tests.append(_test_pylock)
 
+def _test_unavailable_package_mode_mismatch(env):
+    logs = {}
+    builder = hub_builder(
+        env,
+        log_printer = lambda key, message: logs.setdefault(key.strip(), []).append(message),
+    )
+    for python_version, mode in [("3.15", "incompatible"), ("3.14", "error")]:
+        builder.pip_parse(
+            _mock_mctx(
+                os_name = "osx",
+                arch_name = "aarch64",
+                mock_files = {
+                    "uv.lock": """{"package":[]}""",
+                },
+            ),
+            _parse(
+                hub_name = "pypi",
+                python_version = python_version,
+                requirements_lock = None,
+                uv_lock = "uv.lock",
+                unavailable_package_mode = mode,
+            ),
+        )
+
+    env.expect.that_collection(logs.get("rules_python:unit-test FAIL:", [])).contains_exactly([
+        "All of the pip.parse calls of the hub 'pypi' need the same 'unavailable_package_mode', got 'incompatible' and 'error'",
+    ])
+
+_tests.append(_test_unavailable_package_mode_mismatch)
+
 def _test_uv_lock_conflicting_versions(env):
     logs = {}
     builder = hub_builder(

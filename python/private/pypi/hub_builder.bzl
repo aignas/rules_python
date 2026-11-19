@@ -71,6 +71,7 @@ def hub_builder(
         # The set of package names to expose. Dict acting as set
         # dict[str package, None]
         _exposed_packages = {},  # modified by _add_exposed_packages
+        _unavailable_package_mode = {},  # modified by _pip_parse
         # Map of the per-package aliases.
         # The nested dict is a dict acting as a set.
         # dict[str whl_name, dict[str alias_name, bool]]
@@ -124,6 +125,7 @@ def _build(self):
         extra_aliases = {},
         exposed_packages = [],
         whl_libraries = {},
+        unavailable_package_mode = "error",
     )
     if self._logger.failed():
         return ret
@@ -153,10 +155,20 @@ def _build(self):
         # Mapping of whl_library repo names and their kwargs.
         # dict[str repo_name, dict[str, object] kwargs]
         whl_libraries = self._whl_libraries,
+        # What to do when a package is not available.
+        unavailable_package_mode = self._unavailable_package_mode.get("mode", "error"),
     )
 
 def _pip_parse(self, module_ctx, pip_attr, default_envsubst = [], python_version = None):
     python_version = python_version or pip_attr.python_version
+    mode = getattr(pip_attr, "unavailable_package_mode", "error")
+    if self._unavailable_package_mode.setdefault("mode", mode) != mode:
+        self._logger.fail(lambda: "All of the pip.parse calls of the hub '{}' need the same 'unavailable_package_mode', got '{}' and '{}'".format(
+            self.name,
+            self._unavailable_package_mode["mode"],
+            mode,
+        ))
+        return
     if python_version in self._platforms:
         fail((
             "Duplicate pip python version '{version}' for hub " +

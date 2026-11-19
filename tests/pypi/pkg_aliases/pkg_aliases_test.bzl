@@ -103,6 +103,43 @@ configuration settings:
 
 _tests.append(_test_config_setting_aliases)
 
+def _test_config_setting_aliases_incompatible(env):
+    got = {}
+    filegroups = {}
+
+    pkg_aliases(
+        name = "bar_baz",
+        actual = {
+            "//:my_config_setting": "bar_baz_repo",
+        },
+        unavailable_package_mode = "incompatible",
+        native = struct(
+            alias = lambda *, name, actual, visibility = None, tags = None: got.update({name: actual}),
+            filegroup = lambda *, name, **kwargs: filegroups.update({name: kwargs}),
+        ),
+        select = lambda value, no_match_error = None: value,
+    )
+
+    env.expect.that_dict(got).contains_at_least({
+        "[]": {
+            "//:my_config_setting": "@bar_baz_repo//:pkg",
+            "//conditions:default": "_no_matching_repository",
+        },
+        "whl": {
+            "//:my_config_setting": "@bar_baz_repo//:whl",
+            "//conditions:default": "_no_matching_repository",
+        },
+    })
+    env.expect.that_dict(filegroups).contains_exactly({
+        "_no_matching_repository": {
+            "tags": ["manual"],
+            "target_compatible_with": [Label("@platforms//:incompatible")],
+            "visibility": ["//visibility:private"],
+        },
+    })
+
+_tests.append(_test_config_setting_aliases_incompatible)
+
 def _test_config_setting_aliases_many(env):
     # Use this function as it is used in pip_repository
     got = {}

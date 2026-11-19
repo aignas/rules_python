@@ -76,6 +76,7 @@ However, the command above will hide the `bazel config <config id>` message.
 _LABEL_NONE = labels.NONE
 _LABEL_CURRENT_CONFIG = Label("//python/config_settings:current_config")
 _LABEL_CURRENT_CONFIG_NO_MATCH = Label("//python/config_settings:is_not_matching_current_config")
+_LABEL_INCOMPATIBLE = Label("@platforms//:incompatible")
 _INCOMPATIBLE = "_no_matching_repository"
 _DEFAULT = "//conditions:default"
 
@@ -90,6 +91,7 @@ def pkg_aliases(
         extras = [],
         include = [],
         group_deps = [],
+        unavailable_package_mode = "error",
         **kwargs):
     """Create aliases for an actual package.
 
@@ -116,6 +118,9 @@ def pkg_aliases(
             requested extras come from the {obj}`whl_config_setting` keys.
         include: {type}`list[str]` The subset of packages to include.
             Comes from `//:config.bzl#packages`
+        unavailable_package_mode: {type}`str` What to do when the package is
+            not available for the current configuration: `error` fails the
+            analysis and `incompatible` makes the targets incompatible.
         **kwargs: extra kwargs to pass to {bzl:obj}`get_config_settings`.
     """
     if not group_name:
@@ -180,7 +185,17 @@ def pkg_aliases(
 
     extras_by_setting = _extras_by_setting(actual, extras)
     actual = multiplatform_whl_aliases(aliases = actual, **kwargs)
-    if type(actual) == type({}) and "//conditions:default" not in actual:
+    if type(actual) == type({}) and "//conditions:default" not in actual and unavailable_package_mode == "incompatible":
+        # The targets that depend on the package are skipped.
+        _native.filegroup(
+            name = _INCOMPATIBLE,
+            target_compatible_with = [_LABEL_INCOMPATIBLE],
+            visibility = ["//visibility:private"],
+            tags = ["manual"],
+        )
+        actual["//conditions:default"] = _INCOMPATIBLE
+    elif type(actual) == type({}) and "//conditions:default" not in actual:
+        # The analysis fails with an error that lists the config settings.
         _native.alias(
             name = _INCOMPATIBLE,
             actual = select(

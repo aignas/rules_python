@@ -42,6 +42,8 @@ def _impl(rctx):
         extra_hub_aliases = rctx.attr.extra_hub_aliases,
         requirement_cycles = rctx.attr.groups,
         platform_config_settings = rctx.attr.platform_config_settings,
+        # Only rendered when it is not the default
+        unavailable_package_mode = "" if rctx.attr.unavailable_package_mode == "error" else rctx.attr.unavailable_package_mode,
     )
     for path, contents in aliases.items():
         rctx.file(path, contents)
@@ -103,6 +105,11 @@ unless `hide_unexposed_packages` is set.
         "repo_name": attr.string(
             mandatory = True,
             doc = "The apparent name of the repo. This is needed because in bzlmod, the name attribute becomes the canonical name.",
+        ),
+        "unavailable_package_mode": attr.string(
+            default = "error",
+            values = ["error", "incompatible"],
+            doc = "What to do when a package is not available for the current configuration.",
         ),
         "whl_map": attr.string_dict(
             mandatory = True,
