@@ -329,6 +329,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
     # Where hub, whl, and pip are the repo names
     hub_whl_map = {}
     hub_group_map = {}
+    unavailable_package_modes = {}
     exposed_packages = {}
     extra_aliases = {}
     whl_libraries = {}
@@ -345,6 +346,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
         exposed_packages[hub.name] = out.exposed_packages
         extra_aliases[hub.name] = out.extra_aliases
         hub_group_map[hub.name] = out.group_map
+        unavailable_package_modes[hub.name] = out.unavailable_package_mode
         hub_whl_map[hub.name] = out.whl_map
         hubs[hub.name] = struct(
             module_name = hub.module_name,
@@ -385,6 +387,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
         facts = simpleapi_cache.get_facts(),
         hub_group_map = hub_group_map,
         hub_whl_map = hub_whl_map,
+        unavailable_package_modes = unavailable_package_modes,
         unified_hub_requirements_bzl = config.unified_hub_requirements_bzl,
         whl_libraries = whl_libraries,
         whl_mods = whl_mods,
@@ -535,6 +538,7 @@ def _pip_impl(module_ctx):
             groups = mods.hub_group_map.get(hub_name),
             # The hubs configured with `pip.configure` hide the other packages.
             hide_unexposed_packages = hub_name in mods.configured_hubs,
+            unavailable_package_mode = mods.unavailable_package_modes.get(hub_name, "error"),
         )
 
     _create_unified_hub_repo(mods)
@@ -1003,6 +1007,23 @@ any custom platforms configured with {obj}`pip.default`.
 Added support for `"*"` to select all of the configured platforms.
 :::
 """,
+        ),
+        "unavailable_package_mode": attr.string(
+            values = ["", "error", "incompatible"],
+            doc = """\
+What to do when a package of the hub is used in a configuration that it is
+not available for, e.g. a package that only has wheels for Linux is used on
+macOS:
+* `error` (the default): fail the analysis with an error that lists the
+  supported configurations.
+* `incompatible`: make the targets of the package incompatible, so that the
+  targets that depend on it are skipped, e.g. by `bazel build //...`, or fail
+  with an error that lists the incompatible dependencies.
+
+All of the `pip.parse` calls of a hub need to use the same value.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
         ),
         "uv_lock": attr.label(
             doc = """

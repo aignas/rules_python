@@ -148,7 +148,7 @@ all of them. You can define more platforms with {obj}`pip.default`.
 | `glibc_version`, `musl_version`, `macos_version` | {attr}`pip.default.whl_platform_tags` of a `platform`, e.g. `pip.default(platform = "linux_x86_64", whl_platform_tags = ["manylinux_*_x86_64"])`; the wheels are picked when the extension runs |
 | `py_linux_libc` | the same flag, {flag}`--py_linux_libc` |
 | `pep508_*` flags | {attr}`pip.default.env` when the extension runs, the {flag}`--pip_env_marker_config` flag in the build |
-| `unavailable_package_mode` | an error when the target is analysed; planned: an opt-in to make the target incompatible |
+| `unavailable_package_mode` | {attr}`pip.parse.unavailable_package_mode` (`error` or `incompatible`) |
 
 ## Labels
 
@@ -221,7 +221,7 @@ module. Do not depend on the same distribution from both in one binary.
 | Simple API for files without URLs, `netrc` | {attr}`pip.default.index_url`, {attr}`pip.default.netrc`, {attr}`pip.default.auth_patterns` | have |
 | one file with two hashes | files are looked up by the lock file hash | have |
 | glibc, musl and macOS version flags | {obj}`pip.default` platforms | partial |
-| `unavailable_package_mode` | an error | partial |
+| `unavailable_package_mode` | {attr}`pip.parse.unavailable_package_mode`; no `fail_at_execution` | partial |
 | automatic dependency cycles | {attr}`pip.parse.experimental_requirement_cycles` | planned |
 | uv `conflicts` | an error; use a separate hub for each conflicting group | gap |
 | per-repo transitions | none; the {flag}`--venv` flag selects a hub for the unified `@pypi` hub | gap |

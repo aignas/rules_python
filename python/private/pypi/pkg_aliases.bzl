@@ -90,6 +90,7 @@ def pkg_aliases(
         extras = [],
         include = [],
         group_deps = [],
+        unavailable_package_mode = "error",
         **kwargs):
     """Create aliases for an actual package.
 
@@ -116,6 +117,9 @@ def pkg_aliases(
             requested extras come from the {obj}`whl_config_setting` keys.
         include: {type}`list[str]` The subset of packages to include.
             Comes from `//:config.bzl#packages`
+        unavailable_package_mode: {type}`str` What to do when the package is
+            not available for the current configuration: `error` fails the
+            analysis and `incompatible` makes the targets incompatible.
         **kwargs: extra kwargs to pass to {bzl:obj}`get_config_settings`.
     """
     if not group_name:
@@ -180,7 +184,15 @@ def pkg_aliases(
 
     extras_by_setting = _extras_by_setting(actual, extras)
     actual = multiplatform_whl_aliases(aliases = actual, **kwargs)
-    if type(actual) == type({}) and "//conditions:default" not in actual:
+    if type(actual) == type({}) and "//conditions:default" not in actual and unavailable_package_mode == "incompatible":
+        _native.filegroup(
+            name = _INCOMPATIBLE,
+            target_compatible_with = ["@platforms//:incompatible"],
+            visibility = ["//visibility:private"],
+            tags = ["manual"],
+        )
+        actual["//conditions:default"] = _INCOMPATIBLE
+    elif type(actual) == type({}) and "//conditions:default" not in actual:
         _native.alias(
             name = _INCOMPATIBLE,
             actual = select(
