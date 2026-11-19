@@ -125,6 +125,7 @@ def _build(self):
         extra_aliases = {},
         exposed_packages = [],
         whl_libraries = {},
+        unavailable_package_mode = "error",
     )
     if self._logger.failed():
         return ret
@@ -160,7 +161,7 @@ def _build(self):
 
 def _pip_parse(self, module_ctx, pip_attr, default_envsubst = [], python_version = None):
     python_version = python_version or pip_attr.python_version
-    mode = getattr(pip_attr, "unavailable_package_mode", "") or "error"
+    mode = getattr(pip_attr, "unavailable_package_mode", "error")
     if self._unavailable_package_mode.setdefault("mode", mode) != mode:
         self._logger.fail(lambda: "All of the pip.parse calls of the hub '{}' need the same 'unavailable_package_mode', got '{}' and '{}'".format(
             self.name,

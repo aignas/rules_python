@@ -1009,7 +1009,8 @@ Added support for `"*"` to select all of the configured platforms.
 """,
         ),
         "unavailable_package_mode": attr.string(
-            values = ["", "error", "incompatible"],
+            default = "error",
+            values = ["error", "incompatible"],
             doc = """\
 What to do when a package of the hub is used in a configuration that it is
 not available for, e.g. a package that only has wheels for Linux is used on
@@ -1020,7 +1021,8 @@ macOS:
   targets that depend on it are skipped, e.g. by `bazel build //...`, or fail
   with an error that lists the incompatible dependencies.
 
-All of the `pip.parse` calls of a hub need to use the same value.
+All of the `pip.parse` calls of a hub need to use the same value. A package
+that is missing from a hub that the unified `@pypi` hub selects still fails.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",

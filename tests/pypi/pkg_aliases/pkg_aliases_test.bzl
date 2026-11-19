@@ -125,11 +125,15 @@ def _test_config_setting_aliases_incompatible(env):
             "//:my_config_setting": "@bar_baz_repo//:pkg",
             "//conditions:default": "_no_matching_repository",
         },
+        "whl": {
+            "//:my_config_setting": "@bar_baz_repo//:whl",
+            "//conditions:default": "_no_matching_repository",
+        },
     })
     env.expect.that_dict(filegroups).contains_exactly({
         "_no_matching_repository": {
             "tags": ["manual"],
-            "target_compatible_with": ["@platforms//:incompatible"],
+            "target_compatible_with": [Label("@platforms//:incompatible")],
             "visibility": ["//visibility:private"],
         },
     })
