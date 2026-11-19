@@ -232,7 +232,7 @@ def _test_replacements(env):
 
     for overrides, want in [
         ([_override(package = "foo@1.0", replace_with = Label("//:foo"))], "needs a single package without a version"),
-        ([_override(package = "foo", replace_with = Label("//:foo"), patches = ["//:a.patch"])], "cannot have 'patches' or 'build_mode'"),
+        ([_override(package = "foo", replace_with = Label("//:foo"), patches = ["//:a.patch"])], "cannot have 'patches', 'build_mode' or 'ignore_dependencies'"),
         ([_override(package = "foo", replace_with_whl = Label("//:foo.whl"))], "needs 'replace_with' to set 'replace_with_whl' or 'replace_with_dist_info'"),
     ]:
         _, failures = _parse(_mod(*overrides))

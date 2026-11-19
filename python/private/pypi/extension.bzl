@@ -1248,9 +1248,12 @@ A target that replaces the {attr}`pip.override.package` in the hub, e.g. a
 `py_library` with the sources of the package or a library that installs a
 wheel that is built from source. The hub targets of the package, e.g.
 `@pypi//foo`, `@pypi//foo:[]` and the extras targets, use it on all of the
-platforms and Python versions; the package is not downloaded. The dependencies
-of the target are not changed; use {attr}`pip.override.extra_dependencies` to
-add the dependencies on the other packages of the hub.
+platforms and Python versions where the lock file has the package; the
+package is not downloaded and its `Requires-Dist` are not used, so use
+{attr}`pip.override.extra_dependencies` to add the dependencies on the other
+packages of the hub. The requested extras of the package, e.g. `foo[bar]`, are
+the package itself. The target needs to be visible to the hub repositories,
+e.g. with `visibility = ["//visibility:public"]`.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",
@@ -1258,7 +1261,8 @@ add the dependencies on the other packages of the hub.
         "replace_with_dist_info": attr.label(
             doc = """\
 The `dist_info` target of the {attr}`pip.override.replace_with` package, e.g.
-the files with the `entry_points.txt` for `py_console_script_binary`.
+the files with the `entry_points.txt` for `py_console_script_binary`; the
+`@pypi//foo:dist_info` target is empty without it. It needs to be visible.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",
@@ -1266,7 +1270,7 @@ the files with the `entry_points.txt` for `py_console_script_binary`.
         "replace_with_whl": attr.label(
             doc = """\
 The wheel file of the {attr}`pip.override.replace_with` package for the
-`@pypi//foo:whl` target.
+`@pypi//foo:whl` target, which is empty without it. It needs to be visible.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",

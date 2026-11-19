@@ -374,6 +374,8 @@ def _test_replace_with(env):
             "config_load": "@pypi//:config.bzl",
             "dep_template": "@pypi//{name}:{target}",
             "metadata_name": "foo",
+            "metadata_version": "1.0",
+            "provides_extra": [],
             "replace_with": "@@//:foo",
             "replace_with_whl": "@@//:foo.whl",
         },

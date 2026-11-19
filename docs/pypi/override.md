@@ -102,8 +102,13 @@ so the build is not hermetic and the built wheel is for the host platform.
 target on all of the platforms, e.g. a `py_library` with the sources of the
 package or a library that installs a wheel that is built from source by
 another ruleset. The hub targets, e.g. `@pypi//foo` and the extras targets,
-keep working, the package is not downloaded and the dependencies on the other
-packages of the hub can be added with {attr}`pip.override.extra_dependencies`:
+keep working and the package is not downloaded. The `Requires-Dist` of the
+package are not used, so add the dependencies on the other packages of the hub
+with {attr}`pip.override.extra_dependencies`. The requested extras, e.g.
+`@pypi//foo:[bar]`, are the package itself, and `@pypi//foo:whl` and
+`@pypi//foo:dist_info` are empty unless {attr}`pip.override.replace_with_whl`
+and {attr}`pip.override.replace_with_dist_info` are set. The targets need to be
+visible to the hub repositories, e.g. `visibility = ["//visibility:public"]`:
 
 ```starlark
 pip.override(

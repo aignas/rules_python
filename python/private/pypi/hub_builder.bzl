@@ -113,7 +113,8 @@ def hub_builder(
         _config = config,
         _whl_overrides = whl_overrides,
         _package_settings = package_settings,
-        _build_mode = build_mode or (lambda _: ""),
+        # The replaced packages are not built.
+        _build_mode = lambda name: "" if name in replacements else (build_mode or (lambda _: ""))(name),
         _cycle_graphs = cycle_graphs,
         _replacements = replacements,
         _logger = logger,
@@ -668,7 +669,11 @@ def _create_whl_repos(
         )
         replacement = self._replacements.get(whl.name)
         if replacement:
-            # The package is provided by the user targets on all platforms.
+            # The package is provided by the user targets on all platforms,
+            # the requested extras are aliases of the package.
+            reqs = [requirement(src.requirement_line) for src in whl.srcs]
+            extras = sorted({e: None for r in reqs for e in r.extras})
+            versions = sorted({r.version: None for r in reqs if r.version})
             _add_whl_library(
                 self,
                 python_version = python_version,
@@ -677,13 +682,18 @@ def _create_whl_repos(
                     repo_name = "{}_replaced".format(whl.name),
                     args = whl_library_args | {
                         "metadata_name": whl.name,
+                        "metadata_version": versions[0] if len(versions) == 1 else "0",
+                        "provides_extra": extras,
                         "replace_with": replacement.replace_with,
                     } | {
                         k: getattr(replacement, k)
                         for k in ["replace_with_whl", "replace_with_dist_info"]
                         if getattr(replacement, k)
                     },
-                    config_setting = whl_config_setting(version = _major_minor_version(python_version)),
+                    config_setting = whl_config_setting(
+                        version = _major_minor_version(python_version),
+                        extras = extras or None,
+                    ),
                 ),
             )
             continue

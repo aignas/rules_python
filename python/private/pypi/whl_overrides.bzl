@@ -84,8 +84,8 @@ def parse_whl_overrides(modules, *, _fail = fail):
             seen_packages[key] = None
 
             if attr.replace_with:
-                if version or name == "*" or attr.patches or attr.build_mode:
-                    _fail("pip.override(package = '{}', replace_with = ...) needs a single package without a version and cannot have 'patches' or 'build_mode'".format(attr.package))
+                if version or name == "*" or attr.patches or attr.build_mode or attr.ignore_dependencies:
+                    _fail("pip.override(package = '{}', replace_with = ...) needs a single package without a version and cannot have 'patches', 'build_mode' or 'ignore_dependencies'".format(attr.package))
                     continue
                 replacements.setdefault(attr.hub_name, {})[whl_name] = struct(
                     replace_with = str(attr.replace_with),

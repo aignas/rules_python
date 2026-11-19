@@ -34,11 +34,11 @@ filegroup(
 def _impl(rctx):
     rctx.file("BUILD.bazel", _BUILD.format(
         srcs = PY_SRCS_LABEL,
-        target = str(rctx.attr.target),
+        target = rctx.attr.target,
         whl_file = WHEEL_FILE,
-        whl = repr([str(rctx.attr.whl)] if rctx.attr.whl else []),
+        whl = repr([rctx.attr.whl] if rctx.attr.whl else []),
         dist_info = DIST_INFO_LABEL,
-        dist_info_srcs = repr([str(rctx.attr.dist_info)] if rctx.attr.dist_info else []),
+        dist_info_srcs = repr([rctx.attr.dist_info] if rctx.attr.dist_info else []),
         data = DATA_LABEL,
         extracted_whl_files = EXTRACTED_WHEEL_FILES,
     ))
@@ -46,9 +46,9 @@ def _impl(rctx):
 replaced_whl_repo = repository_rule(
     implementation = _impl,
     attrs = {
-        "dist_info": attr.label(doc = "The optional `dist_info` target, e.g. with the `entry_points.txt`."),
-        "target": attr.label(mandatory = True, doc = "The target that provides the sources of the package."),
-        "whl": attr.label(doc = "The optional wheel file of the package."),
+        "dist_info": attr.string(doc = "The optional canonical label of the `dist_info` target, e.g. with the `entry_points.txt`."),
+        "target": attr.string(mandatory = True, doc = "The canonical label of the target that provides the sources of the package."),
+        "whl": attr.string(doc = "The optional canonical label of the wheel file of the package."),
     },
     doc = """\
 A repository with the `srcs`, `whl_file`, `dist_info`, `data` and

@@ -70,19 +70,19 @@ def whl_library(name, repo = None, **kwargs):
     if replace_with:
         # The package is provided by the user targets.
         replaced_whl_repo(
-            name = name + "_replaced",
+            name = name + "_srcs",
             target = replace_with,
-            whl = kwargs.pop("replace_with_whl", None),
-            dist_info = kwargs.pop("replace_with_dist_info", None),
+            whl = kwargs.pop("replace_with_whl", ""),
+            dist_info = kwargs.pop("replace_with_dist_info", ""),
         )
         whl_deps_repo(
             name = name,
-            repo = "@{}_replaced//:BUILD.bazel".format(name),
+            repo = "@{}_srcs//:BUILD.bazel".format(name),
             metadata = json.encode({
                 "name": kwargs.pop("metadata_name"),
-                "provides_extra": [],
+                "provides_extra": kwargs.pop("provides_extra", []),
                 "requires_dist": [],
-                "version": "0",
+                "version": kwargs.pop("metadata_version", "0"),
             }),
             **_filter(kwargs, whl_deps_attrs)
         )
