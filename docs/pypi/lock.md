@@ -4,12 +4,16 @@
 # Lock
 
 :::{note}
-`rules_python` supports `requirements.txt` and `uv.lock` formats. Generating
+`rules_python` supports `requirements.txt`, `uv.lock` and `pylock.toml`
+formats. Generating
 `uv.lock` with {obj}`lock` and consuming it to install packages via
 {attr}`pip.parse.uv_lock` or {attr}`pip_parse.uv_lock` is supported under
 both `bzlmod` and `WORKSPACE`.
 
-#{gh-issue}`2787` tracks `pylock.toml` support.
+`pylock.toml` (PEP 751) files, e.g. exported with
+`uv export --format pylock.toml`, can be consumed with
+{attr}`pip.parse.pylock` under `bzlmod`; the `vcs`, `archive` and `directory`
+sources are tracked in {gh-issue}`2787`.
 :::
 
 ## requirements.txt

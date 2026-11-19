@@ -873,7 +873,8 @@ Using the hub name `"pypi"` is deprecated and is changed to
         "local_wheels": attr.label_list(
             allow_files = [".whl"],
             doc = """\
-Local wheels to use instead of the wheels in the {attr}`uv_lock` with the same
+Local wheels to use instead of the wheels in the {attr}`uv_lock` or the
+{attr}`pylock` with the same
 package name and version, e.g. wheels that are checked in or that come from
 another repository because they are not available on an index. The wheels are
 read when the repositories are fetched, so wheels that are built by Bazel
@@ -900,6 +901,27 @@ If we are in synchronous mode, then we will use the first result that we
 find in case extra indexes are specified.
 """,
             default = True,
+        ),
+        "pylock": attr.label(
+            allow_single_file = True,
+            doc = """\
+A `pylock.toml` lock file (PEP 751) to use instead of the requirements files,
+e.g. exported with `uv export --format pylock.toml`, `pdm export -f pylock` or
+`pip lock`.
+
+All of the extras, the `default-groups` and the `dependency-groups` that the
+lock file lists are selected, so that the hub has all of the packages; use
+{obj}`pip.configure` to limit which of them are exposed. A package is used on
+the platforms where its `marker` is true and it fails if its
+`requires-python` does not match such a platform. Each platform needs to match
+the top-level `requires-python`; the platforms that do not match the top-level
+`environments` are ignored with a warning. The files without a `url` are
+ignored, use {attr}`local_wheels` for them. The packages from `vcs`, `archive`
+and `directory` sources are not supported yet. It cannot be used together with
+the {attr}`uv_lock` or the requirements files.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
         ),
         "pyproject_toml": attr.label(
             mandatory = False,

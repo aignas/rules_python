@@ -1,0 +1,3 @@
+load(":pylock_tests.bzl", "pylock_test_suite")
+
+pylock_test_suite(name = "pylock_tests")

@@ -288,6 +288,7 @@ bzl_library(
         ":parse_requirements_txt",
         ":pep508_evaluate",
         ":pep508_requirement",
+        ":pylock",
         ":select_whl",
         ":uv_lock",
         "//python/private:normalize_name",
@@ -405,6 +406,19 @@ bzl_library(
         "//python/private:common_labels",
         "//python/private:text_util",
         "@bazel_skylib//lib:selects",
+    ],
+)
+
+bzl_library(
+    name = "pylock",
+    srcs = ["pylock.bzl"],
+    deps = [
+        ":hash",
+        ":lock_model",
+        ":pep508_evaluate",
+        ":uv_lock",
+        "//python/private:normalize_name",
+        "//python/private:version",
     ],
 )
 
