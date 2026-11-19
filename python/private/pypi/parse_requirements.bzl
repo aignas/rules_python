@@ -31,11 +31,12 @@ load("//python/private:repo_utils.bzl", "repo_utils")
 load(":argparse.bzl", "argparse")
 load(":hash.bzl", "hash")
 load(":index_sources.bzl", "index_sources")
+load(":lock_model.bzl", "lock_requirements")
 load(":parse_requirements_txt.bzl", "parse_requirements_txt")
 load(":pep508_evaluate.bzl", "evaluate")
 load(":pep508_requirement.bzl", "requirement")
 load(":select_whl.bzl", "select_whl")
-load(":uv_lock.bzl", "parse_uv_lock_json")
+load(":uv_lock.bzl", "uv_lock_entries")
 
 def parse_requirements(
         ctx,
@@ -86,18 +87,20 @@ def parse_requirements(
            `target_platforms`, `filename`, `digest`, `url`, `yanked`. The `digest`
            is a `<algo>:<digest>` string or empty if the artifact digest is unknown.
     """
-    if uv_lock and toml_decode:
-        uv_lock = toml_decode(ctx.read(uv_lock))
-        return _parse_requirements_with_uv_lock(
-            ctx = ctx,
-            requirements_by_platform = requirements_by_platform,
-            extra_pip_args = extra_pip_args,
+    lock = toml_decode(ctx.read(uv_lock)) if uv_lock and toml_decode else None
+
+    # NOTE: an empty uv.lock falls back to the requirements files.
+    if lock:
+        all_platforms = _get_all_platforms(requirements_by_platform) if requirements_by_platform else sorted(platforms.keys())
+        ret = lock_requirements(
+            uv_lock_entries(lock, all_platforms = all_platforms, platforms = platforms),
+            all_platforms = all_platforms,
             platforms = platforms,
-            get_index_urls = get_index_urls,
-            extract_url_srcs = extract_url_srcs,
-            uv_lock = uv_lock,
+            extra_pip_args = extra_pip_args,
             logger = logger,
         )
+        logger.debug(lambda: "Parsed {} packages from uv.lock".format(len(ret)))
+        return ret
 
     return _parse_requirements_from_req_files(
         ctx = ctx,
@@ -116,36 +119,6 @@ def _get_all_platforms(requirements_by_platform):
         for p in plats:
             all_platforms[p] = None
     return sorted(all_platforms)
-
-def _parse_requirements_with_uv_lock(
-        ctx,
-        *,
-        requirements_by_platform,
-        extra_pip_args,
-        platforms,
-        get_index_urls,
-        extract_url_srcs,
-        uv_lock,
-        logger):
-    """Parse requirements using uv.lock as the primary source."""
-    if uv_lock:
-        return parse_uv_lock_json(
-            uv_lock = uv_lock,
-            all_platforms = _get_all_platforms(requirements_by_platform) if requirements_by_platform else sorted(platforms.keys()),
-            platforms = platforms,
-            extra_pip_args = extra_pip_args,
-            logger = logger,
-        )
-
-    return _parse_requirements_from_req_files(
-        ctx = ctx,
-        requirements_by_platform = requirements_by_platform,
-        extra_pip_args = extra_pip_args,
-        platforms = platforms,
-        get_index_urls = get_index_urls,
-        extract_url_srcs = extract_url_srcs,
-        logger = logger,
-    )
 
 def _parse_requirements_from_req_files(
         ctx,
