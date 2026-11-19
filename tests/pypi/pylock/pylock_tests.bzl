@@ -114,7 +114,8 @@ def _test_errors(env):
     for contents, want in [
         ('lock-version = "2.0"', "Only the pylock.toml 'lock-version' 1.x is supported, got: '2.0'"),
         ('lock-version = "1.0"\nrequires-python = ">=3.13"', "The pylock.toml 'requires-python = \">=3.13\"' does not match the Python version 3.12.4 of the 'linux_x86_64' platform"),
-        ('lock-version = "1.0"\n[[packages]]\nname = "foo"\nvcs = { type = "git", url = "https://example.org/foo.git", commit-id = "abc" }', "The pylock.toml package 'foo' has a 'vcs' source, which is not supported"),
+        ('lock-version = "1.0"\n[[packages]]\nname = "foo"\nvcs = { type = "hg", url = "https://example.org/foo", commit-id = "abc" }', "The pylock.toml package 'foo' has a 'vcs' source that is not git with a 'url' and a 'commit-id', which is not supported"),
+        ('lock-version = "1.0"\n[[packages]]\nname = "foo"\nversion = "1.0"\narchive = { path = "foo.tar.gz" }', "The pylock.toml package 'foo' has an 'archive' without a 'url', which is not supported"),
         ('lock-version = "1.0"\n[[packages]]\nname = "foo"', "The pylock.toml package 'foo' has no 'version'"),
         ('lock-version = "1.0"\n[[packages]]\nname = "foo"\nversion = "1.0"\nrequires-python = "<3.12"', "The pylock.toml package 'foo' has 'requires-python = \"<3.12\"', which does not match the Python version 3.12.4 of the 'linux_x86_64' platform"),
     ]:
@@ -148,6 +149,57 @@ def _test_errors(env):
     ])
 
 _tests.append(_test_errors)
+
+_PYLOCK_SOURCES = """\
+lock-version = "1.0"
+
+[[packages]]
+name = "my-project"
+directory = { path = ".", editable = true }
+
+[[packages]]
+name = "from-git"
+vcs = { type = "git", url = "https://github.com/org/repo.git", commit-id = "0123abcd", subdirectory = "python" }
+
+[[packages]]
+name = "from-tarball"
+version = "1.0"
+archive = { url = "https://github.com/org/tarball/archive/v1.0.tar.gz", hashes = { sha256 = "deadbeef" } }
+
+[[packages]]
+name = "from-subdir"
+version = "2.0"
+archive = { url = "https://example.org/mono.zip", subdirectory = "pkg", hashes = { sha256 = "deadbaaf" } }
+
+[[packages]]
+name = "from-wheel"
+version = "3.0"
+archive = { url = "https://example.org/from_wheel-3.0-py3-none-any.whl", hashes = { sha256 = "deadb00f" } }
+"""
+
+def _test_sources(env):
+    failures = []
+    lock = pylock_entries(
+        toml.decode(_PYLOCK_SOURCES),
+        all_platforms = sorted(_PLATFORMS),
+        platforms = _PLATFORMS,
+        logger = _logger(failures),
+        _fail = failures.append,
+    )
+    env.expect.that_collection(failures).contains_exactly([])
+
+    got = lock_requirements(lock.entries, all_platforms = lock.platforms, platforms = _PLATFORMS, logger = _logger(failures))
+    env.expect.that_collection([
+        (r.name, [(s.requirement_line, s.filename, s.url, s.digest) for s in r.srcs])
+        for r in got
+    ]).contains_exactly([
+        ("from_git", [("from-git @ git+https://github.com/org/repo.git@0123abcd#subdirectory=python", "", "", "")]),
+        ("from_subdir", [("from-subdir @ https://example.org/mono.zip#subdirectory=pkg", "", "", "")]),
+        ("from_tarball", [("from-tarball==1.0", "from_tarball-1.0.tar.gz", "https://github.com/org/tarball/archive/v1.0.tar.gz", "sha256:deadbeef")]),
+        ("from_wheel", [("from-wheel==3.0", "from_wheel-3.0-py3-none-any.whl", "https://example.org/from_wheel-3.0-py3-none-any.whl", "sha256:deadb00f")]),
+    ])
+
+_tests.append(_test_sources)
 
 def pylock_test_suite(name):
     """Create the test suite.

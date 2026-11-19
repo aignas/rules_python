@@ -202,8 +202,8 @@ module. Do not depend on the same distribution from both in one binary.
 |---|---|---|
 | `uv.lock` | {attr}`pip.parse.uv_lock` | have |
 | uv workspace members, `projects`, `default-groups`, `extra_project_files` | the uv workspace members are used as the roots; {obj}`pip.configure` reads one `pyproject.toml` | partial |
-| `pylock.toml` | {attr}`pip.parse.pylock`; `vcs`, `archive` and `directory` sources are planned | partial |
-| `pdm.lock`, `poetry.lock` | export them to `pylock.toml` (`pdm export -f pylock`, `poetry-plugin-export` 1.10+) for {attr}`pip.parse.pylock` | partial: no `vcs`, `archive` or `directory` sources |
+| `pylock.toml` | {attr}`pip.parse.pylock` | have |
+| `pdm.lock`, `poetry.lock` | export them to `pylock.toml` (`pdm export -f pylock`, `poetry-plugin-export` 1.10+) for {attr}`pip.parse.pylock` | have |
 | dependency groups, `transitive` | {obj}`pip.configure`, requires {gh-pr}`4395` | have |
 | `;testonly` | none, see {gh-pr}`4428` | planned |
 | extras targets | requires {gh-pr}`4490` and {gh-pr}`4523` | have |
