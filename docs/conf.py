@@ -96,6 +96,7 @@ redirects = {
     "api/sphinxdocs/inventories/index": "/api/sphinxdocs/sphinxdocs/inventories/index.html",
     "pip.html": "pypi/index.html",
     "pypi-dependencies.html": "pypi/index.html",
+    "pypi/patch": "override.html",
 }
 
 exclude_patterns = ["_includes/*"]

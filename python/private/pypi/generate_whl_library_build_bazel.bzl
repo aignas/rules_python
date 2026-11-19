@@ -14,7 +14,9 @@
 
 """Generate the BUILD.bazel contents for a repo defined by a whl_library."""
 
+load("//python/private:normalize_name.bzl", "normalize_name")
 load("//python/private:text_util.bzl", "render")
+load(":pep508_requirement.bzl", "requirement")
 
 _RENDER = {
     "copy_executables": render.dict,
@@ -59,6 +61,9 @@ def generate_whl_library_build_bazel(
         config_load,
         purl = None,
         requires_dist = [],
+        ignore_dependencies = [],
+        extra_dependencies = [],
+        extra_tags = [],
         **kwargs):
     """Generate a BUILD file for an unzipped Wheel
 
@@ -68,6 +73,10 @@ def generate_whl_library_build_bazel(
         config_load: {type}`str` The location from where to load the config.
         purl: The purl.
         requires_dist: {type}`list[str]` The list of dependencies from the METADATA file.
+        ignore_dependencies: {type}`list[str]` The names of the dependencies
+            to remove from `requires_dist`.
+        extra_dependencies: {type}`list[str]` The extra `Requires-Dist` lines.
+        extra_tags: {type}`list[str]` The extra tags of the targets.
         **kwargs: Extra args serialized to be passed to the
             {obj}`whl_library_targets`.
 
@@ -87,8 +96,17 @@ def generate_whl_library_build_bazel(
     tags = [
         "pypi_name={}".format(kwargs.get("metadata_name")),
         "pypi_version={}".format(metadata_version),
-    ]
+    ] + extra_tags
     kwargs["tags"] = tags
+
+    if ignore_dependencies:
+        ignored = {normalize_name(name): None for name in ignore_dependencies}
+        requires_dist = [
+            req
+            for req in requires_dist
+            if requirement(req).name_ not in ignored
+        ]
+    requires_dist = requires_dist + extra_dependencies
 
     if not requires_dist:
         # no deps, we can leave the extra loads out

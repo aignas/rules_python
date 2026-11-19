@@ -1,17 +1,29 @@
 ""
 
 load("@rules_testing//lib:test_suite.bzl", "test_suite")
-load("//python/private/pypi:whl_overrides.bzl", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")  # buildifier: disable=bzl-visibility
+load("//python/private/pypi:whl_overrides.bzl", "package_settings_for_hub", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")  # buildifier: disable=bzl-visibility
 
 _tests = []
 
-def _override(*, file = "", package = "", hub_name = "", patches = [], patch_strip = 0):
+def _override(
+        *,
+        file = "",
+        package = "",
+        hub_name = "",
+        patches = [],
+        patch_strip = 0,
+        ignore_dependencies = [],
+        extra_dependencies = [],
+        tags = []):
     return struct(
+        extra_dependencies = extra_dependencies,
         file = file,
         hub_name = hub_name,
+        ignore_dependencies = ignore_dependencies,
         package = package,
         patch_strip = patch_strip,
         patches = patches,
+        tags = tags,
     )
 
 def _mod(*overrides, is_root = True):
@@ -79,8 +91,12 @@ def _test_errors(env):
     for overrides, want in [
         ([_override(patches = ["//:a.patch"])], "pip.override needs exactly one of 'file' or 'package'"),
         ([_override(file = "foo-1.0-py3-none-any.whl", package = "foo")], "pip.override needs exactly one of 'file' or 'package'"),
-        ([_override(file = "foo-1.0-py3-none-any.whl", hub_name = "pypi")], "does not support 'hub_name'"),
-        ([_override(file = "foo-1.0.tar.gz")], "Only whl overrides are supported"),
+        ([_override(file = "foo-1.0-py3-none-any.whl", hub_name = "pypi", patches = ["//:a.patch"])], "does not support 'hub_name'"),
+        ([_override(file = "foo-1.0.tar.gz", patches = ["//:a.patch"])], "Only whl overrides are supported"),
+        ([_override(file = "foo-1.0-py3-none-any.whl")], "needs 'patches'"),
+        ([_override(file = "foo-1.0-py3-none-any.whl", patches = ["//:a.patch"], tags = ["a"])], "only supports 'patches'"),
+        ([_override(package = "foo")], "does not set anything"),
+        ([_override(package = "foo@1.0", tags = ["a"])], "cannot set 'ignore_dependencies', 'extra_dependencies' or 'tags' for a single version"),
         ([_override(package = "foo@", patches = ["//:a.patch"])], "needs to be a package name or '<name>@<version>'"),
         ([_override(package = "foo==1.0", patches = ["//:a.patch"])], "needs to be a package name or '<name>@<version>'"),
         (
@@ -111,6 +127,45 @@ def _test_errors(env):
     ])
 
 _tests.append(_test_errors)
+
+def _test_package_settings(env):
+    got, failures = _parse(_mod(
+        _override(package = "foo", ignore_dependencies = ["Bar"], tags = ["all"]),
+        _override(package = "foo", hub_name = "pypi", extra_dependencies = ["baz[x]; sys_platform == 'linux'"]),
+        _override(package = "qux", hub_name = "other", ignore_dependencies = ["missing"]),
+    ))
+    env.expect.that_collection(failures).contains_exactly([])
+
+    # The hub settings replace the settings for all hubs field by field
+    env.expect.that_dict(package_settings_for_hub(got, "pypi")).contains_exactly({
+        "foo": {
+            "extra_dependencies": ["baz[x]; sys_platform == 'linux'"],
+            "extra_tags": ["all"],
+            "ignore_dependencies": ["Bar"],
+        },
+    })
+    env.expect.that_dict(package_settings_for_hub(got, "other")).contains_exactly({
+        "foo": {
+            "extra_dependencies": [],
+            "extra_tags": ["all"],
+            "ignore_dependencies": ["Bar"],
+        },
+        "qux": {
+            "extra_dependencies": [],
+            "extra_tags": [],
+            "ignore_dependencies": ["missing"],
+        },
+    })
+
+    env.expect.that_collection(unmatched_whl_overrides(got, {
+        "other": ["foo", "bar", "qux"],
+        "pypi": ["foo", "bar"],
+    })).contains_exactly([
+        "pip.override(package = 'foo').extra_dependencies refers to 'baz[x]; sys_platform == 'linux'', which is not in hub 'pypi'",
+        "pip.override(package = 'qux').ignore_dependencies refers to 'missing', which is not in hub 'other'",
+    ])
+
+_tests.append(_test_package_settings)
 
 def whl_overrides_test_suite(name):
     """Create the test suite.

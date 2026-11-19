@@ -29,6 +29,7 @@ def hub_builder(
         module_name,
         config,
         whl_overrides,
+        package_settings = {},
         minor_mapping,
         available_interpreters,
         simpleapi_download_fn,
@@ -41,6 +42,8 @@ def hub_builder(
         module_name: {type}`str`, the module name that has created the hub.
         config: The platform configuration.
         whl_overrides: {type}`dict[str, struct]` - per-wheel overrides.
+        package_settings: {type}`dict[str, dict]` - extra `whl_library` args
+            for each package.
         minor_mapping: {type}`dict[str, str]` the mapping between minor and full versions.
         available_interpreters: {type}`dict[str, Label]` The dictionary of available
             interpreters that have been registered using the `python` bzlmod extension.
@@ -98,6 +101,7 @@ def hub_builder(
         # Instance constants passed in by callers
         _config = config,
         _whl_overrides = whl_overrides,
+        _package_settings = package_settings,
         _logger = logger,
         _minor_mapping = minor_mapping,
         _available_interpreters = available_interpreters,
@@ -770,6 +774,7 @@ def _whl_library_args(self, *, whl, whl_modifications):
             p: json.encode(args)
             for p, args in self._whl_overrides.get(whl.name, {}).items()
         },
+        **self._package_settings.get(whl.name, {})
     )
 
     whl_library_args.update({k: v for k, v in maybe_args.items() if v})

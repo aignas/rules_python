@@ -269,6 +269,47 @@ whl_library_deps_targets(
 
 _tests.append(_test_deps_targets)
 
+def _test_deps_overrides(env):
+    want = """\
+load("@package_metadata//rules:package_metadata.bzl", "package_metadata")
+load("@rules_python//python/private/pypi:whl_library_deps_targets.bzl", "whl_library_deps_targets")
+
+package(default_visibility = ["//visibility:public"])
+
+whl_library_deps_targets(
+    metadata_name = "foo",
+    name = "foo.whl",
+    repo = "@some_repo",
+    requires_dist = [
+        "baz",
+        "qux; sys_platform == 'linux'",
+    ],
+    tags = [
+        "pypi_name=foo",
+        "pypi_version=0",
+        "no-remote",
+    ],
+)
+"""
+    actual = generate_whl_library_build_bazel(
+        metadata_version = "0",
+        metadata_name = "foo",
+        name = "foo.whl",
+        repo = "@some_repo",
+        config_load = "",
+        requires_dist = [
+            "Bar.Baz>=1",
+            "bar_baz[extra]; extra == 'x'",
+            "baz",
+        ],
+        ignore_dependencies = ["bar-baz"],
+        extra_dependencies = ["qux; sys_platform == 'linux'"],
+        extra_tags = ["no-remote"],
+    )
+    env.expect.that_str(actual.replace("@@", "@")).equals(want)
+
+_tests.append(_test_deps_overrides)
+
 def generate_whl_library_build_bazel_test_suite(name):
     """Create the test suite.
 

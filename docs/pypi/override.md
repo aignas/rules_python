@@ -1,7 +1,12 @@
 :::{default-domain} bzl
 :::
 
-# Patching wheels
+(pypi-override)=
+# Per-package overrides
+
+The {obj}`pip.override` tag class changes how the packages of a hub are set up.
+
+## Patching wheels
 
 Sometimes the wheels have to be patched to:
 * Workaround the lack of a standard `site-packages` layout ({gh-issue}`2156`).
@@ -37,3 +42,25 @@ pip.override(
 The patches are applied with `patch_strip = 0` by default, so use
 `patch_strip = 1` for patches created with `git diff`.
 :::
+
+## Changing the dependencies and tags
+
+The dependencies of a package come from the `Requires-Dist` lines of its
+`METADATA`. They can be changed with {attr}`pip.override.ignore_dependencies`,
+e.g. to drop an optional dependency that is listed as a required one, and
+{attr}`pip.override.extra_dependencies`, e.g. to add a missing dependency. The
+extra dependencies are PEP 508 requirements, so they can have extras and
+markers. Both need to refer to packages in the same hub.
+
+{attr}`pip.override.tags` adds tags to the targets of the package, e.g. to
+avoid building it remotely.
+
+```starlark
+pip.override(
+    package = "foo",
+    hub_name = "my_deps",
+    ignore_dependencies = ["bar"],
+    extra_dependencies = ["baz[socks]; sys_platform == 'linux'"],
+    tags = ["no-remote"],
+)
+```
