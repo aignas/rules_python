@@ -64,3 +64,24 @@ pip.override(
     tags = ["no-remote"],
 )
 ```
+
+## Building from sdists
+
+By default a package uses a wheel for the platform if there is one and
+otherwise builds the wheel from its sdist. {attr}`pip.override.build_mode`
+changes that for a package, or for all of them with `package = "*"`:
+
+| `build_mode` | wheel available | only an sdist |
+|---|---|---|
+| `auto` (default) | use the wheel | build the wheel from the sdist |
+| `always` | build the wheel from the sdist | build the wheel from the sdist |
+| `never` | use the wheel | the package is not available on the platform |
+
+{attr}`pip.parse.download_only` is the same as `never` for all of the packages
+of a hub and it cannot be combined with `always`. The settings for a hub
+replace the settings for all of the hubs.
+
+:::{note}
+The wheels are built with `pip` on the host when the repositories are fetched,
+so the build is not hermetic and the built wheel is for the host platform.
+:::

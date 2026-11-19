@@ -1,7 +1,7 @@
 ""
 
 load("@rules_testing//lib:test_suite.bzl", "test_suite")
-load("//python/private/pypi:whl_overrides.bzl", "package_settings_for_hub", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")  # buildifier: disable=bzl-visibility
+load("//python/private/pypi:whl_overrides.bzl", "build_modes_for_hub", "package_settings_for_hub", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")  # buildifier: disable=bzl-visibility
 
 _tests = []
 
@@ -14,8 +14,10 @@ def _override(
         patch_strip = 0,
         ignore_dependencies = [],
         extra_dependencies = [],
-        tags = []):
+        tags = [],
+        build_mode = ""):
     return struct(
+        build_mode = build_mode,
         extra_dependencies = extra_dependencies,
         file = file,
         hub_name = hub_name,
@@ -168,6 +170,40 @@ def _test_package_settings(env):
     ])
 
 _tests.append(_test_package_settings)
+
+def _test_build_modes(env):
+    got, failures = _parse(_mod(
+        _override(package = "*", build_mode = "never"),
+        _override(package = "foo", build_mode = "always"),
+        _override(package = "bar", hub_name = "pypi", build_mode = "auto"),
+    ))
+    env.expect.that_collection(failures).contains_exactly([])
+    env.expect.that_dict(build_modes_for_hub(got, "pypi")).contains_exactly({
+        "*": "never",
+        "bar": "auto",
+        "foo": "always",
+    })
+    env.expect.that_dict(build_modes_for_hub(got, "other")).contains_exactly({
+        "*": "never",
+        "foo": "always",
+    })
+    env.expect.that_collection(unmatched_whl_overrides(got, {
+        "pypi": ["foo"],
+    })).contains_exactly([
+        "pip.override(package = 'bar') does not match any package in hub 'pypi'",
+    ])
+
+    for overrides, want in [
+        ([_override(package = "*", patches = ["//:a.patch"])], "pip.override(package = '*') only supports 'build_mode'"),
+        ([_override(package = "*@1.0", build_mode = "never")], "needs to be a package name or '<name>@<version>'"),
+        ([_override(package = "foo@1.0", build_mode = "never")], "cannot set 'build_mode' for a single version"),
+        ([_override(file = "foo-1.0-py3-none-any.whl", patches = ["//:a.patch"], build_mode = "never")], "only supports 'patches'"),
+    ]:
+        _, failures = _parse(_mod(*overrides))
+        env.expect.where(overrides = overrides).that_int(len(failures)).equals(1)
+        env.expect.that_str(failures[0]).contains(want)
+
+_tests.append(_test_build_modes)
 
 def whl_overrides_test_suite(name):
     """Create the test suite.

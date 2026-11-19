@@ -72,7 +72,7 @@ def lock_entry(
         direct_requirement = direct_requirement,
     )
 
-def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_args = None):
+def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_args = None, build_modes = {}):
     """Select the distributions of the locked packages for each platform.
 
     Args:
@@ -83,6 +83,8 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
         logger: {type}`struct` A logger for diagnostic messages.
         extra_pip_args: {type}`list[str] | None` Extra pip arguments to pass
             through.
+        build_modes: {type}`dict[str, str]` the build mode of the packages by
+            the normalized name (`*` for all), `always` ignores the wheels.
 
     Returns:
         {type}`list[struct]` The same format as `parse_requirements`.
@@ -99,6 +101,11 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
         info["versions"][version] = None
         info["index_url"] = entry.index_url
 
+        build_from_sdist = build_modes.get(norm_name, build_modes.get("*")) == "always"
+        if build_from_sdist and not entry.sdist and not entry.direct_requirement:
+            logger.fail(lambda: "The package '{}' has 'build_mode = \"always\"', but there is no sdist in the lock file".format(name))
+            continue
+
         extra_str = "[{}]".format(",".join(entry.extras)) if entry.extras else ""
         pinned = "{name}{extras}=={version}".format(
             name = name,
@@ -114,7 +121,7 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
 
             best_wheel = None
             for whls in [entry.local_wheels, entry.wheels]:
-                if best_wheel:
+                if best_wheel or build_from_sdist:
                     break
                 if not whls:
                     continue

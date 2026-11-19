@@ -48,6 +48,7 @@ def parse_requirements(
         extract_url_srcs = True,
         uv_lock = None,
         local_wheels = [],
+        build_modes = {},
         toml_decode = None,
         logger):
     """Get the requirements with platforms that the requirements apply to.
@@ -74,6 +75,8 @@ def parse_requirements(
         local_wheels: {type}`list[Label]` the local wheels to use instead of
             the locked wheels of the same package version. Only supported
             with the `uv_lock`.
+        build_modes: {type}`dict[str, str]` the build mode of the packages by
+            the normalized name (`*` for all), `always` ignores the wheels.
         toml_decode: {type}`callable | None` A function to decode TOML
             content (e.g. `toml.decode`). Required when `uv_lock` is provided.
         logger: repo_utils.logger, a simple struct to log diagnostic messages.
@@ -107,6 +110,7 @@ def parse_requirements(
             platforms = platforms,
             extra_pip_args = extra_pip_args,
             logger = logger,
+            build_modes = build_modes,
         )
         logger.debug(lambda: "Parsed {} packages from uv.lock".format(len(ret)))
         return ret
@@ -122,6 +126,7 @@ def parse_requirements(
         platforms = platforms,
         get_index_urls = get_index_urls,
         extract_url_srcs = extract_url_srcs,
+        build_modes = build_modes,
         logger = logger,
     )
 
@@ -141,7 +146,8 @@ def _parse_requirements_from_req_files(
         platforms,
         get_index_urls,
         extract_url_srcs,
-        logger):
+        logger,
+        build_modes = {}):
     """Parse requirements from requirements.txt files (existing behavior)."""
     options = {}
     requirements = {}
@@ -263,6 +269,7 @@ def _parse_requirements_from_req_files(
             pkg_sources = pkg_sources,
             platforms = platforms,
             extract_url_srcs = extract_url_srcs,
+            build_from_sdist = build_modes.get(normalize_name(name), build_modes.get("*")) == "always",
             logger = logger,
         )
 
@@ -292,7 +299,8 @@ def _package_srcs(
         pkg_sources,
         platforms,
         logger,
-        extract_url_srcs):
+        extract_url_srcs,
+        build_from_sdist = False):
     """A function to return sources for a particular package."""
     srcs = {}
     for r in sorted(reqs.values(), key = lambda r: r.requirement_line):
@@ -310,6 +318,7 @@ def _package_srcs(
                 target_platform = platforms.get(target_platform),
                 index_urls = pkg_sources,
                 logger = logger,
+                build_from_sdist = build_from_sdist,
             )
             logger.debug(lambda: "The whl dist is: {}".format(dist.filename if dist else dist))
 
@@ -400,7 +409,7 @@ def host_platform(ctx):
         repo_utils.get_platforms_cpu_name(ctx),
     )
 
-def _add_dists(*, requirement, index_urls, target_platform, logger = None):
+def _add_dists(*, requirement, index_urls, target_platform, logger = None, build_from_sdist = False):
     """Populate dists based on the information from the PyPI index.
 
     This function will modify the given requirements_by_platform data structure.
@@ -410,6 +419,7 @@ def _add_dists(*, requirement, index_urls, target_platform, logger = None):
         index_urls: The result of simpleapi_download.
         target_platform: The target_platform information.
         logger: A logger for printing diagnostic info.
+        build_from_sdist: Ignore the wheels and use the sdist.
 
     Returns:
         (dist, can_fallback_to_pip): a struct with distribution details and how to fetch
@@ -478,6 +488,9 @@ def _add_dists(*, requirement, index_urls, target_platform, logger = None):
             "reason: {}\n  {}".format(reason, "\n".join(sorted(dists)))
             for reason, dists in yanked.items()
         ]))
+
+    if build_from_sdist:
+        whls = []
 
     if not target_platform:
         # The pipstar platforms are undefined here, so we cannot do any matching
