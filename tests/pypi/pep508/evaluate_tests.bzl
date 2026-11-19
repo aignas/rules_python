@@ -15,7 +15,7 @@
 
 load("@rules_testing//lib:test_suite.bzl", "test_suite")
 load("//python/private/pypi:pep508_env.bzl", pep508_env = "env")  # buildifier: disable=bzl-visibility
-load("//python/private/pypi:pep508_evaluate.bzl", "evaluate", "tokenize")  # buildifier: disable=bzl-visibility
+load("//python/private/pypi:pep508_evaluate.bzl", "evaluate", "marker_expr", "tokenize")  # buildifier: disable=bzl-visibility
 
 _tests = []
 
@@ -328,6 +328,61 @@ def _misc_expressions(env):
         _check_evaluate(env, case.expr, case.want, case.env)
 
 _tests.append(_misc_expressions)
+
+def _evaluate_set_values(env):
+    marker_env = {
+        "dependency_groups": ["dev", "Docs.Extra"],
+        "extras": ["db-backend"],
+    }
+
+    for input, want in {
+        "'dev' in dependency_groups": True,
+        "'dev' not in dependency_groups": False,
+        "'docs-extra' in dependency_groups": True,
+        "'test' in dependency_groups": False,
+        "'test' not in dependency_groups": True,
+        "'db_backend' in extras": True,
+        "'DB.Backend' in extras": True,
+        "'dev' in extras": False,
+        "'dev' in dependency_groups and 'db-backend' in extras": True,
+        "'test' in dependency_groups or 'db-backend' in extras": True,
+    }.items():  # buildifier: @unsorted-dict-items
+        _check_evaluate(env, input, want, marker_env)
+        _check_evaluate(env, input, want, marker_env, strict = False)
+
+    # A missing value is not evaluated in non-strict mode, the callers need to
+    # set the values to an empty list if there are none.
+    for input in [
+        "'dev' in dependency_groups",
+        "'foo' not in extras",
+    ]:
+        _check_evaluate(env, input, input.replace("'", '"'), {}, strict = False)
+
+    # The other values are still evaluated partially
+    for input, want in {
+        "os_name == 'osx' and 'dev' in dependency_groups": "os_name == \"osx\"",
+        "os_name == 'osx' and 'docs' in dependency_groups": False,
+        "os_name == 'osx' or 'dev' in dependency_groups": "",
+        "not 'dev' in dependency_groups": False,
+    }.items():  # buildifier: @unsorted-dict-items
+        _check_evaluate(env, input, want, {"dependency_groups": ["dev"]}, strict = False)
+
+_tests.append(_evaluate_set_values)
+
+def _evaluate_set_values_errors(env):
+    for left, op, right, marker_env, want in [
+        ("extras", "in", "\"a\"", {"extras": []}, "unsupported marker: 'extras in \"a\"'"),
+        ("\"a\"", "==", "extras", {"extras": []}, "unsupported marker: '\"a\" == extras'"),
+        ("extras", "in", "dependency_groups", {"extras": []}, "unsupported marker: 'extras in dependency_groups'"),
+        ("\"a\"", "in", "extras", {}, "the marker '\"a\" in extras' needs the 'extras' value in the env"),
+        ("\"a\"", "in", "extras", {"extras": "a"}, "the 'extras' value in the env must be a list, got: a"),
+    ]:
+        failures = []
+        marker_expr(left, op, right, env = marker_env, _fail = failures.append)
+        env.expect.where(marker = (left, op, right)).that_int(len(failures)).equals(1)
+        env.expect.that_str(failures[0]).contains(want)
+
+_tests.append(_evaluate_set_values_errors)
 
 def evaluate_test_suite(name):  # buildifier: disable=function-docstring
     test_suite(

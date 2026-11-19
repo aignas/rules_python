@@ -325,6 +325,7 @@ bzl_library(
     srcs = ["pep508_evaluate.bzl"],
     deps = [
         "//python/private:enum",
+        "//python/private:normalize_name",
         "//python/private:version",
     ],
 )

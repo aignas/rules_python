@@ -16,6 +16,7 @@
 """
 
 load("//python/private:enum.bzl", "enum")
+load("//python/private:normalize_name.bzl", "normalize_name")
 load("//python/private:version.bzl", "version")
 
 # The expression parsing and resolution for the PEP508 is below
@@ -40,6 +41,13 @@ _NON_VERSION_VAR_NAMES = [
     "platform_system",
     "sys_platform",
     "extra",
+]
+
+# The variables that hold a list of names, see PEP 751. These can only be
+# used as `"<name>" in <var>` or `"<name>" not in <var>`.
+_SET_VAR_NAMES = [
+    "dependency_groups",
+    "extras",
 ]
 _AND = "and"
 _OR = "or"
@@ -271,7 +279,7 @@ def _value(self):
 
     fail("BUG: invalid state: {}".format(self.tree))
 
-def marker_expr(left, op, right, *, env, strict = True):
+def marker_expr(left, op, right, *, env, strict = True, _fail = fail):
     """Evaluate a marker expression
 
     Args:
@@ -280,17 +288,22 @@ def marker_expr(left, op, right, *, env, strict = True):
         right: {type}`str` the env identifier or a value quoted in `"`.
         strict: {type}`bool` if false, only evaluates the values that are present
             in the environment, otherwise returns the original expression.
-        env: {type}`dict[str, str]` the `env` to substitute `env` identifiers in
+        env: {type}`dict[str, str | list[str]]` the `env` to substitute `env` identifiers in
             the `<left> <op> <right>` expression. Note, if `env` has a key
             "_aliases", then we will do normalization so that we can ensure
             that e.g. `aarch64` evaluation in the `platform_machine` works the
             same way irrespective if the marker uses `arm64` or `aarch64` value
-            in the expression.
+            in the expression. The `extras` and `dependency_groups` values
+            are lists of names.
+        _fail: {type}`callable` the function to call on errors, for tests.
 
     Returns:
         {type}`bool` if the expression evaluation result or {type}`str` if the expression
         could not be evaluated.
     """
+    if left in _SET_VAR_NAMES or right in _SET_VAR_NAMES:
+        return _set_expr(left, op, right, env = env, strict = strict, _fail = _fail)
+
     var_name = None
     if right not in env and left not in env and not strict:
         return "{} {} {}".format(left, op, right)
@@ -321,6 +334,36 @@ def marker_expr(left, op, right, *, env, strict = True):
     else:
         # Do not fail here, just evaluate the expression to False.
         return False
+
+def _set_expr(left, op, right, *, env, strict, _fail):
+    """Evaluate a `"<name>" in <var>` expression for a list valued variable.
+
+    The names are normalized, so `"Foo.Bar" in extras` matches the `foo-bar`
+    extra. The callers evaluating lock files (PEP 751) should set the values
+    to an empty list if there are none.
+    """
+    if left[0] != '"' or right not in _SET_VAR_NAMES or op not in ["in", "not in"]:
+        return _fail("unsupported marker: '{} {} {}', the {} can only be used as '\"<name>\" in <var>' or '\"<name>\" not in <var>'".format(
+            left,
+            op,
+            right,
+            " and ".join(_SET_VAR_NAMES),
+        ))
+
+    if right not in env:
+        if not strict:
+            return "{} {} {}".format(left, op, right)
+        return _fail("the marker '{} {} {}' needs the '{}' value in the env".format(left, op, right, right))
+
+    values = env[right]
+    if type(values) != type([]):
+        return _fail("the '{}' value in the env must be a list, got: {}".format(right, values))
+
+    name = normalize_name(left.strip("\""))
+    names = [normalize_name(n) for n in values]
+    if op == "in":
+        return name in names
+    return name not in names
 
 def _env_expr(left, op, right):
     """Evaluate a string comparison expression"""
