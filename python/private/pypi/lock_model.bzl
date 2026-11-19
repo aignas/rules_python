@@ -87,7 +87,6 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
         version = entry.version
         norm_name = normalize_name(name)
         info = packages.setdefault(norm_name, {
-            "distribution": name,
             "resolved_srcs": [],
             "versions": {},
         })
@@ -95,6 +94,11 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
         info["index_url"] = entry.index_url
 
         extra_str = "[{}]".format(",".join(entry.extras)) if entry.extras else ""
+        pinned = "{name}{extras}=={version}".format(
+            name = name,
+            extras = extra_str,
+            version = version,
+        )
 
         plat_to_src = {}
         for p in entry.target_platforms:
@@ -115,37 +119,33 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
                 )
 
             if best_wheel:
-                plat_to_src[p] = best_wheel
+                plat_to_src[p] = struct(dist = best_wheel, requirement_line = pinned)
             elif entry.sdist:
-                plat_to_src[p] = entry.sdist
+                plat_to_src[p] = struct(dist = entry.sdist, requirement_line = pinned)
             elif entry.direct_requirement:
                 # A direct reference is not a downloadable artifact. Leave
                 # `url` and `filename` empty, the same as a `foo @ git+...`
                 # line from a requirements file, so that `pip` builds it from
                 # the requirement line instead of the Bazel downloader trying
                 # to fetch the URL.
-                plat_to_src[p] = lock_dist(filename = "", url = "", digest = "")
+                plat_to_src[p] = struct(
+                    dist = lock_dist(filename = "", url = "", digest = ""),
+                    requirement_line = "{name}{extras} @ {requirement}".format(
+                        name = name,
+                        extras = extra_str,
+                        requirement = entry.direct_requirement,
+                    ),
+                )
 
         # Group platforms by resolved source
         src_to_plats = {}
         for p, src in plat_to_src.items():
-            key = src.filename + src.digest
+            key = src.requirement_line + src.dist.filename + src.dist.digest
             src_to_plats.setdefault(key, struct(src = src, plats = [])).plats.append(p)
 
         for val in src_to_plats.values():
-            src = val.src
-            if src.filename:
-                requirement_line = "{name}{extras}=={version}".format(
-                    name = name,
-                    extras = extra_str,
-                    version = version,
-                )
-            else:
-                requirement_line = "{name}{extras} @ {requirement}".format(
-                    name = name,
-                    extras = extra_str,
-                    requirement = entry.direct_requirement,
-                )
+            src = val.src.dist
+            requirement_line = val.src.requirement_line
             info["resolved_srcs"].append(struct(
                 distribution = name,
                 extra_pip_args = extra_pip_args or [],

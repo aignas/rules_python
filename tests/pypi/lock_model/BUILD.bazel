@@ -1,0 +1,3 @@
+load(":lock_model_tests.bzl", "lock_model_test_suite")
+
+lock_model_test_suite(name = "lock_model_tests")
