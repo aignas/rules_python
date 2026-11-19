@@ -1077,16 +1077,18 @@ wheels of a package.
         "hub_name": attr.string(
             doc = """\
 The hub that the {attr}`pip.override.package` override applies to. If empty,
-it applies to all of the hubs.
+it applies to all of the hubs. The settings for a hub are added to the settings
+for all of the hubs.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",
         ),
         "ignore_dependencies": attr.string_list(
             doc = """\
-The names of the dependencies of the {attr}`pip.override.package` to ignore, e.g. to drop a
-dependency that is not needed or to break a dependency cycle. They need to be
-in the same hub.
+The names of the dependencies of the {attr}`pip.override.package` to ignore,
+e.g. to drop a dependency that is not needed or to break a dependency cycle.
+All of the `Requires-Dist` lines of these packages are removed, including the
+ones for the extras. They need to be package names in the same hub.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",
@@ -1118,7 +1120,8 @@ and BUILD.bazel file is generated.""",
         ),
         "tags": attr.string_list(
             doc = """\
-Extra tags to set on the targets of the {attr}`pip.override.package`, e.g. `["no-remote"]`.
+Extra tags to set on the generated `py_library` targets of the
+{attr}`pip.override.package`.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",

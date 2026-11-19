@@ -52,8 +52,8 @@ e.g. to drop an optional dependency that is listed as a required one, and
 extra dependencies are PEP 508 requirements, so they can have extras and
 markers. Both need to refer to packages in the same hub.
 
-{attr}`pip.override.tags` adds tags to the targets of the package, e.g. to
-avoid building it remotely.
+{attr}`pip.override.tags` adds tags to the generated `py_library` targets of
+the package.
 
 ```starlark
 pip.override(

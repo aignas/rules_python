@@ -86,6 +86,15 @@ def parse_whl_overrides(modules, *, _fail = fail):
                     _fail("pip.override(package = '{}') cannot set 'ignore_dependencies', 'extra_dependencies' or 'tags' for a single version".format(attr.package))
                     continue
 
+                bad = [
+                    dep
+                    for dep in attr.ignore_dependencies
+                    if requirement(dep).name_ != normalize_name(dep) or normalize_name(dep) == whl_name
+                ]
+                if bad:
+                    _fail("pip.override(package = '{}').ignore_dependencies needs the names of other packages, got: {}".format(attr.package, bad))
+                    continue
+
                 settings.setdefault(attr.hub_name, {})[whl_name] = struct(
                     ignore_dependencies = attr.ignore_dependencies,
                     extra_dependencies = attr.extra_dependencies,
@@ -114,7 +123,7 @@ def parse_whl_overrides(modules, *, _fail = fail):
 def package_settings_for_hub(overrides, hub_name):
     """Get the settings of the packages in a hub.
 
-    The settings for the hub replace the settings for all hubs field by field.
+    The settings for the hub are added to the settings for all hubs.
 
     Args:
         overrides: {type}`struct` the result of {func}`parse_whl_overrides`.
@@ -129,10 +138,10 @@ def package_settings_for_hub(overrides, hub_name):
     for whl_name in all_hubs.keys() + this_hub.keys():
         if whl_name in ret:
             continue
-        ret[whl_name] = {
-            field: getattr(this_hub.get(whl_name), field, None) or getattr(all_hubs.get(whl_name), field, None) or []
-            for field in ["ignore_dependencies", "extra_dependencies", "extra_tags"]
-        }
+        ret[whl_name] = {}
+        for field in ["ignore_dependencies", "extra_dependencies", "extra_tags"]:
+            values = getattr(all_hubs.get(whl_name), field, []) + getattr(this_hub.get(whl_name), field, [])
+            ret[whl_name][field] = {v: None for v in values}.keys()
     return ret
 
 def whl_overrides_for_hub(overrides, hub_name, *, _fail = fail):
@@ -187,11 +196,7 @@ def unmatched_whl_overrides(overrides, hub_packages):
         {type}`list[str]` the error messages, empty if all overrides match.
     """
     errors = []
-    by_hub = {}
-    for hub_name, packages in overrides.packages.items() + overrides.settings.items():
-        by_hub.setdefault(hub_name, {}).update({name: None for name in packages})
-
-    for hub_name, packages in sorted(by_hub.items()):
+    for hub_name, packages in sorted(overrides.packages.items()):
         if hub_name and hub_name not in hub_packages:
             errors.append("pip.override(hub_name = '{}') refers to a hub that does not exist".format(hub_name))
             continue
@@ -212,13 +217,13 @@ def unmatched_whl_overrides(overrides, hub_packages):
                 ("extra_dependencies", setting.extra_dependencies),
             ]:
                 for value in values:
-                    dep = normalize_name(requirement(value).name)
+                    dep = requirement(value).name_
                     for h in hubs:
                         if h in hub_packages and whl_name in hub_packages[h] and dep not in hub_packages[h]:
                             errors.append("pip.override(package = '{}').{} refers to '{}', which is not in hub '{}'".format(
                                 whl_name,
                                 field,
-                                value,
+                                dep,
                                 h,
                             ))
 

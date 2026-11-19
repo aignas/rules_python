@@ -96,6 +96,8 @@ def _test_errors(env):
         ([_override(file = "foo-1.0-py3-none-any.whl")], "needs 'patches'"),
         ([_override(file = "foo-1.0-py3-none-any.whl", patches = ["//:a.patch"], tags = ["a"])], "only supports 'patches'"),
         ([_override(package = "foo")], "does not set anything"),
+        ([_override(package = "foo", ignore_dependencies = ["bar[x]"])], "ignore_dependencies needs the names of other packages, got: [\"bar[x]\"]"),
+        ([_override(package = "foo", ignore_dependencies = ["Foo"])], "ignore_dependencies needs the names of other packages, got: [\"Foo\"]"),
         ([_override(package = "foo@1.0", tags = ["a"])], "cannot set 'ignore_dependencies', 'extra_dependencies' or 'tags' for a single version"),
         ([_override(package = "foo@", patches = ["//:a.patch"])], "needs to be a package name or '<name>@<version>'"),
         ([_override(package = "foo==1.0", patches = ["//:a.patch"])], "needs to be a package name or '<name>@<version>'"),
@@ -161,7 +163,7 @@ def _test_package_settings(env):
         "other": ["foo", "bar", "qux"],
         "pypi": ["foo", "bar"],
     })).contains_exactly([
-        "pip.override(package = 'foo').extra_dependencies refers to 'baz[x]; sys_platform == 'linux'', which is not in hub 'pypi'",
+        "pip.override(package = 'foo').extra_dependencies refers to 'baz', which is not in hub 'pypi'",
         "pip.override(package = 'qux').ignore_dependencies refers to 'missing', which is not in hub 'other'",
     ])
 
