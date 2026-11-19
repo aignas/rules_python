@@ -181,6 +181,34 @@ def _test_uv_lock_only(env):
 
 _tests.append(_test_uv_lock_only)
 
+def _test_uv_lock_conflicting_versions(env):
+    logs = {}
+    builder = hub_builder(
+        env,
+        log_printer = lambda key, message: logs.setdefault(key.strip(), []).append(message),
+    )
+    builder.pip_parse(
+        _mock_mctx(
+            os_name = "osx",
+            arch_name = "aarch64",
+            mock_files = {
+                "uv.lock": """{"package":[{"name":"foo","source":{"registry":"https://pypi.org/simple"},"version":"0.0.1","wheels":[{"hash":"sha256:deadbeef","url":"https://files.pythonhosted.org/packages/foo-0.0.1-py3-none-any.whl"}]},{"name":"foo","source":{"registry":"https://pypi.org/simple"},"version":"0.0.2","wheels":[{"hash":"sha256:deadb11f","url":"https://files.pythonhosted.org/packages/foo-0.0.2-py3-none-any.whl"}]}]}""",
+            },
+        ),
+        _parse(
+            hub_name = "pypi",
+            python_version = "3.15",
+            requirements_lock = None,
+            uv_lock = "uv.lock",
+        ),
+    )
+
+    env.expect.that_collection(logs.get("rules_python:unit-test FAIL:", [])).has_size(1)
+    env.expect.that_str(logs["rules_python:unit-test FAIL:"][0]).contains("of 'foo' for the same platform")
+    env.expect.that_str(logs["rules_python:unit-test FAIL:"][0]).contains("`[tool.uv] conflicts`")
+
+_tests.append(_test_uv_lock_conflicting_versions)
+
 def _test_uv_lock_extras(env):
     builder = hub_builder(env)
     builder.pip_parse(
