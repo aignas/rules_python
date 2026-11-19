@@ -19,6 +19,7 @@ def parse_whl_overrides(modules, *, _fail = fail):
     files = {}
     packages = {}
     settings = {}
+    build_modes = {}
     seen_files = {}
     seen_packages = {}
     for module in modules:
@@ -33,7 +34,7 @@ def parse_whl_overrides(modules, *, _fail = fail):
                 continue
 
             if attr.file:
-                if attr.ignore_dependencies or attr.extra_dependencies or attr.tags:
+                if attr.ignore_dependencies or attr.extra_dependencies or attr.tags or attr.build_mode:
                     _fail("pip.override(file = '{}') only supports 'patches', use 'package' for the other settings".format(attr.file))
                     continue
 
@@ -68,7 +69,7 @@ def parse_whl_overrides(modules, *, _fail = fail):
                 continue
 
             name, sep, version = attr.package.partition("@")
-            if (sep and not version) or not name or [c for c in "=<>!~ ;[".elems() if c in attr.package]:
+            if (sep and not version) or not name or [c for c in "=<>!~ ;[".elems() if c in attr.package] or (name == "*" and version):
                 _fail("pip.override(package = '{}') needs to be a package name or '<name>@<version>'".format(attr.package))
                 continue
             whl_name = normalize_name(name)
@@ -80,6 +81,16 @@ def parse_whl_overrides(modules, *, _fail = fail):
                 ))
                 continue
             seen_packages[key] = None
+
+            if name == "*" and (attr.patches or attr.ignore_dependencies or attr.extra_dependencies or attr.tags):
+                _fail("pip.override(package = '*') only supports 'build_mode'")
+                continue
+
+            if attr.build_mode:
+                if version:
+                    _fail("pip.override(package = '{}') cannot set 'build_mode' for a single version".format(attr.package))
+                    continue
+                build_modes.setdefault(attr.hub_name, {})[whl_name] = attr.build_mode
 
             if attr.ignore_dependencies or attr.extra_dependencies or attr.tags:
                 if version:
@@ -100,8 +111,11 @@ def parse_whl_overrides(modules, *, _fail = fail):
                     extra_dependencies = attr.extra_dependencies,
                     extra_tags = attr.tags,
                 )
-            elif not attr.patches:
+            elif not attr.patches and not attr.build_mode:
                 _fail("pip.override(package = '{}') does not set anything".format(attr.package))
+                continue
+
+            if name == "*":
                 continue
 
             patches = packages.setdefault(attr.hub_name, {}).setdefault(whl_name, {})
@@ -118,7 +132,26 @@ def parse_whl_overrides(modules, *, _fail = fail):
         files = files,
         packages = packages,
         settings = settings,
+        build_modes = build_modes,
     )
+
+def build_mode_for_hub(overrides, hub_name):
+    """Get the build modes of the packages in a hub.
+
+    A package uses the first of: the build mode of the package for the hub, of
+    `*` for the hub, of the package for all hubs and of `*` for all hubs.
+
+    Args:
+        overrides: {type}`struct` the result of {func}`parse_whl_overrides`.
+        hub_name: {type}`str` the name of the hub.
+
+    Returns:
+        {type}`callable` that returns the build mode of a normalized package
+        name or an empty string.
+    """
+    hub = overrides.build_modes.get(hub_name, {})
+    all_hubs = overrides.build_modes.get("", {})
+    return lambda name: hub.get(name) or hub.get("*") or all_hubs.get(name) or all_hubs.get("*") or ""
 
 def package_settings_for_hub(overrides, hub_name):
     """Get the settings of the packages in a hub.
@@ -196,7 +229,12 @@ def unmatched_whl_overrides(overrides, hub_packages):
         {type}`list[str]` the error messages, empty if all overrides match.
     """
     errors = []
-    for hub_name, packages in sorted(overrides.packages.items()):
+    for hub_name, packages in sorted(overrides.packages.items() + [
+        (hub_name, modes)
+        for hub_name, modes in overrides.build_modes.items()
+        if hub_name not in overrides.packages
+    ]):
+        packages = [p for p in packages if p != "*"]
         if hub_name and hub_name not in hub_packages:
             errors.append("pip.override(hub_name = '{}') refers to a hub that does not exist".format(hub_name))
             continue

@@ -30,6 +30,7 @@ def hub_builder(
         config,
         whl_overrides,
         package_settings = {},
+        build_mode = None,
         minor_mapping,
         available_interpreters,
         simpleapi_download_fn,
@@ -44,6 +45,8 @@ def hub_builder(
         whl_overrides: {type}`dict[str, struct]` - per-wheel overrides.
         package_settings: {type}`dict[str, dict]` - extra `whl_library` args
             for each package.
+        build_mode: {type}`callable | None` - returns the build mode of a
+            normalized package name.
         minor_mapping: {type}`dict[str, str]` the mapping between minor and full versions.
         available_interpreters: {type}`dict[str, Label]` The dictionary of available
             interpreters that have been registered using the `python` bzlmod extension.
@@ -102,6 +105,7 @@ def hub_builder(
         _config = config,
         _whl_overrides = whl_overrides,
         _package_settings = package_settings,
+        _build_mode = build_mode or (lambda _: ""),
         _logger = logger,
         _minor_mapping = minor_mapping,
         _available_interpreters = available_interpreters,
@@ -587,6 +591,7 @@ def _create_whl_repos(
         ),
         uv_lock = pip_attr.uv_lock,
         local_wheels = getattr(pip_attr, "local_wheels", []),
+        build_mode = self._build_mode,
         platforms = platforms,
         extra_pip_args = pip_attr.extra_pip_args,
         get_index_urls = self._get_index_urls.get(python_version),
@@ -624,13 +629,21 @@ def _create_whl_repos(
             whl = whl,
             whl_modifications = whl_modifications,
         )
+        build_mode = self._build_mode(whl.name)
+        if build_mode == "always" and pip_attr.download_only:
+            logger.fail(lambda: "The package '{}' has 'build_mode = \"always\"', which cannot be used with 'download_only = True'".format(whl.name))
+            continue
+        if build_mode == "never":
+            whl_library_args = whl_library_args | {"download_only": True}
+
         srcs = _merge_extras(whl.srcs)
+        dropped = {}
         for src in srcs:
             repo = _whl_repo(
                 src = src,
                 index_url = whl.index_url,
                 whl_library_args = whl_library_args,
-                download_only = pip_attr.download_only,
+                download_only = pip_attr.download_only or build_mode == "never",
                 netrc = self._config.netrc or pip_attr.netrc,
                 use_downloader = src.url and _use_downloader(self, python_version, whl.name),
                 auth_patterns = self._config.auth_patterns or pip_attr.auth_patterns,
@@ -643,6 +656,14 @@ def _create_whl_repos(
                 interpreter = interpreter,
                 enable_pipstar_extract = enable_pipstar_extract,
             )
+            if repo and build_mode == "always" and not repo.args.get("whl_file") and not repo.args.get("filename", "").endswith(".whl"):
+                # pip may find a wheel on the index even if the sdist is
+                # downloaded, so do not let it use one.
+                repo.args["extra_pip_args"] = repo.args.get("extra_pip_args", []) + [
+                    "--no-binary={}".format(whl.name),
+                ]
+            if not repo and build_mode == "never":
+                dropped.setdefault(whl.name, []).extend(src.target_platforms)
             for config_setting in repo.config_settings if repo else []:
                 _add_whl_library(
                     self,
@@ -654,6 +675,13 @@ def _create_whl_repos(
                         config_setting = config_setting,
                     ),
                 )
+
+        for name, plats in dropped.items():
+            logger.warn(lambda: (
+                "The package '{}' has 'build_mode = \"never\"' and no wheel for the platforms {}, " +
+                "so it is not available on them"
+            ).format(name, sorted(plats)))
+            self._exposed_packages.pop(name, None)
 
 def _merge_extras(srcs):
     """Merge the sources that differ only in the requested extras.

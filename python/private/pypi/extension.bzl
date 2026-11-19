@@ -33,7 +33,7 @@ load(":pypi_cache.bzl", "pypi_cache")
 load(":simpleapi_download.bzl", "simpleapi_download")
 load(":unified_hub_repo.bzl", "unified_hub_repo")
 load(":whl_library.bzl", "whl_library")
-load(":whl_overrides.bzl", "package_settings_for_hub", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")
+load(":whl_overrides.bzl", "build_mode_for_hub", "package_settings_for_hub", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")
 
 def _whl_mods_impl(whl_mods_dict):
     """Implementation of the pip.whl_mods tag class.
@@ -279,6 +279,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
                     config = config,
                     whl_overrides = whl_overrides_for_hub(whl_overrides, pip_attr.hub_name),
                     package_settings = package_settings_for_hub(whl_overrides, pip_attr.hub_name),
+                    build_mode = build_mode_for_hub(whl_overrides, pip_attr.hub_name),
                     simpleapi_download_fn = simpleapi_download,
                     simpleapi_cache = simpleapi_cache,
                     # TODO @aignas 2025-09-06: do not use kwargs
@@ -1066,6 +1067,24 @@ cannot have a child module that uses the same `hub_name`.
 # 'archive_override', 'git_override' bzlmod functions.
 _override_tag = tag_class(
     attrs = {
+        "build_mode": attr.string(
+            values = ["", "auto", "always", "never"],
+            doc = """\
+How to get the wheels of the {attr}`pip.override.package`:
+* `auto` (the default): use a wheel if there is one for the platform,
+  otherwise build it from the sdist.
+* `always`: always build the wheel from the sdist.
+* `never`: never build the wheel from an sdist, which is like
+  {attr}`pip.parse.download_only` for a single package. On the platforms that
+  have no wheel the package is not available.
+
+Use `package = "*"` to set it for all of the packages. The wheels are built
+with `pip` on the host when the repositories are fetched, so `always` builds a
+wheel for the host platform.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
+        ),
         "extra_dependencies": attr.string_list(
             doc = """\
 Extra dependencies of the {attr}`pip.override.package` as PEP 508 requirements, e.g.

@@ -52,6 +52,7 @@ def hub_builder(
         config = None,
         minor_mapping = {},
         whl_overrides = {},
+        build_mode = None,
         simpleapi_download_fn = None,
         log_printer = None,
         available_interpreters = {}):
@@ -87,6 +88,7 @@ def hub_builder(
             toml_decode = json.decode,
         ),
         whl_overrides = whl_overrides,
+        build_mode = build_mode,
         minor_mapping = minor_mapping or {"3.15": "3.15.19"},
         available_interpreters = available_interpreters or {
             "python_3_15_host": "unit_test_interpreter_target",
@@ -213,6 +215,48 @@ def _test_uv_lock_local_wheels(env):
     })
 
 _tests.append(_test_uv_lock_local_wheels)
+
+def _test_uv_lock_build_modes(env):
+    logs = {}
+    builder = hub_builder(
+        env,
+        debug = True,
+        build_mode = {"bar": "never", "foo": "always"}.get,
+        log_printer = lambda key, message: logs.setdefault(key.strip(), []).append(message),
+    )
+    builder.pip_parse(
+        _mock_mctx(
+            os_name = "osx",
+            arch_name = "aarch64",
+            mock_files = {
+                "uv.lock": """{"package":[
+{"name":"foo","source":{"registry":"https://pypi.org/simple"},"version":"1.0","sdist":{"hash":"sha256:deadbeef","url":"https://files.pythonhosted.org/packages/foo-1.0.tar.gz"},"wheels":[{"hash":"sha256:deadbaaf","url":"https://files.pythonhosted.org/packages/foo-1.0-py3-none-any.whl"}]},
+{"name":"bar","source":{"registry":"https://pypi.org/simple"},"version":"1.0","sdist":{"hash":"sha256:deadb00f","url":"https://files.pythonhosted.org/packages/bar-1.0.tar.gz"}}
+]}""",
+            },
+        ),
+        _parse(
+            hub_name = "pypi",
+            python_version = "3.15",
+            requirements_lock = None,
+            uv_lock = "uv.lock",
+        ),
+    )
+    pypi = builder.build()
+
+    # `bar` has no wheel and `never` forbids building it
+    pypi.exposed_packages().contains_exactly(["foo"])
+    pypi.whl_map().keys().contains_exactly(["foo"])
+    pypi.whl_libraries().keys().contains_exactly(["pypi_315_foo_sdist_deadbeef"])
+    pypi.whl_libraries().get("pypi_315_foo_sdist_deadbeef", factory = subjects.dict).get(
+        "extra_pip_args",
+        factory = subjects.collection,
+    ).contains_exactly(["--no-binary=foo"])
+    env.expect.that_str(logs["rules_python:unit-test WARNING:"][0]).contains(
+        "The package 'bar' has 'build_mode = \"never\"' and no wheel for the platforms",
+    )
+
+_tests.append(_test_uv_lock_build_modes)
 
 def _test_uv_lock_conflicting_versions(env):
     logs = {}

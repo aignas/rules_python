@@ -122,6 +122,39 @@ def _test_local_wheels_per_platform(env):
 
 _tests.append(_test_local_wheels_per_platform)
 
+def _test_build_mode_always(env):
+    failures = []
+    got = lock_requirements(
+        [
+            lock_entry(
+                name = "foo",
+                version = "1.0",
+                target_platforms = ["linux_x86_64"],
+                wheels = [lock_dist(filename = "foo-1.0-py3-none-any.whl", url = "https://example.org/foo-1.0-py3-none-any.whl", digest = "")],
+                sdist = lock_dist(filename = "foo-1.0.tar.gz", url = "https://example.org/foo-1.0.tar.gz", digest = ""),
+            ),
+            lock_entry(
+                name = "bar",
+                version = "1.0",
+                target_platforms = ["linux_x86_64"],
+                wheels = [lock_dist(filename = "bar-1.0-py3-none-any.whl", url = "https://example.org/bar-1.0-py3-none-any.whl", digest = "")],
+            ),
+        ],
+        all_platforms = sorted(_PLATFORMS),
+        platforms = _PLATFORMS,
+        logger = repo_utils.logger(struct(getenv = {}.get), "unit-test", printer = lambda _, message: failures.append(message)),
+        build_mode = lambda _: "always",
+    )
+    env.expect.that_collection([(r.name, [s.filename for s in r.srcs]) for r in got]).contains_exactly([
+        ("bar", []),
+        ("foo", ["foo-1.0.tar.gz"]),
+    ])
+    env.expect.that_collection(failures).contains_exactly([
+        "The package 'bar' has 'build_mode = \"always\"', but there is no sdist in the lock file",
+    ])
+
+_tests.append(_test_build_mode_always)
+
 def lock_model_test_suite(name):
     """Create the test suite.
 

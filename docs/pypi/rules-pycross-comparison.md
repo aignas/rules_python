@@ -58,8 +58,7 @@ uv.package(name = "matplotlib", post_install_patches = ["//:matplotlib.patch"], 
 use_repo(uv, "uv_deps")
 ```
 
-The `rules_python` equivalent is below. The commented out lines marked
-`planned` use attributes that do not exist yet.
+The `rules_python` equivalent is below.
 
 ```starlark
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
@@ -81,8 +80,8 @@ pip.parse(
 )
 pip.configure(hub_name = "uv_deps", dependency_groups = ["default"])
 
-# planned: build ipython from the sdist
-# pip.override(hub_name = "uv_deps", package = "ipython", build_mode = "always")
+# build ipython from the sdist (with pip on the host)
+pip.override(hub_name = "uv_deps", package = "ipython", build_mode = "always")
 
 pip.whl_mods(
     hub_name = "uv_deps_mods",
@@ -108,7 +107,7 @@ The `BUILD.bazel` files keep using `@uv_deps//ipython`,
 
 | `package` attribute | rules_python | Status |
 |---|---|---|
-| `build_mode` | `"never"`: {attr}`pip.parse.download_only` for the whole hub; `"auto"` is the default | partial, per-package: planned |
+| `build_mode` | {attr}`pip.override.build_mode` | have; the sdists are built with `pip` on the host |
 | `build_target` | none | planned: replace a package with your own target |
 | `build_backend`, `extra_build_tools`, `build_tools_repo`, `site_hooks`, `pre_build_patches` | none | planned: an extension point for an sdist builder, such as rules_pycross |
 | `ignore_dependencies` | {attr}`pip.override.ignore_dependencies` | have |
@@ -171,8 +170,9 @@ all of them. You can define more platforms with {obj}`pip.default`.
 * If it only has an sdist, `rules_python` builds it with `pip wheel` on the
   host when the repository is fetched. The build is not hermetic, the build
   dependencies come from the index and not from the lock file, and the wheel
-  is built for the host platform. Set {attr}`pip.parse.download_only` to
-  forbid this.
+  is built for the host platform. Use {attr}`pip.override.build_mode` to
+  forbid this (`never`) or to always build a package from its sdist
+  (`always`) and {attr}`pip.parse.download_only` to forbid it for a hub.
 * Planned: replacing a package with your own target, like `build_target` in
   rules_pycross. Today, depend on your own target instead of the hub label.
 * Planned: an extension point that lets another ruleset, such as
@@ -211,7 +211,7 @@ module. Do not depend on the same distribution from both in one binary.
 | per-package `precompile` | global flags | partial |
 | `post_install_patches` | {attr}`pip.override.package` | have |
 | `install_exclude_globs` | {obj}`pip.whl_mods`, {attr}`pip.parse.pip_data_exclude` | have |
-| `build_mode` | {attr}`pip.parse.download_only` for `"never"` | partial |
+| `build_mode` | {attr}`pip.override.build_mode` | have |
 | `build_target` | none | planned |
 | `:sdist` target | none | planned |
 | sdist builds in build actions, build backends, cross-compilation | `pip wheel` on the host | planned: extension point |
