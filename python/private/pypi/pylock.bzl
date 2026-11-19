@@ -10,10 +10,10 @@ load(":uv_lock.bzl", "local_wheels_by_name")
 def pylock_entries(pylock, *, all_platforms, platforms, local_wheels = [], logger, _fail = fail):
     """Translate the pylock.toml contents into the lock model.
 
-    All of the extras and the dependency groups that the lock file lists are
-    selected. A package is used on the platforms where its `marker` and its
-    `requires-python` are true; the dependency graph is not used, as the
-    standard requires.
+    All of the extras, the default groups and the dependency groups that the
+    lock file lists are selected. A package is used on the platforms where its
+    `marker` is true; the dependency graph is not used, as the standard
+    requires.
 
     Args:
         pylock: {type}`dict` The decoded pylock.toml contents.
@@ -26,17 +26,21 @@ def pylock_entries(pylock, *, all_platforms, platforms, local_wheels = [], logge
         _fail: {type}`callable` the function to call on errors, for tests.
 
     Returns:
-        {type}`list[struct]` the {func}`lock_entry` values.
+        {type}`struct` with `entries` - the {func}`lock_entry` values and
+        `platforms` - the platforms that match the lock file.
     """
     lock_version = pylock.get("lock-version", "")
     if not lock_version.startswith("1."):
         return _fail("Only the pylock.toml 'lock-version' 1.x is supported, got: '{}'".format(lock_version))
+    if lock_version != "1.0":
+        logger.warn(lambda: "The pylock.toml 'lock-version' {} is newer than the supported 1.0".format(lock_version))
 
     envs = {}
     for p in all_platforms:
         env = dict(platforms[p].env)
+        env.setdefault("extra", "")
         env["extras"] = pylock.get("extras", [])
-        env["dependency_groups"] = pylock.get("dependency-groups", [])
+        env["dependency_groups"] = pylock.get("default-groups", []) + pylock.get("dependency-groups", [])
 
         requires_python = pylock.get("requires-python")
         if requires_python and not _requires_python(requires_python, env):
@@ -63,13 +67,22 @@ def pylock_entries(pylock, *, all_platforms, platforms, local_wheels = [], logge
         for key in ["vcs", "archive", "directory"]:
             if key in pkg:
                 return _fail("The pylock.toml package '{}' has a '{}' source, which is not supported".format(name, key))
+        if not version:
+            return _fail("The pylock.toml package '{}' has no 'version'".format(name))
 
         target_platforms = [
             p
             for p, env in envs.items()
-            if (not pkg.get("marker") or evaluate(pkg["marker"], env = env)) and
-               (not pkg.get("requires-python") or _requires_python(pkg["requires-python"], env))
+            if not pkg.get("marker") or evaluate(pkg["marker"], env = env)
         ]
+        for p in target_platforms:
+            if pkg.get("requires-python") and not _requires_python(pkg["requires-python"], envs[p]):
+                return _fail("The pylock.toml package '{}' has 'requires-python = \"{}\"', which does not match the Python version {} of the '{}' platform".format(
+                    name,
+                    pkg["requires-python"],
+                    envs[p].get("python_full_version"),
+                    p,
+                ))
 
         local = []
         if version and normalize_name(name) in local_by_name:
@@ -83,6 +96,8 @@ def pylock_entries(pylock, *, all_platforms, platforms, local_wheels = [], logge
                 used_local_wheels[whl.file] = None
 
         sdist = pkg.get("sdist")
+        if [d for d in pkg.get("wheels", []) + ([sdist] if sdist else []) if "url" not in d]:
+            logger.warn(lambda: "The pylock.toml package '{}' has files without a 'url', which are ignored, use the 'local_wheels' instead".format(name))
         entries.append(lock_entry(
             name = name,
             version = version,
@@ -98,7 +113,10 @@ def pylock_entries(pylock, *, all_platforms, platforms, local_wheels = [], logge
             if whl.file not in used_local_wheels:
                 _fail("The local wheel '{}' does not match the version of any package in the lock file".format(whl.file))
 
-    return entries
+    return struct(
+        entries = entries,
+        platforms = sorted(envs),
+    )
 
 def _requires_python(specifiers, env):
     """Evaluate a `requires-python` specifier set, e.g. `>=3.9,<4`."""
@@ -120,9 +138,11 @@ def _quote_version(specifier):
 
 def _dist(dist):
     url = dist["url"]
-    _, _, filename = url.rpartition("/")
+    path, _, _ = url.partition("#")
+    path, _, _ = path.partition("?")
+    _, _, filename = path.rpartition("/")
     return lock_dist(
-        filename = dist.get("name") or filename,
+        filename = dist.get("name") or filename.replace("%2B", "+").replace("%2b", "+"),
         url = url,
         digest = hash.preferred_digest([
             hash.digest(algo, hex_digest)

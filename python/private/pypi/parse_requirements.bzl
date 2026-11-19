@@ -98,17 +98,23 @@ def parse_requirements(
            `target_platforms`, `filename`, `digest`, `url`, `yanked`. The `digest`
            is a `<algo>:<digest>` string or empty if the artifact digest is unknown.
     """
-    if pylock and toml_decode:
-        all_platforms = _get_all_platforms(requirements_by_platform) if requirements_by_platform else sorted(platforms.keys())
+    if pylock:
+        if uv_lock:
+            logger.fail("Only one of the 'pylock' and 'uv_lock' can be used")
+            return []
+        if not toml_decode:
+            logger.fail("BUG: 'toml_decode' is needed to read the 'pylock'")
+            return []
+        lock = pylock_entries(
+            toml_decode(ctx.read(pylock)),
+            all_platforms = sorted(platforms.keys()),
+            platforms = platforms,
+            local_wheels = local_wheels,
+            logger = logger,
+        )
         ret = lock_requirements(
-            pylock_entries(
-                toml_decode(ctx.read(pylock)),
-                all_platforms = all_platforms,
-                platforms = platforms,
-                local_wheels = local_wheels,
-                logger = logger,
-            ),
-            all_platforms = all_platforms,
+            lock.entries,
+            all_platforms = lock.platforms,
             platforms = platforms,
             extra_pip_args = extra_pip_args,
             logger = logger,

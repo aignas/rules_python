@@ -378,8 +378,9 @@ def _add_whl_library(self, *, python_version, whl, repo):
         self._logger.fail(lambda: (
             "Attempting to override an existing repo '{}' for config setting '{}' with a new repo '{}'. " +
             "This happens when the lock file has more than one entry (e.g. different versions or sources) " +
-            "of '{}' for the same platform, e.g. with the uv `[tool.uv] conflicts` setting, which is not " +
-            "supported. Use a separate hub for each of the conflicting groups."
+            "of '{}' for the same platform, e.g. with the uv `[tool.uv] conflicts` setting or markers that " +
+            "rules_python cannot tell apart, which is not supported. Use a separate hub for each of the " +
+            "conflicting groups."
         ).format(
             mapping[repo.config_setting],
             repo.config_setting,
@@ -575,6 +576,12 @@ def _create_whl_repos(
     """
     logger = self._logger
     platforms = self._platforms[python_version]
+    if getattr(pip_attr, "pylock", None) and (
+        pip_attr.requirements_lock or pip_attr.requirements_by_platform or
+        pip_attr.requirements_linux or pip_attr.requirements_darwin or pip_attr.requirements_windows
+    ):
+        logger.fail("The 'pylock' cannot be used with the requirements files")
+        return
     requirements_by_platform = parse_requirements(
         module_ctx,
         requirements_by_platform = requirements_files_by_platform(

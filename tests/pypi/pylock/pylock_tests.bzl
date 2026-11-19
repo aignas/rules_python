@@ -26,6 +26,7 @@ lock-version = "1.0"
 created-by = "uv"
 requires-python = ">=3.10"
 extras = ["socks"]
+default-groups = ["default"]
 dependency-groups = ["dev"]
 
 [[packages]]
@@ -58,10 +59,11 @@ wheels = [
 ]
 
 [[packages]]
-name = "old"
-version = "1.0"
-requires-python = "<3.12"
-wheels = [{ url = "https://example.org/old-1.0-py3-none-any.whl", hashes = { sha256 = "deadb44f" } }]
+name = "attrs"
+version = "24.0"
+marker = "'default' in dependency_groups"
+requires-python = ">=3.8"
+wheels = [{ url = "https://example.org/attrs-24.0-py3-none-any.whl?x=1#sha256=deadb44f", hashes = { sha256 = "deadb44f" } }]
 """
 
 def _logger(failures):
@@ -69,7 +71,7 @@ def _logger(failures):
 
 def _test_simple(env):
     failures = []
-    entries = pylock_entries(
+    lock = pylock_entries(
         toml.decode(_PYLOCK),
         all_platforms = sorted(_PLATFORMS),
         platforms = _PLATFORMS,
@@ -77,17 +79,18 @@ def _test_simple(env):
         _fail = failures.append,
     )
     env.expect.that_collection(failures).contains_exactly([])
-    env.expect.that_collection([(e.name, e.target_platforms) for e in entries]).contains_exactly([
+    env.expect.that_collection(lock.platforms).contains_exactly(sorted(_PLATFORMS))
+    env.expect.that_collection([(e.name, e.target_platforms) for e in lock.entries]).contains_exactly([
         ("requests", ["linux_x86_64", "osx_aarch64"]),
         ("pysocks", ["linux_x86_64", "osx_aarch64"]),
         ("pytest", []),
         ("uvloop", ["linux_x86_64", "osx_aarch64"]),
-        ("old", []),
+        ("attrs", ["linux_x86_64", "osx_aarch64"]),
     ])
 
     got = lock_requirements(
-        entries,
-        all_platforms = sorted(_PLATFORMS),
+        lock.entries,
+        all_platforms = lock.platforms,
         platforms = _PLATFORMS,
         logger = _logger(failures),
     )
@@ -95,7 +98,7 @@ def _test_simple(env):
         (r.name, r.index_url, r.is_exposed, [(s.requirement_line, s.filename, s.digest, s.target_platforms) for s in r.srcs])
         for r in got
     ]).contains_exactly([
-        ("old", "", False, []),
+        ("attrs", "", True, [("attrs==24.0", "attrs-24.0-py3-none-any.whl", "sha256:deadb44f", ["linux_x86_64", "osx_aarch64"])]),
         ("pysocks", "", True, [("pysocks==1.7.1", "PySocks-1.7.1-py3-none-any.whl", "sha256:deadb00f", ["linux_x86_64", "osx_aarch64"])]),
         ("pytest", "", False, []),
         ("requests", "https://pypi.org/simple/requests", True, [("requests==2.32.3", "requests-2.32.3-py3-none-any.whl", "sha256:deadbaaf", ["linux_x86_64", "osx_aarch64"])]),
@@ -112,6 +115,8 @@ def _test_errors(env):
         ('lock-version = "2.0"', "Only the pylock.toml 'lock-version' 1.x is supported, got: '2.0'"),
         ('lock-version = "1.0"\nrequires-python = ">=3.13"', "The pylock.toml 'requires-python = \">=3.13\"' does not match the Python version 3.12.4 of the 'linux_x86_64' platform"),
         ('lock-version = "1.0"\n[[packages]]\nname = "foo"\nvcs = { type = "git", url = "https://example.org/foo.git", commit-id = "abc" }', "The pylock.toml package 'foo' has a 'vcs' source, which is not supported"),
+        ('lock-version = "1.0"\n[[packages]]\nname = "foo"', "The pylock.toml package 'foo' has no 'version'"),
+        ('lock-version = "1.0"\n[[packages]]\nname = "foo"\nversion = "1.0"\nrequires-python = "<3.12"', "The pylock.toml package 'foo' has 'requires-python = \"<3.12\"', which does not match the Python version 3.12.4 of the 'linux_x86_64' platform"),
     ]:
         failures = []
         pylock_entries(
@@ -125,14 +130,19 @@ def _test_errors(env):
 
     # The platforms that do not match the environments are ignored
     failures = []
-    entries = pylock_entries(
-        toml.decode('lock-version = "1.0"\nenvironments = ["sys_platform == \'linux\'"]\n[[packages]]\nname = "foo"\nversion = "1.0"'),
+    lock = pylock_entries(
+        toml.decode('lock-version = "1.0"\nenvironments = ["sys_platform == \'linux\'"]\n[[packages]]\nname = "foo"\nversion = "1.0"\nwheels = [{ url = "https://example.org/foo-1.0-py3-none-any.whl" }]'),
         all_platforms = sorted(_PLATFORMS),
         platforms = _PLATFORMS,
         logger = _logger(failures),
         _fail = failures.append,
     )
-    env.expect.that_collection([e.target_platforms for e in entries]).contains_exactly([["linux_x86_64"]])
+    env.expect.that_collection(lock.platforms).contains_exactly(["linux_x86_64"])
+    env.expect.that_collection([e.target_platforms for e in lock.entries]).contains_exactly([["linux_x86_64"]])
+
+    # The package is exposed on all of the platforms that the lock supports
+    got = lock_requirements(lock.entries, all_platforms = lock.platforms, platforms = _PLATFORMS, logger = _logger(failures))
+    env.expect.that_collection([r.is_exposed for r in got]).contains_exactly([True])
     env.expect.that_collection(failures).contains_exactly([
         "The pylock.toml 'environments' do not match the 'osx_aarch64' platform, ignoring it",
     ])
