@@ -155,6 +155,45 @@ def _test_build_mode_always(env):
 
 _tests.append(_test_build_mode_always)
 
+def _test_sdists(env):
+    failures = []
+    sdists = {}
+
+    def _entry(name, version, platforms):
+        return lock_entry(
+            name = name,
+            version = version,
+            target_platforms = platforms,
+            sdist = lock_dist(filename = "{}-{}.tar.gz".format(name, version), url = "https://example.org/{}-{}.tar.gz".format(name, version), digest = ""),
+        )
+
+    lock_requirements(
+        [
+            # The entry that is not used on any platform is ignored
+            _entry("foo", "1.0", []),
+            _entry("foo", "2.0", ["linux_x86_64", "osx_aarch64"]),
+            # An ambiguous sdist is left out
+            _entry("bar", "1.0", ["linux_x86_64"]),
+            _entry("bar", "2.0", ["osx_aarch64"]),
+        ],
+        all_platforms = sorted(_PLATFORMS),
+        platforms = _PLATFORMS,
+        logger = repo_utils.logger(struct(getenv = {}.get), "unit-test", printer = lambda _, message: failures.append(message)),
+        sdists = sdists,
+    )
+    env.expect.that_dict(sdists).contains_exactly({
+        "bar": None,
+        "foo": struct(
+            index_url = "",
+            sdist = lock_dist(filename = "foo-2.0.tar.gz", url = "https://example.org/foo-2.0.tar.gz", digest = ""),
+        ),
+    })
+    env.expect.that_collection(failures).contains_exactly([
+        "The lock file has more than one sdist for 'bar', the ':sdist' target is not created",
+    ])
+
+_tests.append(_test_sdists)
+
 def lock_model_test_suite(name):
     """Create the test suite.
 

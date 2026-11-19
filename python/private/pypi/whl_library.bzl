@@ -59,6 +59,10 @@ def whl_library(name, repo = None, **kwargs):
     _ = repo  # buildifier: disable=unused-variable
 
     replace_with = kwargs.pop("replace_with", None)
+    if kwargs.pop("sdist_file", False):
+        # Only the sdist file for the `:sdist` target of the hub.
+        whl_file_repo(name = name, **_filter(kwargs, whl_file_repo_attrs))
+        return
 
     whl_file = kwargs.get("whl_file")
     urls = kwargs.get("urls", [])

@@ -20,6 +20,7 @@ load(
     "get_whl_flag_versions",
     "render_multiplatform_pkg_aliases",
     "render_pkg_aliases",
+    "render_sdist_alias",
 )  # buildifier: disable=bzl-visibility
 load("//python/private/pypi:whl_config_setting.bzl", "whl_config_setting")  # buildifier: disable=bzl-visibility
 
@@ -369,6 +370,23 @@ def _test_groups_with_extras(env):
     env.expect.that_bool("group_extras" in actual["bar/BUILD.bazel"]).equals(False)
 
 _tests.append(_test_groups_with_extras)
+
+def _test_render_sdist_alias(env):
+    env.expect.that_str(render_sdist_alias("foo", {
+        "3.12": "@pypi_foo_file//:foo-1.0.tar.gz",
+        "3.13": "@pypi_foo_file//:foo-1.0.tar.gz",
+    })).equals("""
+alias(
+    name = "sdist",
+    actual = "@pypi_foo_file//:foo-1.0.tar.gz",
+)
+""")
+    env.expect.that_str(render_sdist_alias("foo", {
+        "3.12": "@pypi_foo1_file//:foo-1.0.tar.gz",
+        "3.13": "@pypi_foo2_file//:foo-2.0.tar.gz",
+    })).contains("The lock file has no sdist of 'foo' for this Python version")
+
+_tests.append(_test_render_sdist_alias)
 
 def render_pkg_aliases_test_suite(name):
     """Create the test suite.

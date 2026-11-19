@@ -6,18 +6,19 @@ load(":attrs.bzl", "ATTRS")
 load(":patch_whl.bzl", "patch_whl")
 load(":urllib.bzl", "urllib")
 
-def download_whl(rctx, *, logger):
+def download_whl(rctx, *, logger, allow_sdist = False):
     """Download a wheel and return its path, preserving index authentication.
 
     Args:
         rctx: The repository context.
         logger: The repository logger.
+        allow_sdist: Allow downloading an sdist too.
 
     Returns:
         The path of the downloaded wheel.
     """
     filename = rctx.attr.filename
-    if not filename.endswith(".whl"):
+    if not filename.endswith(".whl") and not allow_sdist:
         fail("Only wheels are supported")
     urls = [
         urllib.absolute_url(
@@ -65,7 +66,8 @@ def _whl_file_repo_impl(rctx):
         rctx.symlink(whl_path, whl_path.basename)
         whl_path = rctx.path(whl_path.basename)
     else:
-        whl_path = download_whl(rctx, logger = repo_utils.logger(rctx))
+        # The sdists are downloaded for the `:sdist` targets of the hub.
+        whl_path = download_whl(rctx, logger = repo_utils.logger(rctx), allow_sdist = not rctx.attr.patches)
     if rctx.attr.patches:
         whl_path = patch_whl(
             rctx,

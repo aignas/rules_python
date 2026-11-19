@@ -15,7 +15,7 @@
 ""
 
 load("//python/private:text_util.bzl", "render")
-load(":render_pkg_aliases.bzl", "render_multiplatform_pkg_aliases")
+load(":render_pkg_aliases.bzl", "render_multiplatform_pkg_aliases", "render_sdist_alias")
 load(":whl_config_setting.bzl", "whl_config_setting")
 
 _BUILD_FILE_CONTENTS = """\
@@ -45,6 +45,10 @@ def _impl(rctx):
         # Only rendered when it is not the default
         unavailable_package_mode = "" if rctx.attr.unavailable_package_mode == "error" else rctx.attr.unavailable_package_mode,
     )
+    for name, by_version in rctx.attr.sdists.items():
+        path = "{}/BUILD.bazel".format(name)
+        if path in aliases:
+            aliases[path] += render_sdist_alias(name, json.decode(by_version))
     for path, contents in aliases.items():
         rctx.file(path, contents)
 
@@ -105,6 +109,9 @@ unless `hide_unexposed_packages` is set.
         "repo_name": attr.string(
             mandatory = True,
             doc = "The apparent name of the repo. This is needed because in bzlmod, the name attribute becomes the canonical name.",
+        ),
+        "sdists": attr.string_dict(
+            doc = "The JSON encoded labels of the sdist of each package for each Python version.",
         ),
         "unavailable_package_mode": attr.string(
             default = "error",

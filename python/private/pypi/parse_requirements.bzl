@@ -51,6 +51,7 @@ def parse_requirements(
         pylock = None,
         local_wheels = [],
         build_mode = None,
+        sdists = None,
         toml_decode = None,
         logger):
     """Get the requirements with platforms that the requirements apply to.
@@ -81,6 +82,8 @@ def parse_requirements(
             with the `uv_lock` or the `pylock`.
         build_mode: {type}`callable | None` returns the build mode of a
             normalized package name, `always` ignores the wheels.
+        sdists: {type}`dict[str, struct] | None` if set, the sdists in the
+            lock files are added to it by the normalized package name.
         toml_decode: {type}`callable | None` A function to decode TOML
             content (e.g. `toml.decode`). Required when `uv_lock` is provided.
         logger: repo_utils.logger, a simple struct to log diagnostic messages.
@@ -119,6 +122,7 @@ def parse_requirements(
             extra_pip_args = extra_pip_args,
             logger = logger,
             build_mode = build_mode,
+            sdists = sdists,
         )
         logger.debug(lambda: "Parsed {} packages from pylock.toml".format(len(ret)))
         return ret
@@ -140,6 +144,7 @@ def parse_requirements(
             extra_pip_args = extra_pip_args,
             logger = logger,
             build_mode = build_mode,
+            sdists = sdists,
         )
         logger.debug(lambda: "Parsed {} packages from uv.lock".format(len(ret)))
         return ret
