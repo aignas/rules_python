@@ -1,7 +1,7 @@
 ""
 
 load("@rules_testing//lib:test_suite.bzl", "test_suite")
-load("//python/private/pypi:whl_overrides.bzl", "build_modes_for_hub", "package_settings_for_hub", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")  # buildifier: disable=bzl-visibility
+load("//python/private/pypi:whl_overrides.bzl", "build_mode_for_hub", "package_settings_for_hub", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")  # buildifier: disable=bzl-visibility
 
 _tests = []
 
@@ -176,21 +176,26 @@ def _test_build_modes(env):
         _override(package = "*", build_mode = "never"),
         _override(package = "foo", build_mode = "always"),
         _override(package = "bar", hub_name = "pypi", build_mode = "auto"),
+        _override(package = "*", hub_name = "third", build_mode = "auto"),
     ))
     env.expect.that_collection(failures).contains_exactly([])
-    env.expect.that_dict(build_modes_for_hub(got, "pypi")).contains_exactly({
-        "*": "never",
-        "bar": "auto",
-        "foo": "always",
-    })
-    env.expect.that_dict(build_modes_for_hub(got, "other")).contains_exactly({
-        "*": "never",
-        "foo": "always",
-    })
+
+    # The hub settings take precedence over the settings for all hubs
+    for hub, want in {
+        "other": {"bar": "never", "baz": "never", "foo": "always"},
+        "pypi": {"bar": "auto", "baz": "never", "foo": "always"},
+        "third": {"bar": "auto", "baz": "auto", "foo": "auto"},
+    }.items():
+        build_mode = build_mode_for_hub(got, hub)
+        env.expect.where(hub = hub).that_dict({
+            name: build_mode(name)
+            for name in want
+        }).contains_exactly(want)
     env.expect.that_collection(unmatched_whl_overrides(got, {
         "pypi": ["foo"],
     })).contains_exactly([
         "pip.override(package = 'bar') does not match any package in hub 'pypi'",
+        "pip.override(hub_name = 'third') refers to a hub that does not exist",
     ])
 
     for overrides, want in [

@@ -77,9 +77,19 @@ changes that for a package, or for all of them with `package = "*"`:
 | `always` | build the wheel from the sdist | build the wheel from the sdist |
 | `never` | use the wheel | the package is not available on the platform |
 
+```starlark
+pip.override(package = "*", build_mode = "never")
+pip.override(package = "ipython", build_mode = "always")
+```
+
+A package uses the first build mode that is set for: the package in its hub,
+`*` in its hub, the package in all hubs and `*` in all hubs.
 {attr}`pip.parse.download_only` is the same as `never` for all of the packages
-of a hub and it cannot be combined with `always`. The settings for a hub
-replace the settings for all of the hubs.
+of a hub and it cannot be combined with `always`.
+
+`never` drops a package that has no wheel on a platform and prints a warning
+when the wheels are downloaded with the Bazel downloader. When `pip` downloads
+the packages, e.g. without an index, it fails to download such a package.
 
 :::{note}
 The wheels are built with `pip` on the host when the repositories are fetched,

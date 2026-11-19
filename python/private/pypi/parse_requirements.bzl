@@ -48,7 +48,7 @@ def parse_requirements(
         extract_url_srcs = True,
         uv_lock = None,
         local_wheels = [],
-        build_modes = {},
+        build_mode = None,
         toml_decode = None,
         logger):
     """Get the requirements with platforms that the requirements apply to.
@@ -75,8 +75,8 @@ def parse_requirements(
         local_wheels: {type}`list[Label]` the local wheels to use instead of
             the locked wheels of the same package version. Only supported
             with the `uv_lock`.
-        build_modes: {type}`dict[str, str]` the build mode of the packages by
-            the normalized name (`*` for all), `always` ignores the wheels.
+        build_mode: {type}`callable | None` returns the build mode of a
+            normalized package name, `always` ignores the wheels.
         toml_decode: {type}`callable | None` A function to decode TOML
             content (e.g. `toml.decode`). Required when `uv_lock` is provided.
         logger: repo_utils.logger, a simple struct to log diagnostic messages.
@@ -110,7 +110,7 @@ def parse_requirements(
             platforms = platforms,
             extra_pip_args = extra_pip_args,
             logger = logger,
-            build_modes = build_modes,
+            build_mode = build_mode,
         )
         logger.debug(lambda: "Parsed {} packages from uv.lock".format(len(ret)))
         return ret
@@ -126,7 +126,7 @@ def parse_requirements(
         platforms = platforms,
         get_index_urls = get_index_urls,
         extract_url_srcs = extract_url_srcs,
-        build_modes = build_modes,
+        build_mode = build_mode,
         logger = logger,
     )
 
@@ -147,7 +147,7 @@ def _parse_requirements_from_req_files(
         get_index_urls,
         extract_url_srcs,
         logger,
-        build_modes = {}):
+        build_mode = None):
     """Parse requirements from requirements.txt files (existing behavior)."""
     options = {}
     requirements = {}
@@ -269,7 +269,7 @@ def _parse_requirements_from_req_files(
             pkg_sources = pkg_sources,
             platforms = platforms,
             extract_url_srcs = extract_url_srcs,
-            build_from_sdist = build_modes.get(normalize_name(name), build_modes.get("*")) == "always",
+            build_from_sdist = build_mode != None and build_mode(normalize_name(name)) == "always",
             logger = logger,
         )
 
@@ -437,6 +437,10 @@ def _add_dists(*, requirement, index_urls, target_platform, logger = None, build
             ))
             return None, True
 
+        if build_from_sdist and requirement.srcs.filename.endswith(".whl"):
+            logger.fail(lambda: "The package '{}' has 'build_mode = \"always\"', but it is a direct reference to a wheel".format(requirement.distribution))
+            return None, False
+
         # Handle direct URLs in requirements
         dist = struct(
             url = requirement.srcs.url,
@@ -490,6 +494,9 @@ def _add_dists(*, requirement, index_urls, target_platform, logger = None, build
         ]))
 
     if build_from_sdist:
+        if not sdist:
+            logger.fail(lambda: "The package '{}' has 'build_mode = \"always\"', but there is no sdist on the index".format(requirement.distribution))
+            return None, False
         whls = []
 
     if not target_platform:

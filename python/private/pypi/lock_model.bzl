@@ -72,7 +72,7 @@ def lock_entry(
         direct_requirement = direct_requirement,
     )
 
-def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_args = None, build_modes = {}):
+def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_args = None, build_mode = None):
     """Select the distributions of the locked packages for each platform.
 
     Args:
@@ -83,8 +83,8 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
         logger: {type}`struct` A logger for diagnostic messages.
         extra_pip_args: {type}`list[str] | None` Extra pip arguments to pass
             through.
-        build_modes: {type}`dict[str, str]` the build mode of the packages by
-            the normalized name (`*` for all), `always` ignores the wheels.
+        build_mode: {type}`callable | None` returns the build mode of a
+            normalized package name, `always` ignores the wheels.
 
     Returns:
         {type}`list[struct]` The same format as `parse_requirements`.
@@ -101,7 +101,7 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
         info["versions"][version] = None
         info["index_url"] = entry.index_url
 
-        build_from_sdist = build_modes.get(norm_name, build_modes.get("*")) == "always"
+        build_from_sdist = build_mode != None and build_mode(norm_name) == "always"
         if build_from_sdist and not entry.sdist and not entry.direct_requirement:
             logger.fail(lambda: "The package '{}' has 'build_mode = \"always\"', but there is no sdist in the lock file".format(name))
             continue

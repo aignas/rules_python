@@ -135,20 +135,23 @@ def parse_whl_overrides(modules, *, _fail = fail):
         build_modes = build_modes,
     )
 
-def build_modes_for_hub(overrides, hub_name):
+def build_mode_for_hub(overrides, hub_name):
     """Get the build modes of the packages in a hub.
 
-    The build modes for the hub replace the build modes for all hubs.
+    A package uses the first of: the build mode of the package for the hub, of
+    `*` for the hub, of the package for all hubs and of `*` for all hubs.
 
     Args:
         overrides: {type}`struct` the result of {func}`parse_whl_overrides`.
         hub_name: {type}`str` the name of the hub.
 
     Returns:
-        {type}`dict[str, str]` the build mode of each package name, `*` for all
-        of the packages.
+        {type}`callable` that returns the build mode of a normalized package
+        name or an empty string.
     """
-    return overrides.build_modes.get("", {}) | overrides.build_modes.get(hub_name, {})
+    hub = overrides.build_modes.get(hub_name, {})
+    all_hubs = overrides.build_modes.get("", {})
+    return lambda name: hub.get(name) or hub.get("*") or all_hubs.get(name) or all_hubs.get("*") or ""
 
 def package_settings_for_hub(overrides, hub_name):
     """Get the settings of the packages in a hub.

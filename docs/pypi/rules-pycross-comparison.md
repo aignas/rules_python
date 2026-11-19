@@ -170,8 +170,9 @@ all of them. You can define more platforms with {obj}`pip.default`.
 * If it only has an sdist, `rules_python` builds it with `pip wheel` on the
   host when the repository is fetched. The build is not hermetic, the build
   dependencies come from the index and not from the lock file, and the wheel
-  is built for the host platform. Set {attr}`pip.parse.download_only` to
-  forbid this.
+  is built for the host platform. Use {attr}`pip.override.build_mode` to
+  forbid this (`never`) or to always build a package from its sdist
+  (`always`) and {attr}`pip.parse.download_only` to forbid it for a hub.
 * Planned: replacing a package with your own target, like `build_target` in
   rules_pycross. Today, depend on your own target instead of the hub label.
 * Planned: an extension point that lets another ruleset, such as

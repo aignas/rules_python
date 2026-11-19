@@ -143,7 +143,7 @@ def _test_build_mode_always(env):
         all_platforms = sorted(_PLATFORMS),
         platforms = _PLATFORMS,
         logger = repo_utils.logger(struct(getenv = {}.get), "unit-test", printer = lambda _, message: failures.append(message)),
-        build_modes = {"*": "always"},
+        build_mode = lambda _: "always",
     )
     env.expect.that_collection([(r.name, [s.filename for s in r.srcs]) for r in got]).contains_exactly([
         ("bar", []),

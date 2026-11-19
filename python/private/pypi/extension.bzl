@@ -33,7 +33,7 @@ load(":pypi_cache.bzl", "pypi_cache")
 load(":simpleapi_download.bzl", "simpleapi_download")
 load(":unified_hub_repo.bzl", "unified_hub_repo")
 load(":whl_library.bzl", "whl_library")
-load(":whl_overrides.bzl", "build_modes_for_hub", "package_settings_for_hub", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")
+load(":whl_overrides.bzl", "build_mode_for_hub", "package_settings_for_hub", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")
 
 def _whl_mods_impl(whl_mods_dict):
     """Implementation of the pip.whl_mods tag class.
@@ -279,7 +279,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
                     config = config,
                     whl_overrides = whl_overrides_for_hub(whl_overrides, pip_attr.hub_name),
                     package_settings = package_settings_for_hub(whl_overrides, pip_attr.hub_name),
-                    build_modes = build_modes_for_hub(whl_overrides, pip_attr.hub_name),
+                    build_mode = build_mode_for_hub(whl_overrides, pip_attr.hub_name),
                     simpleapi_download_fn = simpleapi_download,
                     simpleapi_cache = simpleapi_cache,
                     # TODO @aignas 2025-09-06: do not use kwargs
