@@ -124,4 +124,5 @@ sdist, `@pypi//foo:sdist`, with a build backend and installed with
 `pycross_wheel_library`, which is then used as
 {attr}`pip.override.replace_with`. The `:sdist` targets are available for the
 packages that have an sdist in the {attr}`pip.parse.uv_lock` or the
-{attr}`pip.parse.pylock` and they are downloaded only when they are used.
+{attr}`pip.parse.pylock` and they are downloaded only when they are used;
+the unified `@pypi` hub does not have them.

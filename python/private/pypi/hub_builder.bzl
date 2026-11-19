@@ -644,9 +644,14 @@ def _create_whl_repos(
         logger = logger,
     )
 
-    for name, dist in sdists.items():
-        # A lazily downloaded file for the `:sdist` target of the hub.
-        repo_name = "{}_{}_{}_file".format(self.name, version_label(python_version), whl_repo_name(dist.filename, dist.digest))
+    for name, sdist in sdists.items():
+        if not sdist:
+            continue
+
+        # A lazily downloaded file for the `:sdist` target of the hub, which
+        # is the same for all of the Python versions.
+        dist = sdist.sdist
+        repo_name = "{}_{}_file".format(self.name, whl_repo_name(dist.filename, dist.digest))
         self._whl_libraries[repo_name] = {
             "filename": dist.filename,
             "integrity": hash.integrity(dist.digest),
@@ -656,6 +661,8 @@ def _create_whl_repos(
             k: v
             for k, v in {
                 "auth_patterns": self._config.auth_patterns or pip_attr.auth_patterns,
+                "envsubst": pip_attr.envsubst,
+                "index_url": sdist.index_url,
                 "netrc": self._config.netrc or pip_attr.netrc,
             }.items()
             if v

@@ -15,7 +15,7 @@
 ""
 
 load("//python/private:text_util.bzl", "render")
-load(":render_pkg_aliases.bzl", "render_multiplatform_pkg_aliases")
+load(":render_pkg_aliases.bzl", "render_multiplatform_pkg_aliases", "render_sdist_alias")
 load(":whl_config_setting.bzl", "whl_config_setting")
 
 _BUILD_FILE_CONTENTS = """\
@@ -24,23 +24,6 @@ package(default_visibility = ["//visibility:public"])
 # Ensure the `requirements.bzl` source can be accessed by stardoc, since users load() from it
 exports_files(["requirements.bzl"])
 """
-
-def _render_sdist(by_version):
-    """Render the `sdist` target, which selects the sdist by the Python version."""
-    labels = {v: None for v in by_version.values()}
-    if len(labels) == 1:
-        actual = repr(labels.keys()[0])
-    else:
-        actual = render.select({
-            "//_config:is_cp{}".format(version.replace(".", "")): label
-            for version, label in sorted(by_version.items())
-        })
-    return """
-alias(
-    name = "sdist",
-    actual = {},
-)
-""".format(actual)
 
 def _impl(rctx):
     if rctx.attr.hide_unexposed_packages:
@@ -65,7 +48,7 @@ def _impl(rctx):
     for name, by_version in rctx.attr.sdists.items():
         path = "{}/BUILD.bazel".format(name)
         if path in aliases:
-            aliases[path] += _render_sdist(json.decode(by_version))
+            aliases[path] += render_sdist_alias(name, json.decode(by_version))
     for path, contents in aliases.items():
         rctx.file(path, contents)
 

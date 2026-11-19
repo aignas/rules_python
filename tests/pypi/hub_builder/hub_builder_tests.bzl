@@ -255,8 +255,8 @@ def _test_uv_lock_build_modes(env):
     pypi.whl_libraries().keys().contains_exactly([
         "pypi_315_foo_sdist_deadbeef",
         # The files for the `:sdist` targets
-        "pypi_315_bar_sdist_deadb00f_file",
-        "pypi_315_foo_sdist_deadbeef_file",
+        "pypi_bar_sdist_deadb00f_file",
+        "pypi_foo_sdist_deadbeef_file",
     ])
     pypi.whl_libraries().get("pypi_315_foo_sdist_deadbeef", factory = subjects.dict).get(
         "extra_pip_args",
@@ -385,15 +385,16 @@ def _test_replace_with(env):
             "replace_with": "@@//:foo",
             "replace_with_whl": "@@//:foo.whl",
         },
-        "pypi_315_foo_sdist_deadbeef_file": {
+        "pypi_foo_sdist_deadbeef_file": {
             "filename": "foo-1.0.tar.gz",
+            "index_url": "https://pypi.org/simple/foo",
             "integrity": "sha256-3q2+7w==",
             "sdist_file": True,
             "urls": ["https://files.pythonhosted.org/packages/foo-1.0.tar.gz"],
         },
     })
     pypi.sdists().contains_exactly({
-        "foo": {"3.15": "@pypi_315_foo_sdist_deadbeef_file//:foo-1.0.tar.gz"},
+        "foo": {"3.15": "@pypi_foo_sdist_deadbeef_file//:foo-1.0.tar.gz"},
     })
 
 _tests.append(_test_replace_with)

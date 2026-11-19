@@ -85,8 +85,10 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
             through.
         build_mode: {type}`callable | None` returns the build mode of a
             normalized package name, `always` ignores the wheels.
-        sdists: {type}`dict[str, struct] | None` if set, the {func}`lock_dist`
-            sdist of each normalized package name is added to it.
+        sdists: {type}`dict[str, struct | None] | None` if set, the `sdist`
+            ({func}`lock_dist`) and the `index_url` of each normalized package
+            name that is used on a platform is added to it, or `None` if it is
+            ambiguous.
 
     Returns:
         {type}`list[struct]` The same format as `parse_requirements`.
@@ -96,8 +98,6 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
         name = entry.name
         version = entry.version
         norm_name = normalize_name(name)
-        if sdists != None and entry.sdist:
-            sdists[norm_name] = entry.sdist
         info = packages.setdefault(norm_name, {
             "resolved_srcs": [],
             "versions": {},
@@ -157,6 +157,16 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
                         requirement = entry.direct_requirement,
                     ),
                 )
+
+        # Only record the sdists of the entries that are used on a platform,
+        # an ambiguous sdist is left out.
+        if sdists != None and entry.sdist and plat_to_src:
+            dist = struct(sdist = entry.sdist, index_url = entry.index_url)
+            if sdists.get(norm_name, dist) != dist:
+                logger.warn(lambda: "The lock file has more than one sdist for '{}', the ':sdist' target is not created".format(name))
+                sdists[norm_name] = None
+            elif norm_name not in sdists:
+                sdists[norm_name] = dist
 
         # Group platforms by resolved source
         src_to_plats = {}

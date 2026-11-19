@@ -206,6 +206,35 @@ def _major_minor_versions(python_versions):
     # Use a dict as a simple set
     return sorted({_major_minor(v): None for v in python_versions})
 
+def render_sdist_alias(name, by_version):
+    """Render the `sdist` target, which selects the sdist by the Python version.
+
+    Args:
+        name: {type}`str` the name of the package.
+        by_version: {type}`dict[str, str]` the label of the sdist for each
+            Python version.
+
+    Returns:
+        {type}`str` the rendered target.
+    """
+    labels = {v: None for v in by_version.values()}
+    if len(labels) == 1:
+        actual = repr(labels.keys()[0])
+    else:
+        actual = render.select(
+            {
+                "//_config:is_cp{}".format(version.replace(".", "")): label
+                for version, label in sorted(by_version.items())
+            },
+            no_match_error = "The lock file has no sdist of '{}' for this Python version".format(name),
+        )
+    return """
+alias(
+    name = "sdist",
+    actual = {},
+)
+""".format(actual)
+
 def render_multiplatform_pkg_aliases(*, aliases, platform_config_settings = {}, **kwargs):
     """Render the multi-platform pkg aliases.
 
