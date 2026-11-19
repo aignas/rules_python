@@ -12,13 +12,14 @@ from tests.perf.workloads import workloads
 # If you have made the code faster, lower the budget so that it stays that way.
 _BUDGETS = {
     # keep sorted
-    "evaluate: long marker": 5150,
-    "evaluate: os_name == 'posix' and sys_platform == 'linux'": 610,
-    "evaluate: python_version < '3.11' and extra == 'dev' (non-strict)": 575,
-    "evaluate: python_version >= '3.8'": 490,
-    "evaluate: sys_platform == 'win32'": 300,
-    "tokenize: long marker": 2900,
-    "tokenize: python_version >= '3.8'": 200,
+    "evaluate: long marker": 2770,
+    "evaluate: os_name == 'posix' and sys_platform == 'linux'": 316,
+    "evaluate: python_version < '3.11' and extra == 'dev' (non-strict)": 306,
+    "evaluate: python_version >= '3.8'": 340,
+    "evaluate: sys_platform == 'win32'": 155,
+    "tokenize: long marker": 535,
+    "tokenize: python_version>='3.8' and os_name=='posix'": 256,
+    "tokenize: python_version >= '3.8'": 50,
     "version.is_compatible(3.11.4, 3.8)": 73,
     "version.is_eq(3.11.4, 3.11.*)": 13,
     "version.is_ge(3.11.4, 3.8)": 59,

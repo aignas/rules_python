@@ -54,24 +54,25 @@ https://bazel.build/rules/performance#performance-profiling.
 
 | Workload | Steps | Time, µs |
 |---|---:|---:|
-| `evaluate: long marker` | 4660 | 385.4 |
-| `evaluate: os_name == 'posix' and sys_platform == 'linux'` | 552 | 44.1 |
-| `evaluate: python_version < '3.11' and extra == 'dev' (non-strict)` | 521 | 43.4 |
-| `evaluate: python_version >= '3.8'` | 441 | 46.5 |
-| `evaluate: sys_platform == 'win32'` | 271 | 22.9 |
-| `tokenize: long marker` | 2629 | 107.9 |
-| `tokenize: python_version >= '3.8'` | 178 | 7.9 |
-| `version.is_compatible(3.11.4, 3.8)` | 66 | 3.8 |
+| `evaluate: long marker` | 2514 | 320.7 |
+| `evaluate: os_name == 'posix' and sys_platform == 'linux'` | 287 | 37.4 |
+| `evaluate: python_version < '3.11' and extra == 'dev' (non-strict)` | 278 | 37.6 |
+| `evaluate: python_version >= '3.8'` | 308 | 44.0 |
+| `evaluate: sys_platform == 'win32'` | 140 | 19.5 |
+| `tokenize: long marker` | 483 | 36.5 |
+| `tokenize: python_version>='3.8' and os_name=='posix'` | 232 | 13.9 |
+| `tokenize: python_version >= '3.8'` | 45 | 3.5 |
+| `version.is_compatible(3.11.4, 3.8)` | 66 | 3.7 |
 | `version.is_eq(3.11.4, 3.11.*)` | 11 | 1.1 |
-| `version.is_ge(3.11.4, 3.8)` | 53 | 2.7 |
+| `version.is_ge(3.11.4, 3.8)` | 53 | 2.6 |
 | `version.is_lt(3.11.4, 3.8)` | 47 | 2.9 |
 | `version.key(3.11.4)` | 25 | 1.3 |
 | `version.normalize('2023.07.19')` | 24 | 2.6 |
-| `version.parse('#1 SMP Debian')` | 631 | 85.9 |
-| `version.parse('1!2.0.0rc1.post3.dev4+ubuntu.7')` | 1512 | 239.9 |
-| `version.parse('3.11.*')` | 54 | 8.1 |
-| `version.parse('3.11.4')` | 55 | 8.0 |
-| `version.parse('3.13.0rc1')` | 1016 | 161.7 |
+| `version.parse('#1 SMP Debian')` | 631 | 86.6 |
+| `version.parse('1!2.0.0rc1.post3.dev4+ubuntu.7')` | 1512 | 236.4 |
+| `version.parse('3.11.*')` | 54 | 8.0 |
+| `version.parse('3.11.4')` | 55 | 7.9 |
+| `version.parse('3.13.0rc1')` | 1016 | 159.3 |
 
 ## History
 
@@ -82,3 +83,6 @@ The notable changes of the results, the numbers are the steps.
 | Parse the release-only versions without the parser | `version.parse('3.11.4')` | 878 | 55 |
 | | `evaluate: python_version >= '3.8'` | 1883 | 441 |
 | | `evaluate: long marker` | 9313 | 4660 |
+| Tokenize the markers with the string methods | `tokenize: long marker` | 2629 | 483 |
+| | `evaluate: sys_platform == 'win32'` | 271 | 140 |
+| | `evaluate: long marker` | 4660 | 2514 |

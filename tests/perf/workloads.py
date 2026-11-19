@@ -70,6 +70,9 @@ def workloads(root=None):
             "sys_platform == 'win32'", env=_ENV
         ),
         "tokenize: long marker": lambda: tokenize(_LONG_MARKER),
+        "tokenize: python_version>='3.8' and os_name=='posix'": lambda: tokenize(
+            "python_version>='3.8' and os_name=='posix'"
+        ),
         "tokenize: python_version >= '3.8'": lambda: tokenize(
             "python_version >= '3.8'"
         ),

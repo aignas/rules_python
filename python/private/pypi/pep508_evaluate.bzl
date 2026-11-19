@@ -22,15 +22,12 @@ load("//python/private:version.bzl", "version")
 #
 
 _STATE = enum(
-    STRING = "string",
     VAR = "var",
     OP = "op",
     NONE = "none",
 )
 _BRACKETS = "()"
 _OPCHARS = "<>!=~"
-_QUOTES = "'\""
-_WSP = " \t"
 _NON_VERSION_VAR_NAMES = [
     "implementation_name",
     "os_name",
@@ -97,23 +94,74 @@ def _tokenize(marker):
         A tuple of the list of tokens and an error message, where one of them is None.
     """
     tokens = []
+    rest = marker
+
+    # Find the strings, because anything can be in them, and tokenize what is
+    # between them. Each iteration handles one string, which is at least 2 chars.
+    for _ in range(len(marker) // 2 + 1):
+        double = rest.find('"')
+        single = rest.find("'")
+        if double < 0 and single < 0:
+            break
+
+        if single < 0 or (double >= 0 and double < single):
+            start, quote = double, '"'
+        else:
+            start, quote = single, "'"
+
+        end = rest.find(quote, start + 1)
+        if end < 0:
+            return None, "Unterminated string in the marker: {}".format(marker)
+
+        err = _tokenize_unquoted(rest[:start], tokens)
+        if err:
+            return None, "{} in the marker: {}".format(err, marker)
+
+        tokens.append('"{}"'.format(rest[start + 1:end]))
+        rest = rest[end + 1:]
+
+    err = _tokenize_unquoted(rest, tokens)
+    if err:
+        return None, "{} in the marker: {}".format(err, marker)
+
+    return tokens, None
+
+def _tokenize_unquoted(text, tokens):
+    """Tokenize the text that does not have strings.
+
+    Args:
+        text: {type}`str` The text to tokenize.
+        tokens: {type}`list[str]` The list to append the tokens to.
+
+    Returns:
+        {type}`str | None` the error message if the text is invalid.
+    """
+    for word in text.replace("(", " ( ").replace(")", " ) ").replace("\t", " ").split(" "):
+        if not word:
+            continue
+        elif word in _BRACKETS or not word.strip(_OPCHARS):
+            tokens.append(word)
+        elif word[0].isalnum() and word.replace("_", "").replace(".", "").isalnum():
+            if word == "in" and tokens and tokens[-1] == _NOT:
+                tokens[-1] = "not in"
+            else:
+                tokens.append(word)
+        else:
+            # The slow path for when the variables and the operators are not
+            # separated by whitespace, e.g. `os_name=="posix"`.
+            err = _tokenize_word(word, tokens)
+            if err:
+                return err
+
+    return None
+
+def _tokenize_word(word, tokens):
+    """Tokenize a word that has variables and operators without whitespace between them."""
     token = ""
     state = _STATE.NONE
-    quote = ""
 
     # The trailing space terminates the last token.
-    for char in (marker + " ").elems():
-        if state == _STATE.STRING:
-            # Anything can be in the string except for the quote that it was
-            # started with.
-            if char == quote:
-                tokens.append('"{}"'.format(token))
-                token = ""
-                state = _STATE.NONE
-            else:
-                token += char
-            continue
-
+    for char in (word + " ").elems():
         if state == _STATE.VAR:
             if char.isalnum() or char in "_.":
                 token += char
@@ -123,7 +171,6 @@ def _tokenize(marker):
                 tokens[-1] = "not in"
             else:
                 tokens.append(token)
-            token = ""
             state = _STATE.NONE
         elif state == _STATE.OP:
             if char in _OPCHARS:
@@ -131,27 +178,18 @@ def _tokenize(marker):
                 continue
 
             tokens.append(token)
-            token = ""
             state = _STATE.NONE
 
-        if char in _QUOTES:
-            state = _STATE.STRING
-            quote = char
-        elif char in _BRACKETS:
-            tokens.append(char)
-        elif char.isalnum():
+        if char.isalnum():
             state = _STATE.VAR
             token = char
         elif char in _OPCHARS:
             state = _STATE.OP
             token = char
-        elif char not in _WSP:
-            return None, "Cannot parse '{}' in the marker: {}".format(char, marker)
+        elif char != " ":
+            return "Cannot parse '{}'".format(char)
 
-    if state == _STATE.STRING:
-        return None, "Unterminated string in the marker: {}".format(marker)
-
-    return tokens, None
+    return None
 
 def _syntax_error(marker, tokens, env):
     """Check that the tokens form a valid expression.
