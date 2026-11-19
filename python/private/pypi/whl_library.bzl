@@ -16,7 +16,9 @@
 
 load(":patch_whl.bzl", "get_whl_patches", "patched_whl_name")
 load(":pip_archive.bzl", "pip_archive", "pip_archive_attrs")
+load(":replaced_whl_repo.bzl", "replaced_whl_repo")
 load(":whl_archive.bzl", "whl_archive", "whl_archive_attrs")
+load(":whl_deps_repo.bzl", "whl_deps_attrs", "whl_deps_repo")
 load(":whl_file_repo.bzl", "whl_file_repo", "whl_file_repo_attrs")
 
 def _filter(kwargs, subset, debug = False):
@@ -56,6 +58,8 @@ def whl_library(name, repo = None, **kwargs):
     """
     _ = repo  # buildifier: disable=unused-variable
 
+    replace_with = kwargs.pop("replace_with", None)
+
     whl_file = kwargs.get("whl_file")
     urls = kwargs.get("urls", [])
     filename = kwargs.get("filename")
@@ -63,7 +67,26 @@ def whl_library(name, repo = None, **kwargs):
     # compatibility shim for cases for repo_prefix is still used by the called
     kwargs.setdefault("dep_template", "@{}{{name}}//:{{target}}".format(kwargs.pop("repo_prefix", "")))
 
-    if whl_file or (urls and filename and filename.endswith(".whl")):
+    if replace_with:
+        # The package is provided by the user targets.
+        replaced_whl_repo(
+            name = name + "_srcs",
+            target = replace_with,
+            whl = kwargs.pop("replace_with_whl", ""),
+            dist_info = kwargs.pop("replace_with_dist_info", ""),
+        )
+        whl_deps_repo(
+            name = name,
+            repo = "@{}_srcs//:BUILD.bazel".format(name),
+            metadata = json.encode({
+                "name": kwargs.pop("metadata_name"),
+                "provides_extra": kwargs.pop("provides_extra", []),
+                "requires_dist": [],
+                "version": kwargs.pop("metadata_version", "0"),
+            }),
+            **_filter(kwargs, whl_deps_attrs)
+        )
+    elif whl_file or (urls and filename and filename.endswith(".whl")):
         wheel_filename = filename or str(whl_file).split(":")[-1].split("/")[-1]
         patches = get_whl_patches(kwargs.get("whl_patches", {}), wheel_filename)
         if patches:

@@ -95,3 +95,30 @@ the packages, e.g. without an index, it fails to download such a package.
 The wheels are built with `pip` on the host when the repositories are fetched,
 so the build is not hermetic and the built wheel is for the host platform.
 :::
+
+## Replacing a package
+
+{attr}`pip.override.replace_with` replaces a package in the hub with your own
+target on all of the platforms, e.g. a `py_library` with the sources of the
+package or a library that installs a wheel that is built from source by
+another ruleset. The hub targets, e.g. `@pypi//foo` and the extras targets,
+keep working and the package is not downloaded. The `Requires-Dist` of the
+package are not used, so add the dependencies on the other packages of the hub
+with {attr}`pip.override.extra_dependencies`. The requested extras, e.g.
+`@pypi//foo:[bar]`, are the package itself, and `@pypi//foo:whl` and
+`@pypi//foo:dist_info` are empty unless {attr}`pip.override.replace_with_whl`
+and {attr}`pip.override.replace_with_dist_info` are set. The targets need to be
+visible to the hub repositories, e.g. `visibility = ["//visibility:public"]`:
+
+```starlark
+pip.override(
+    package = "foo",
+    replace_with = "//third_party/foo",
+    replace_with_whl = "//third_party/foo:wheel",
+    extra_dependencies = ["bar"],
+)
+```
+
+For example, with rules_pycross the wheel of a package can be built from its
+sdist with a build backend and installed with `pycross_wheel_library`, which
+is then used as {attr}`pip.override.replace_with`.

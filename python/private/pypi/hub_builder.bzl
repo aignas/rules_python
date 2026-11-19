@@ -33,6 +33,7 @@ def hub_builder(
         package_settings = {},
         build_mode = None,
         cycle_graphs = None,
+        replacements = {},
         minor_mapping,
         available_interpreters,
         simpleapi_download_fn,
@@ -51,6 +52,8 @@ def hub_builder(
             normalized package name.
         cycle_graphs: {type}`list[dict] | None` - the dependency graphs to
             group the dependency cycles automatically.
+        replacements: {type}`dict[str, struct]` - the packages that are
+            replaced by the user targets.
         minor_mapping: {type}`dict[str, str]` the mapping between minor and full versions.
         available_interpreters: {type}`dict[str, Label]` The dictionary of available
             interpreters that have been registered using the `python` bzlmod extension.
@@ -110,8 +113,10 @@ def hub_builder(
         _config = config,
         _whl_overrides = whl_overrides,
         _package_settings = package_settings,
-        _build_mode = build_mode or (lambda _: ""),
+        # The replaced packages are not built.
+        _build_mode = lambda name: "" if name in replacements else (build_mode or (lambda _: ""))(name),
         _cycle_graphs = cycle_graphs,
+        _replacements = replacements,
         _logger = logger,
         _minor_mapping = minor_mapping,
         _available_interpreters = available_interpreters,
@@ -662,6 +667,37 @@ def _create_whl_repos(
             whl = whl,
             whl_modifications = whl_modifications,
         )
+        replacement = self._replacements.get(whl.name)
+        if replacement:
+            # The package is provided by the user targets on all platforms,
+            # the requested extras are aliases of the package.
+            reqs = [requirement(src.requirement_line) for src in whl.srcs]
+            extras = sorted({e: None for r in reqs for e in r.extras})
+            versions = sorted({r.version: None for r in reqs if r.version})
+            _add_whl_library(
+                self,
+                python_version = python_version,
+                whl = whl,
+                repo = struct(
+                    repo_name = "{}_replaced".format(whl.name),
+                    args = whl_library_args | {
+                        "metadata_name": whl.name,
+                        "metadata_version": versions[0] if len(versions) == 1 else "0",
+                        "provides_extra": extras,
+                        "replace_with": replacement.replace_with,
+                    } | {
+                        k: getattr(replacement, k)
+                        for k in ["replace_with_whl", "replace_with_dist_info"]
+                        if getattr(replacement, k)
+                    },
+                    config_setting = whl_config_setting(
+                        version = _major_minor_version(python_version),
+                        extras = extras or None,
+                    ),
+                ),
+            )
+            continue
+
         build_mode = self._build_mode(whl.name)
         if build_mode == "always" and pip_attr.download_only:
             logger.fail(lambda: "The package '{}' has 'build_mode = \"always\"', which cannot be used with 'download_only = True'".format(whl.name))

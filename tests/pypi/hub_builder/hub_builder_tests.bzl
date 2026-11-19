@@ -54,6 +54,7 @@ def hub_builder(
         whl_overrides = {},
         build_mode = None,
         cycle_graphs = None,
+        replacements = {},
         simpleapi_download_fn = None,
         log_printer = None,
         available_interpreters = {}):
@@ -91,6 +92,7 @@ def hub_builder(
         whl_overrides = whl_overrides,
         build_mode = build_mode,
         cycle_graphs = cycle_graphs,
+        replacements = replacements,
         minor_mapping = minor_mapping or {"3.15": "3.15.19"},
         available_interpreters = available_interpreters or {
             "python_3_15_host": "unit_test_interpreter_target",
@@ -339,6 +341,47 @@ def _test_automatic_requirement_cycles(env):
     pypi.group_map().contains_exactly({"auto_bar": ["bar", "foo"]})
 
 _tests.append(_test_automatic_requirement_cycles)
+
+def _test_replace_with(env):
+    builder = hub_builder(env, replacements = {
+        "foo": struct(replace_with = "@@//:foo", replace_with_whl = "@@//:foo.whl", replace_with_dist_info = None),
+    })
+    builder.pip_parse(
+        _mock_mctx(
+            os_name = "osx",
+            arch_name = "aarch64",
+            mock_files = {
+                "uv.lock": """{"package":[{"name":"foo","source":{"registry":"https://pypi.org/simple"},"version":"1.0","sdist":{"hash":"sha256:deadbeef","url":"https://files.pythonhosted.org/packages/foo-1.0.tar.gz"}}]}""",
+            },
+        ),
+        _parse(
+            hub_name = "pypi",
+            python_version = "3.15",
+            requirements_lock = None,
+            uv_lock = "uv.lock",
+        ),
+    )
+    pypi = builder.build()
+
+    pypi.exposed_packages().contains_exactly(["foo"])
+    pypi.whl_map().contains_exactly({
+        "foo": {
+            "pypi_315_foo_replaced": [whl_config_setting(version = "3.15")],
+        },
+    })
+    pypi.whl_libraries().contains_exactly({
+        "pypi_315_foo_replaced": {
+            "config_load": "@pypi//:config.bzl",
+            "dep_template": "@pypi//{name}:{target}",
+            "metadata_name": "foo",
+            "metadata_version": "1.0",
+            "provides_extra": [],
+            "replace_with": "@@//:foo",
+            "replace_with_whl": "@@//:foo.whl",
+        },
+    })
+
+_tests.append(_test_replace_with)
 
 def _test_uv_lock_conflicting_versions(env):
     logs = {}

@@ -20,6 +20,7 @@ def parse_whl_overrides(modules, *, _fail = fail):
     packages = {}
     settings = {}
     build_modes = {}
+    replacements = {}
     seen_files = {}
     seen_packages = {}
     for module in modules:
@@ -82,6 +83,19 @@ def parse_whl_overrides(modules, *, _fail = fail):
                 continue
             seen_packages[key] = None
 
+            if attr.replace_with:
+                if version or name == "*" or attr.patches or attr.build_mode or attr.ignore_dependencies:
+                    _fail("pip.override(package = '{}', replace_with = ...) needs a single package without a version and cannot have 'patches', 'build_mode' or 'ignore_dependencies'".format(attr.package))
+                    continue
+                replacements.setdefault(attr.hub_name, {})[whl_name] = struct(
+                    replace_with = str(attr.replace_with),
+                    replace_with_whl = str(attr.replace_with_whl) if attr.replace_with_whl else None,
+                    replace_with_dist_info = str(attr.replace_with_dist_info) if attr.replace_with_dist_info else None,
+                )
+            elif attr.replace_with_whl or attr.replace_with_dist_info:
+                _fail("pip.override(package = '{}') needs 'replace_with' to set 'replace_with_whl' or 'replace_with_dist_info'".format(attr.package))
+                continue
+
             if name == "*" and (attr.patches or attr.ignore_dependencies or attr.extra_dependencies or attr.tags):
                 _fail("pip.override(package = '*') only supports 'build_mode'")
                 continue
@@ -111,7 +125,7 @@ def parse_whl_overrides(modules, *, _fail = fail):
                     extra_dependencies = attr.extra_dependencies,
                     extra_tags = attr.tags,
                 )
-            elif not attr.patches and not attr.build_mode:
+            elif not attr.patches and not attr.build_mode and not attr.replace_with:
                 _fail("pip.override(package = '{}') does not set anything".format(attr.package))
                 continue
 
@@ -133,7 +147,20 @@ def parse_whl_overrides(modules, *, _fail = fail):
         packages = packages,
         settings = settings,
         build_modes = build_modes,
+        replacements = replacements,
     )
+
+def replacements_for_hub(overrides, hub_name):
+    """Get the packages of a hub that are replaced by user targets.
+
+    Args:
+        overrides: {type}`struct` the result of {func}`parse_whl_overrides`.
+        hub_name: {type}`str` the name of the hub.
+
+    Returns:
+        {type}`dict[str, struct]` the replacement of each package name.
+    """
+    return overrides.replacements.get("", {}) | overrides.replacements.get(hub_name, {})
 
 def build_mode_for_hub(overrides, hub_name):
     """Get the build modes of the packages in a hub.

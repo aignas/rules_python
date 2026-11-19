@@ -1,7 +1,7 @@
 ""
 
 load("@rules_testing//lib:test_suite.bzl", "test_suite")
-load("//python/private/pypi:whl_overrides.bzl", "build_mode_for_hub", "package_settings_for_hub", "parse_whl_overrides", "unmatched_whl_overrides", "whl_overrides_for_hub")  # buildifier: disable=bzl-visibility
+load("//python/private/pypi:whl_overrides.bzl", "build_mode_for_hub", "package_settings_for_hub", "parse_whl_overrides", "replacements_for_hub", "unmatched_whl_overrides", "whl_overrides_for_hub")  # buildifier: disable=bzl-visibility
 
 _tests = []
 
@@ -15,9 +15,15 @@ def _override(
         ignore_dependencies = [],
         extra_dependencies = [],
         tags = [],
-        build_mode = ""):
+        build_mode = "",
+        replace_with = None,
+        replace_with_whl = None,
+        replace_with_dist_info = None):
     return struct(
         build_mode = build_mode,
+        replace_with = replace_with,
+        replace_with_dist_info = replace_with_dist_info,
+        replace_with_whl = replace_with_whl,
         extra_dependencies = extra_dependencies,
         file = file,
         hub_name = hub_name,
@@ -209,6 +215,31 @@ def _test_build_modes(env):
         env.expect.that_str(failures[0]).contains(want)
 
 _tests.append(_test_build_modes)
+
+def _test_replacements(env):
+    got, failures = _parse(_mod(
+        _override(package = "foo", replace_with = Label("//:foo"), replace_with_whl = Label("//:foo.whl"), extra_dependencies = ["bar"]),
+        _override(package = "baz", hub_name = "pypi", replace_with = Label("//:baz")),
+    ))
+    env.expect.that_collection(failures).contains_exactly([])
+    env.expect.that_dict(replacements_for_hub(got, "pypi")).contains_exactly({
+        "baz": struct(replace_with = str(Label("//:baz")), replace_with_dist_info = None, replace_with_whl = None),
+        "foo": struct(replace_with = str(Label("//:foo")), replace_with_dist_info = None, replace_with_whl = str(Label("//:foo.whl"))),
+    })
+    env.expect.that_dict(package_settings_for_hub(got, "pypi")).contains_exactly({
+        "foo": {"extra_dependencies": ["bar"], "extra_tags": [], "ignore_dependencies": []},
+    })
+
+    for overrides, want in [
+        ([_override(package = "foo@1.0", replace_with = Label("//:foo"))], "needs a single package without a version"),
+        ([_override(package = "foo", replace_with = Label("//:foo"), patches = ["//:a.patch"])], "cannot have 'patches', 'build_mode' or 'ignore_dependencies'"),
+        ([_override(package = "foo", replace_with_whl = Label("//:foo.whl"))], "needs 'replace_with' to set 'replace_with_whl' or 'replace_with_dist_info'"),
+    ]:
+        _, failures = _parse(_mod(*overrides))
+        env.expect.where(overrides = overrides).that_int(len(failures)).equals(1)
+        env.expect.that_str(failures[0]).contains(want)
+
+_tests.append(_test_replacements)
 
 def whl_overrides_test_suite(name):
     """Create the test suite.
