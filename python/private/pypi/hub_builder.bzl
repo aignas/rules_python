@@ -586,6 +586,7 @@ def _create_whl_repos(
             logger = logger,
         ),
         uv_lock = pip_attr.uv_lock,
+        local_wheels = getattr(pip_attr, "local_wheels", []),
         platforms = platforms,
         extra_pip_args = pip_attr.extra_pip_args,
         get_index_urls = self._get_index_urls.get(python_version),
@@ -674,7 +675,7 @@ def _merge_extras(srcs):
     for src in srcs:
         line = strip_extras(src.requirement_line)
         entry = merged.setdefault(
-            (src.filename, src.url, line, tuple(src.extra_pip_args)),
+            (src.filename, src.url, getattr(src, "whl_file", None), line, tuple(src.extra_pip_args)),
             struct(
                 src = src,
                 line = line,
@@ -699,6 +700,7 @@ def _merge_extras(srcs):
             digest = entry.src.digest,
             url = entry.src.url,
             yanked = entry.src.yanked,
+            whl_file = getattr(entry.src, "whl_file", None),
         )
         for entry in merged.values()
     ]
@@ -794,6 +796,22 @@ def _whl_repo(
         interpreter,
         enable_pipstar_extract = False):
     args = dict(whl_library_args)
+    if src.whl_file:
+        # A local wheel, it is extracted without pip.
+        args.pop("download_only", None)
+        args["whl_file"] = src.whl_file
+        args["filename"] = src.filename
+        target_platforms = src.target_platforms if is_multiple_versions else []
+        return struct(
+            repo_name = whl_repo_name(src.filename, "", *target_platforms),
+            args = args,
+            config_settings = _config_settings(
+                src = src,
+                version = python_version,
+                target_platforms = src.target_platforms,
+            ),
+        )
+
     is_whl = src.filename.endswith(".whl")
     if not (src.url and is_whl):
         # The requirement line is only needed for `pip` to download or build

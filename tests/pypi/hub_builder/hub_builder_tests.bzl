@@ -181,6 +181,39 @@ def _test_uv_lock_only(env):
 
 _tests.append(_test_uv_lock_only)
 
+def _test_uv_lock_local_wheels(env):
+    builder = hub_builder(env)
+    builder.pip_parse(
+        _mock_mctx(
+            os_name = "osx",
+            arch_name = "aarch64",
+            mock_files = {
+                "uv.lock": """{"package":[{"name":"foo","source":{"registry":"https://pypi.org/simple"},"version":"1.0.0","wheels":[{"hash":"sha256:deadbeef","url":"https://files.pythonhosted.org/packages/foo-1.0-py3-none-any.whl"}]}]}""",
+            },
+        ),
+        _parse(
+            hub_name = "pypi",
+            python_version = "3.15",
+            requirements_lock = None,
+            uv_lock = "uv.lock",
+            # The version is compared after normalization
+            local_wheels = [Label("//:foo-1.0-py3-none-any.whl")],
+        ),
+    )
+    pypi = builder.build()
+
+    pypi.exposed_packages().contains_exactly(["foo"])
+    pypi.whl_libraries().contains_exactly({
+        "pypi_315_foo_1_0_py3_none_any": {
+            "config_load": "@pypi//:config.bzl",
+            "dep_template": "@pypi//{name}:{target}",
+            "filename": "foo-1.0-py3-none-any.whl",
+            "whl_file": str(Label("//:foo-1.0-py3-none-any.whl")),
+        },
+    })
+
+_tests.append(_test_uv_lock_local_wheels)
+
 def _test_uv_lock_conflicting_versions(env):
     logs = {}
     builder = hub_builder(

@@ -9,7 +9,7 @@ distribution for each target platform and returns the same structs as
 load("//python/private:normalize_name.bzl", "normalize_name")
 load(":select_whl.bzl", "select_whl")
 
-def lock_dist(*, filename, url, digest):
+def lock_dist(*, filename, url, digest, file = None):
     """A distribution file (a wheel or an sdist) of a locked package.
 
     Args:
@@ -17,6 +17,7 @@ def lock_dist(*, filename, url, digest):
         url: {type}`str` the URL to download the file from.
         digest: {type}`str` the `<algo>:<digest>` of the file or an empty
             string if it is unknown.
+        file: {type}`str | None` the label of a local file instead of the URL.
 
     Returns:
         {type}`struct` the distribution.
@@ -25,6 +26,7 @@ def lock_dist(*, filename, url, digest):
         filename = filename,
         url = url,
         digest = digest,
+        file = file,
     )
 
 def lock_entry(
@@ -35,6 +37,7 @@ def lock_entry(
         index_url = "",
         extras = [],
         wheels = [],
+        local_wheels = [],
         sdist = None,
         direct_requirement = ""):
     """A single locked package.
@@ -47,6 +50,8 @@ def lock_entry(
         index_url: {type}`str` the index URL of the package.
         extras: {type}`list[str]` the extras to install.
         wheels: {type}`list[struct]` the {func}`lock_dist` wheels.
+        local_wheels: {type}`list[struct]` the {func}`lock_dist` local wheels,
+            which are preferred over the `wheels`.
         sdist: {type}`struct | None` the {func}`lock_dist` sdist.
         direct_requirement: {type}`str` a direct reference that `pip` builds
             the package from (e.g. `git+https://...@<commit>`), used when
@@ -62,6 +67,7 @@ def lock_entry(
         index_url = index_url,
         extras = extras,
         wheels = wheels,
+        local_wheels = local_wheels,
         sdist = sdist,
         direct_requirement = direct_requirement,
     )
@@ -107,9 +113,11 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
                 continue
 
             best_wheel = None
-            if entry.wheels:
+            for whls in [entry.local_wheels, entry.wheels]:
+                if not whls or best_wheel:
+                    continue
                 best_wheel = select_whl(
-                    whls = entry.wheels,
+                    whls = whls,
                     python_version = platform.env.get("python_full_version", "3"),
                     whl_platform_tags = platform.whl_platform_tags,
                     whl_abi_tags = platform.whl_abi_tags,
@@ -140,7 +148,7 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
         # Group platforms by resolved source
         src_to_plats = {}
         for p, src in plat_to_src.items():
-            key = src.requirement_line + src.dist.filename + src.dist.digest
+            key = src.requirement_line + src.dist.filename + src.dist.digest + (src.dist.file or "")
             src_to_plats.setdefault(key, struct(src = src, plats = [])).plats.append(p)
 
         for val in src_to_plats.values():
@@ -155,6 +163,7 @@ def lock_requirements(entries, *, all_platforms, platforms, logger, extra_pip_ar
                 digest = src.digest,
                 url = src.url,
                 yanked = None,
+                **({"whl_file": src.file} if src.file else {})
             ))
 
     ret = []

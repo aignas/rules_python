@@ -495,8 +495,10 @@ bzl_library(
     deps = [
         ":hash",
         ":lock_model",
+        ":parse_whl_name",
         ":pep508_evaluate",
         "//python/private:normalize_name",
+        "//python/private:version",
         "//python/uv/private:uv_lock_to_requirements",
     ],
 )

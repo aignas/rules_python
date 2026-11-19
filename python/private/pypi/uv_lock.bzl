@@ -1,9 +1,11 @@
 """Translate the uv.lock files into the lock model, see `lock_model.bzl`."""
 
 load("//python/private:normalize_name.bzl", "normalize_name")
+load("//python/private:version.bzl", pep440 = "version")
 load("//python/uv/private:uv_lock_to_requirements.bzl", "uv_lock_extras_map")  # buildifier: disable=bzl-visibility
 load(":hash.bzl", "hash")
 load(":lock_model.bzl", "lock_dist", "lock_entry")
+load(":parse_whl_name.bzl", "parse_whl_name")
 load(":pep508_evaluate.bzl", "evaluate")
 
 def _uv_lock_package_dependencies(pkg):
@@ -79,7 +81,7 @@ def _uv_lock_package_platforms(packages, all_platforms, platforms):
                     queue.append(target)
     return result
 
-def uv_lock_entries(uv_lock, *, all_platforms, platforms):
+def uv_lock_entries(uv_lock, *, all_platforms, platforms, local_wheels = [], _fail = fail):
     """Translate the uv.lock contents into the lock model.
 
     Args:
@@ -87,6 +89,9 @@ def uv_lock_entries(uv_lock, *, all_platforms, platforms):
         all_platforms: {type}`list[str]` The list of all platform names.
         platforms: {type}`dict[str, struct]` A dict of platform name to platform info
             (containing `.env` with PEP 508 marker environment).
+        local_wheels: {type}`list[Label]` the local wheels to use instead of
+            the locked wheels of the same package version.
+        _fail: {type}`callable` the function to call on errors, for tests.
 
     Returns:
         {type}`list[struct]` the {func}`lock_entry` values.
@@ -97,9 +102,20 @@ def uv_lock_entries(uv_lock, *, all_platforms, platforms):
     extras_map = uv_lock_extras_map(uv_lock)
     package_platforms = _uv_lock_package_platforms(uv_lock["package"], all_platforms, platforms)
 
+    local_by_name = local_wheels_by_name(local_wheels)
+    used_local_wheels = {}
+
     entries = []
     for i, pkg in enumerate(uv_lock["package"]):
         name = pkg["name"]
+        locked_version = pep440.parse(pkg["version"])
+        local = [
+            whl
+            for version, whl in local_by_name.get(normalize_name(name), [])
+            if version and locked_version and pep440.is_eq(version, locked_version)
+        ]
+        for whl in local:
+            used_local_wheels[whl.file] = None
         source = pkg.get("source") or {}
         registry = (source.get("registry") or "").rstrip("/")
         if registry.startswith("http://") or registry.startswith("https://"):
@@ -115,11 +131,41 @@ def uv_lock_entries(uv_lock, *, all_platforms, platforms):
             index_url = index_url,
             extras = sorted(extras_map.get(name, [])),
             wheels = [_uv_lock_dist(wheel) for wheel in pkg.get("wheels", [])],
+            local_wheels = local,
             sdist = _uv_lock_dist(sdist) if sdist else None,
             direct_requirement = _uv_lock_git_requirement(source["git"]) if source.get("git") else "",
         ))
 
+    for whls in local_by_name.values():
+        for _, whl in whls:
+            if whl.file not in used_local_wheels:
+                _fail("The local wheel '{}' does not match the version of any package in the lock file".format(whl.file))
+
     return entries
+
+def local_wheels_by_name(local_wheels):
+    """Group the local wheels by the normalized package name.
+
+    Args:
+        local_wheels: {type}`list[Label]` the local wheels.
+
+    Returns:
+        {type}`dict[str, list[tuple[struct, struct]]]` the parsed version and
+        the {func}`lock_dist` of each wheel.
+    """
+    ret = {}
+    for label in local_wheels:
+        parsed = parse_whl_name(label.name)
+        ret.setdefault(normalize_name(parsed.distribution), []).append((
+            pep440.parse(parsed.version),
+            lock_dist(
+                filename = label.name,
+                url = "",
+                digest = "",
+                file = str(label),
+            ),
+        ))
+    return ret
 
 def _uv_lock_dist(dist):
     url = dist["url"]

@@ -869,6 +869,19 @@ Using the hub name `"pypi"` is deprecated and is changed to
 :::
 """,
         ),
+        "local_wheels": attr.label_list(
+            allow_files = [".whl"],
+            doc = """\
+Local wheels to use instead of the wheels in the {attr}`uv_lock` with the same
+package name and version, e.g. wheels that are built in the same repository or
+that are not available on an index. A local wheel is preferred over the locked
+wheels on the platforms that it supports; the locked wheels are used on the
+other platforms. A local wheel that does not match a locked package version
+fails.
+
+:::{versionadded} VERSION_NEXT_FEATURE
+:::""",
+        ),
         "parallel_download": attr.bool(
             doc = """\
 The flag allows to make use of parallel downloading feature in bazel 7.1 and above
