@@ -12,8 +12,7 @@ both `bzlmod` and `WORKSPACE`.
 
 `pylock.toml` (PEP 751) files, e.g. exported with
 `uv export --format pylock.toml`, can be consumed with
-{attr}`pip.parse.pylock` under `bzlmod`; the `vcs`, `archive` and `directory`
-sources are tracked in {gh-issue}`2787`.
+{attr}`pip.parse.pylock` under `bzlmod` ({gh-issue}`2787`).
 :::
 
 ## requirements.txt

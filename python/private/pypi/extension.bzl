@@ -916,9 +916,12 @@ the platforms where its `marker` is true and it fails if its
 `requires-python` does not match such a platform. Each platform needs to match
 the top-level `requires-python`; the platforms that do not match the top-level
 `environments` are ignored with a warning. The files without a `url` are
-ignored, use {attr}`local_wheels` for them. The packages from `vcs`, `archive`
-and `directory` sources are not supported yet. It cannot be used together with
-the {attr}`uv_lock` or the requirements files.
+ignored, use {attr}`local_wheels` for them. The `vcs` sources and the `archive`
+sources that are not wheels (based on the URL file name) are downloaded and
+built by `pip` from their URL when the repositories are fetched, so e.g. `git`
+needs to be on the host and the Bazel downloader is not used for them. The
+`directory` sources (the local projects) are ignored. It cannot be used
+together with the {attr}`uv_lock` or the requirements files.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",
