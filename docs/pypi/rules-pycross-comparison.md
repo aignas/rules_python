@@ -217,7 +217,7 @@ module. Do not depend on the same distribution from both in one binary.
 | sdist builds in build actions, build backends, cross-compilation | `pip wheel` on the host | planned: extension point |
 | Rust builds (`maturin`, `setuptools-rust`) | none | gap |
 | `pre_build_patches` | none | planned |
-| `local_wheels` | `whl_file` of `whl_library` in `WORKSPACE` | planned |
+| `local_wheels` | {attr}`pip.parse.local_wheels` with a {attr}`pip.parse.uv_lock` | have |
 | Simple API for files without URLs, `netrc` | {attr}`pip.default.index_url`, {attr}`pip.default.netrc`, {attr}`pip.default.auth_patterns` | have |
 | one file with two hashes | files are looked up by the lock file hash | have |
 | glibc, musl and macOS version flags | {obj}`pip.default` platforms | partial |

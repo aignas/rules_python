@@ -47,6 +47,7 @@ def parse_requirements(
         get_index_urls = None,
         extract_url_srcs = True,
         uv_lock = None,
+        local_wheels = [],
         toml_decode = None,
         logger):
     """Get the requirements with platforms that the requirements apply to.
@@ -70,6 +71,9 @@ def parse_requirements(
             If provided, the function will use the uv.lock file as the primary
             source for package metadata and perform a consistency check against
             requirements files if both are provided.
+        local_wheels: {type}`list[Label]` the local wheels to use instead of
+            the locked wheels of the same package version. Only supported
+            with the `uv_lock`.
         toml_decode: {type}`callable | None` A function to decode TOML
             content (e.g. `toml.decode`). Required when `uv_lock` is provided.
         logger: repo_utils.logger, a simple struct to log diagnostic messages.
@@ -93,7 +97,12 @@ def parse_requirements(
     if lock:
         all_platforms = _get_all_platforms(requirements_by_platform) if requirements_by_platform else sorted(platforms.keys())
         ret = lock_requirements(
-            uv_lock_entries(lock, all_platforms = all_platforms, platforms = platforms),
+            uv_lock_entries(
+                lock,
+                all_platforms = all_platforms,
+                platforms = platforms,
+                local_wheels = local_wheels,
+            ),
             all_platforms = all_platforms,
             platforms = platforms,
             extra_pip_args = extra_pip_args,
@@ -101,6 +110,10 @@ def parse_requirements(
         )
         logger.debug(lambda: "Parsed {} packages from uv.lock".format(len(ret)))
         return ret
+
+    if local_wheels:
+        logger.fail("The local wheels are only supported with a 'uv_lock'")
+        return []
 
     return _parse_requirements_from_req_files(
         ctx = ctx,
