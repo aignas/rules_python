@@ -27,15 +27,15 @@ The status words used in the tables are:
 | `uv`/`pdm`/`poetry`/`pylock` extensions | {obj}`pip.parse` | `pip.parse` reads `requirements.txt` files and `uv.lock`. |
 | `workspace` tag (one lock file) | one {obj}`pip.parse` per hub and Python version | The same `uv_lock` can be passed to several `pip.parse` calls. |
 | `repo` tag (a set of packages) | a hub repository (`hub_name`) | A workspace with N repos becomes N hubs. |
-| `repo(dependency_groups = ...)` | {obj}`pip.configure` | Requires {gh-pr}`4395`. |
+| `repo(dependency_groups = ...)` | {obj}`pip.configure` | Requires {gh-pr}`4395`. The groups are read from `pyproject.toml`, not from the lock file. |
 | `package` tag (per-package settings) | {obj}`pip.override`, {obj}`pip.whl_mods` | See [the package settings](#rules-pycross-package-attrs). |
-| shared `<ws>__pkgs` repository | one repository per downloaded file | Repository names contain the file digest, so files are shared between the hubs. |
+| shared `<ws>__pkgs` repository | one repository per hub, Python version and file | The downloads are shared through the Bazel repository cache; sharing the extracted repositories is planned ({gh-pr}`3856`). |
 | `pycross.configure_toolchains` | {obj}`python.toolchain`, {obj}`pip.default` | See [the platforms](#rules-pycross-platforms). |
 | sdist build backends | `pip wheel` in the repository rule | See [building from source](#rules-pycross-build-from-source). |
 
 ## A worked example
 
-This is the `examples/bzlmod/MODULE.bazel` file from rules_pycross:
+This is an abridged `examples/bzlmod/MODULE.bazel` file from rules_pycross:
 
 ```starlark
 pycross = use_extension("@rules_pycross//pycross/extensions:pycross.bzl", "pycross")
@@ -58,8 +58,8 @@ uv.package(name = "matplotlib", post_install_patches = ["//:matplotlib.patch"], 
 use_repo(uv, "uv_deps")
 ```
 
-The `rules_python` equivalent is below. The lines marked `planned` use
-attributes that do not exist yet.
+The `rules_python` equivalent is below. The commented out lines marked
+`planned` use attributes that do not exist yet.
 
 ```starlark
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
@@ -68,6 +68,7 @@ python.toolchain(is_default = True, python_version = "3.14.2")
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
     hub_name = "uv_deps",
+    pyproject_toml = "//:pyproject.toml",
     python_version = "3.14.2",
     uv_lock = "//:uv.lock",
     target_platforms = [
@@ -81,7 +82,7 @@ pip.parse(
 pip.configure(hub_name = "uv_deps", dependency_groups = ["default"])
 
 # planned: build ipython from the sdist
-pip.override(hub_name = "uv_deps", package = "ipython", build_mode = "always")
+# pip.override(hub_name = "uv_deps", package = "ipython", build_mode = "always")
 
 pip.whl_mods(
     hub_name = "uv_deps_mods",
@@ -90,10 +91,16 @@ pip.whl_mods(
     data_exclude_glob = ["site-packages/tests/**"],
 )
 
-# planned: patch a package by name; today use `file = "<wheel file name>"`
+# planned: patch a package by name
+# pip.override(
+#     hub_name = "uv_deps",
+#     package = "matplotlib",
+#     patches = ["//:matplotlib.patch"],
+#     patch_strip = 1,
+# )
+# Today: one `pip.override` per wheel file, e.g. one for each platform.
 pip.override(
-    hub_name = "uv_deps",
-    package = "matplotlib",
+    file = "matplotlib-3.10.9-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     patches = ["//:matplotlib.patch"],
     patch_strip = 1,
 )
@@ -108,16 +115,16 @@ The `BUILD.bazel` files keep using `@uv_deps//ipython`,
 
 | `package` attribute | rules_python | Status |
 |---|---|---|
-| `build_mode` | {attr}`pip.parse.download_only` for the whole hub | partial, per-package: planned |
+| `build_mode` | `"never"`: {attr}`pip.parse.download_only` for the whole hub; `"auto"` is the default | partial, per-package: planned |
 | `build_target` | none | planned: replace a package with your own target |
 | `build_backend`, `extra_build_tools`, `build_tools_repo`, `site_hooks`, `pre_build_patches` | none | planned: an extension point for an sdist builder, such as rules_pycross |
 | `ignore_dependencies` | none | planned |
-| `extra_dependencies` | {attr}`pip.whl_mods.additive_build_content` | partial, planned |
+| `extra_dependencies` | {attr}`pip.whl_mods.data` (runfiles only) | partial, planned |
 | `install_exclude_globs` | {attr}`pip.whl_mods.srcs_exclude_glob`, {attr}`pip.whl_mods.data_exclude_glob`, {attr}`pip.parse.pip_data_exclude` | have; the globs start with `site-packages/` |
 | `post_install_patches` | {attr}`pip.override.patches` for a wheel file name | partial, per-package: planned |
 | `site_paths`, `bin_paths`, `data_paths`, `include_paths` | a fixed `site-packages`, `bin`, `data`, `include` layout | not needed |
 | `wheel_library_tags` | none | planned |
-| `precompile` | the `//python/config_settings:precompile` flags | partial |
+| `precompile` | the {flag}`--precompile` flag for all packages | partial |
 
 :::{note}
 `rules_python` applies patches with `patch_strip = 0` by default and does not
@@ -146,10 +153,9 @@ all of them. You can define more platforms with {obj}`pip.default`.
 | rules_pycross setting | rules_python |
 |---|---|
 | `configure_toolchains(python_versions)` | {obj}`python.toolchain` and {attr}`pip.parse.python_version` |
-| `glibc_version`, `musl_version` | {attr}`pip.default.whl_platform_tags`, e.g. `manylinux_2_28_x86_64` |
-| `macos_version` | `//python/config_settings:pip_whl_osx_version` |
-| `py_linux_libc` | `//python/config_settings:py_linux_libc` |
-| `pep508_*` flags | {attr}`pip.default.env` |
+| `glibc_version`, `musl_version`, `macos_version` | {attr}`pip.default.whl_platform_tags` of a `platform`, e.g. `pip.default(platform = "linux_x86_64", whl_platform_tags = ["manylinux_*_x86_64"])`; the wheels are picked when the extension runs |
+| `py_linux_libc` | the same flag, {flag}`--py_linux_libc` |
+| `pep508_*` flags | {attr}`pip.default.env` when the extension runs, the {flag}`--pip_env_marker_config` flag in the build |
 | `unavailable_package_mode` | an error when the target is analysed; planned: an opt-in to make the target incompatible |
 
 ## Labels
@@ -174,8 +180,8 @@ all of them. You can define more platforms with {obj}`pip.default`.
   dependencies come from the index and not from the lock file, and the wheel
   is built for the host platform. Set {attr}`pip.parse.download_only` to
   forbid this.
-* If you build the wheel yourself, you can patch it into place with
-  {attr}`pip.override.patches` or use {attr}`pip.parse.extra_hub_aliases`.
+* Planned: replacing a package with your own target, like `build_target` in
+  rules_pycross. Today, depend on your own target instead of the hub label.
 * Planned: an extension point that lets another ruleset, such as
   rules_pycross, build the sdist in a build action.
 
@@ -202,30 +208,30 @@ module. Do not depend on the same distribution from both in one binary.
 | rules_pycross feature | rules_python | Status |
 |---|---|---|
 | `uv.lock` | {attr}`pip.parse.uv_lock` | have |
-| uv workspace members, `projects`, `default-groups`, `extra_project_files` | workspace members are the roots; one `pyproject.toml` | partial |
+| uv workspace members, `projects`, `default-groups`, `extra_project_files` | the uv workspace members are used as the roots; {obj}`pip.configure` reads one `pyproject.toml` | partial |
 | `pylock.toml` ({gh-issue}`2787`) | none | planned |
-| `pdm.lock`, `poetry.lock` | export them to `pylock.toml` (`pdm export -f pylock`, `poetry-plugin-export` 1.10+) | planned |
+| `pdm.lock`, `poetry.lock` | export them to `requirements.txt` (`pdm export -f requirements`, `poetry export`) for {attr}`pip.parse.requirements_lock`; `pylock.toml` is planned | partial |
 | dependency groups, `transitive` | {obj}`pip.configure`, requires {gh-pr}`4395` | have |
-| `;testonly` | requires {gh-pr}`4428` | partial |
+| `;testonly` | none, see {gh-pr}`4428` | planned |
 | extras targets | requires {gh-pr}`4490` and {gh-pr}`4523` | have |
 | `ignore_dependencies`, `extra_dependencies`, `wheel_library_tags` | none | planned |
 | per-package `precompile` | global flags | partial |
 | `post_install_patches` | {attr}`pip.override.patches` per wheel file | partial |
 | `install_exclude_globs` | {obj}`pip.whl_mods`, {attr}`pip.parse.pip_data_exclude` | have |
-| `build_mode` | {attr}`pip.parse.download_only` | partial |
+| `build_mode` | {attr}`pip.parse.download_only` for `"never"` | partial |
 | `build_target` | none | planned |
 | `:sdist` target | none | planned |
 | sdist builds in build actions, build backends, cross-compilation | `pip wheel` on the host | planned: extension point |
 | Rust builds (`maturin`, `setuptools-rust`) | none | gap |
 | `pre_build_patches` | none | planned |
 | `local_wheels` | `whl_file` of `whl_library` in `WORKSPACE` | planned |
-| Simple API for files without URLs, `netrc` | {attr}`pip.default.index_url`, `netrc`, `auth_patterns` | have |
+| Simple API for files without URLs, `netrc` | {attr}`pip.default.index_url`, {attr}`pip.default.netrc`, {attr}`pip.default.auth_patterns` | have |
 | one file with two hashes | files are looked up by the lock file hash | have |
 | glibc, musl and macOS version flags | {obj}`pip.default` platforms | partial |
 | `unavailable_package_mode` | an error | partial |
 | automatic dependency cycles | {attr}`pip.parse.experimental_requirement_cycles` | planned |
 | uv `conflicts` | none | gap |
-| per-repo transitions | the `//python/config_settings:venv` flag | gap |
+| per-repo transitions | none; the {flag}`--venv` flag selects a hub for the unified `@pypi` hub | gap |
 | `modules_mapping` without wheels | Gazelle `modules_mapping` | partial |
 | git sources | `pip` at fetch time, needs `git` on the host | have |
 | `pycross_wheel_library`, `pycross_wheel_zipimport_library`, `pycross_wheel_transform`, `pycross_repaired_wheel` | wheels are extracted in repository rules | out of scope |
