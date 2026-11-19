@@ -275,9 +275,9 @@ bzl_library(
         ":pep508_evaluate",
         ":pep508_requirement",
         ":select_whl",
+        ":uv_lock",
         "//python/private:normalize_name",
         "//python/private:repo_utils",
-        "//python/uv/private:uv_lock_to_requirements",
     ],
 )
 
@@ -472,6 +472,18 @@ bzl_library(
     deps = [
         "@rules_python//python/private/pypi:labels",
         "@rules_python//python/private/pypi:missing_package",
+    ],
+)
+
+bzl_library(
+    name = "uv_lock",
+    srcs = ["uv_lock.bzl"],
+    deps = [
+        ":hash",
+        ":pep508_evaluate",
+        ":select_whl",
+        "//python/private:normalize_name",
+        "//python/uv/private:uv_lock_to_requirements",
     ],
 )
 
