@@ -447,6 +447,35 @@ def _test_sdist_builder(env):
 
 _tests.append(_test_sdist_builder)
 
+def _test_sdist_builder_download_only(env):
+    builder = hub_builder(env, sdist_builder = lambda _: struct(bzl = "@@//:builder.bzl", symbol = "build"))
+    builder.pip_parse(
+        _mock_mctx(
+            os_name = "osx",
+            arch_name = "aarch64",
+            mock_files = {
+                "uv.lock": """{"package":[{"name":"foo","source":{"registry":"https://pypi.org/simple"},"version":"1.0","sdist":{"hash":"sha256:deadbeef","url":"https://files.pythonhosted.org/packages/foo-1.0.tar.gz"}}]}""",
+            },
+        ),
+        _parse(
+            hub_name = "pypi",
+            python_version = "3.15",
+            requirements_lock = None,
+            uv_lock = "uv.lock",
+            # The builder does not build on the host
+            download_only = True,
+        ),
+    )
+    pypi = builder.build()
+
+    pypi.exposed_packages().contains_exactly(["foo"])
+    pypi.whl_libraries().keys().contains_exactly([
+        "pypi_315_foo_sdist_deadbeef_built",
+        "pypi_foo_sdist_deadbeef_file",
+    ])
+
+_tests.append(_test_sdist_builder_download_only)
+
 def _test_uv_lock_conflicting_versions(env):
     logs = {}
     builder = hub_builder(

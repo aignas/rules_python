@@ -287,7 +287,7 @@ def unmatched_whl_overrides(overrides, hub_packages):
     errors = []
     for hub_name, packages in sorted(overrides.packages.items() + [
         (hub_name, modes)
-        for hub_name, modes in overrides.build_modes.items()
+        for hub_name, modes in overrides.build_modes.items() + overrides.sdist_builders.items()
         if hub_name not in overrides.packages
     ]):
         packages = [p for p in packages if p != "*"]

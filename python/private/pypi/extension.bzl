@@ -1205,9 +1205,18 @@ a repository of the hub and called with:
   the `entry_points.txt`.
 * `visibility`: the visibility of the targets.
 
-The macro needs to accept `**kwargs`, so that new arguments can be added. The
-dependencies of the package come from the `uv.lock`; a `pylock.toml` does not
-have them, so use {attr}`pip.override.extra_dependencies`.
+The macro needs to accept `**kwargs`, so that new arguments can be added, and
+it needs to wrap its own labels with `Label()`, because it is called from a
+repository of the hub. The `whl_name` target may be a directory, but the
+`dist_info_name` target needs a regular `entry_points.txt` file for
+`py_console_script_binary`. The dependencies of the package come from the
+`uv.lock`; the dependencies in a `pylock.toml` are not used, so use
+{attr}`pip.override.extra_dependencies`. The patches and the `pip.whl_mods`
+cannot be used with it. It is used with {attr}`pip.parse.download_only` too,
+because it does not build on the host.
+
+This is experimental and the arguments may change, e.g. to pass the build
+backend of the sdist.
 
 :::{versionadded} VERSION_NEXT_FEATURE
 :::""",

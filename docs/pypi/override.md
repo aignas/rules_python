@@ -153,6 +153,10 @@ def sdist_builder(*, name, sdist, package_name, version, whl_name, dist_info_nam
 ```
 
 The macro is used for the packages that would be built from an sdist (see
-{attr}`pip.override.build_mode`) and that have the sdist in the lock file. The
-hub targets of the package, e.g. its extras, use the dependencies from the
-lock file.
+{attr}`pip.override.build_mode`) and that have the sdist in the lock file, also
+with {attr}`pip.parse.download_only`. The hub targets of the package, e.g. its
+extras, use the dependencies from the `uv.lock`; the dependencies in a
+`pylock.toml` are not used. The macro needs to wrap its own labels with
+`Label()` and the patches and the `pip.whl_mods` cannot be used with it. This
+is experimental: the backend selection and the build dependencies are up to the
+macro and the arguments may change.

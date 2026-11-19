@@ -184,7 +184,11 @@ def _uv_lock_requires_dist(pkg):
             if extras:
                 line += "[{}]".format(",".join(extras))
             markers = []
-            if dep.get("marker"):
+            if "extra-" in dep.get("marker", "") or "group ==" in dep.get("marker", ""):
+                # The uv `conflicts` are encoded as extras or groups, the hub
+                # has selected one of the versions already.
+                pass
+            elif dep.get("marker"):
                 markers.append("({})".format(dep["marker"]) if extra else dep["marker"])
             if extra:
                 markers.append("extra == \"{}\"".format(extra))

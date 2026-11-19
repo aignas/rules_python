@@ -67,7 +67,7 @@ def _impl(rctx):
     rctx.file("BUILD.bazel", render_built_whl_build(
         builder = rctx.attr.builder,
         builder_symbol = rctx.attr.builder_symbol,
-        sdist = rctx.attr.sdist,
+        sdist = str(rctx.attr.sdist),
         package_name = rctx.attr.package_name,
         version = rctx.attr.version,
     ))
@@ -78,7 +78,7 @@ built_whl_repo = repository_rule(
         "builder": attr.string(mandatory = True, doc = "The canonical label of the `.bzl` file with the builder macro."),
         "builder_symbol": attr.string(mandatory = True, doc = "The name of the builder macro."),
         "package_name": attr.string(mandatory = True, doc = "The name of the package."),
-        "sdist": attr.string(mandatory = True, doc = "The canonical label of the sdist file."),
+        "sdist": attr.label(mandatory = True, doc = "The sdist file."),
         "version": attr.string(mandatory = True, doc = "The version of the package."),
     },
     doc = """A repository with the `srcs`, `whl_file`, `dist_info`, `data` and
