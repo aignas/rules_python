@@ -33,7 +33,7 @@ load(":argparse.bzl", "argparse")
 load(":hash.bzl", "hash")
 load(":index_sources.bzl", "index_sources")
 load(":parse_requirements_txt.bzl", "parse_requirements_txt")
-load(":pep508_evaluate.bzl", "evaluate")
+load(":pep508_evaluate.bzl", "evaluate", "parse")
 load(":pep508_requirement.bzl", "requirement")
 load(":select_whl.bzl", "select_whl")
 
@@ -171,17 +171,23 @@ def _uv_lock_package_platforms(packages, all_platforms, platforms):
         if "virtual" in source or "editable" in source:
             roots.append(i)
 
+    # Parse the markers once, because they are evaluated for every platform.
+    resolution_markers = [
+        parse(" or ".join(pkg["resolution-markers"])) if pkg.get("resolution-markers") else None
+        for pkg in packages
+    ]
+    dependency_markers = [
+        [parse(dep["marker"]) if dep.get("marker") else None for dep in deps]
+        for deps in dependencies
+    ]
+
     result = [[] for _ in packages]
     for p in all_platforms:
         marker_env = platforms[p].env
         compatible = {
             i: None
-            for i, pkg in enumerate(packages)
-            if not pkg.get("resolution-markers") or evaluate(
-                " or ".join(pkg["resolution-markers"]),
-                env = marker_env,
-                strict = False,
-            ) != False
+            for i, marker in enumerate(resolution_markers)
+            if marker == None or evaluate(marker, env = marker_env, strict = False) != False
         }
         if not roots:
             # Exported/synthetic locks without workspace roots retain the
@@ -200,11 +206,11 @@ def _uv_lock_package_platforms(packages, all_platforms, platforms):
                 break
             i = queue.pop()
             result[i].append(p)
-            for dep in dependencies[i]:
+            for j, dep in enumerate(dependencies[i]):
                 # Unknown values (notably `extra`) may remain as expressions;
                 # only a definitively false platform marker excludes an edge.
-                marker = dep.get("marker", "")
-                if marker and evaluate(marker, env = marker_env, strict = False) == False:
+                marker = dependency_markers[i][j]
+                if marker != None and evaluate(marker, env = marker_env, strict = False) == False:
                     continue
                 for target in by_name.get(normalize_name(dep["name"]), []):
                     if target not in compatible or target in visited:
@@ -490,15 +496,18 @@ def _parse_requirements_from_req_files(
             get_index_urls = None
 
         # Pre-parse requirements once per file to avoid redundant parsing in loops
-        parsed_reqs = [(entry, requirement(entry[1])) for entry in parse_result.requirements]
+        parsed_reqs = []
+        for entry in parse_result.requirements:
+            marker = requirement(entry[1]).marker
+            parsed_reqs.append((entry, parse(marker) if marker else None))
 
         for plat in plats:
             plat_env = platforms.get(plat)
 
             requirements[plat] = [
                 entry
-                for entry, req in parsed_reqs
-                if not req.marker or (plat_env and evaluate(req.marker, env = plat_env.env))
+                for entry, marker in parsed_reqs
+                if marker == None or (plat_env and evaluate(marker, env = plat_env.env))
             ]
 
             options[plat] = pip_args
