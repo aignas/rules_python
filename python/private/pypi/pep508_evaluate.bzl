@@ -191,31 +191,52 @@ def _tokenize_word(word, tokens):
 
     return None
 
-def _syntax_error(marker, tokens, env):
-    """Check that the tokens form a valid expression.
+def parse(marker):
+    """Parse the marker, so that it can be evaluated many times.
+
+    Use this if the same marker is evaluated for many environments, because
+    parsing the marker takes about as long as evaluating it.
 
     Args:
-        marker: {type}`str` The marker for the error messages.
-        tokens: {type}`list[str]` The tokens of the marker.
-        env: {type}`dict[str, str]` The environment, the variables that are in
-            it can be used in the marker in addition to the ones from the spec.
+        marker: {type}`str` The marker to parse.
 
     Returns:
-        {type}`str | None` the error message if the marker is invalid.
+        An opaque value that can be passed to {obj}`evaluate` instead of the marker.
     """
+    parsed, err = _parse(marker)
+    if err:
+        fail(err)
+
+    return parsed
+
+def _parse(marker):
+    """Parse the marker.
+
+    Returns:
+        A tuple of the parsed marker and an error message, where one of them is None.
+    """
+    tokens, err = _tokenize(marker)
+    if err:
+        return None, err
+
+    # The parsed marker is the list of tokens, where each `<variable>
+    # <operator> <string>` expression is replaced with a tuple, see
+    # `_parse_expr`.
+    parsed = []
     depth = 0
     want_operand = True
     skip = 0
     for i, token in enumerate(tokens):
         if skip:
             skip -= 1
+            continue
         elif not want_operand:
             if token == ")":
                 depth -= 1
             elif token in [_AND, _OR]:
                 want_operand = True
             else:
-                return "Expected 'and', 'or' or ')' before '{}' in the marker: {}".format(token, marker)
+                return None, "Expected 'and', 'or' or ')' before '{}' in the marker: {}".format(token, marker)
         elif token == "(":
             depth += 1
         elif token == ")" and i > 0 and tokens[i - 1] == "(":
@@ -228,49 +249,67 @@ def _syntax_error(marker, tokens, env):
             # may have it.
             pass
         else:
-            err = _expr_syntax_error(tokens[i:i + 3], env)
+            token, err = _parse_expr(tokens[i:i + 3])
             if err:
-                return "{} in the marker: {}".format(err, marker)
+                return None, "{} in the marker: {}".format(err, marker)
             skip = 2
             want_operand = False
 
         if depth < 0:
-            return "Unbalanced ')' in the marker: {}".format(marker)
+            return None, "Unbalanced ')' in the marker: {}".format(marker)
+        parsed.append(token)
 
     if tokens and want_operand:
-        return "Unexpected end of the marker: {}".format(marker)
+        return None, "Unexpected end of the marker: {}".format(marker)
     if depth:
-        return "Unbalanced '(' in the marker: {}".format(marker)
+        return None, "Unbalanced '(' in the marker: {}".format(marker)
 
-    return None
+    return parsed, None
 
-def _expr_syntax_error(expr, env):
-    """Check `<variable> <operator> <string>` or `<string> <operator> <variable>`."""
+def _parse_expr(expr):
+    """Parse `<variable> <operator> <string>` or `<string> <operator> <variable>`.
+
+    Returns:
+        A tuple of the parsed expression and an error message, where one of
+        them is None. The parsed expression is a tuple of:
+        * The name of the variable.
+        * The operator.
+        * The value of the string.
+        * Whether the string is on the left side of the operator.
+        * The expression as a string.
+        * The parsed version specifier if a version variable is compared with
+          a valid version specifier, see `_parse_specifier`.
+    """
     if len(expr) != 3 or expr[1] not in _OPERATORS:
-        return "Expected '<variable> <operator> <string>' at '{}'".format(" ".join(expr))
+        return None, "Expected '<variable> <operator> <string>' at '{}'".format(" ".join(expr))
 
-    left, _, right = expr
+    left, op, right = expr
     left_is_str = left.startswith('"')
     if left_is_str == right.startswith('"'):
-        return "Expected a variable and a quoted string at '{}'".format(" ".join(expr))
+        return None, "Expected a variable and a quoted string at '{}'".format(" ".join(expr))
 
-    var_name = right if left_is_str else left
+    var_name, value = (right, left) if left_is_str else (left, right)
     var_name = _VAR_NAME_ALIASES.get(var_name, var_name)
     if not (
         var_name in _VERSION_VAR_NAMES or
         var_name in _NON_VERSION_VAR_NAMES or
-        var_name in _UNSUPPORTED_VAR_NAMES or
-        var_name in env
+        var_name in _UNSUPPORTED_VAR_NAMES
     ):
-        return "Unknown variable '{}'".format(var_name)
+        return None, "Unknown variable '{}'".format(var_name)
 
-    return None
+    value = value[1:-1]
+    spec = None
+    if not left_is_str and var_name in _VERSION_VAR_NAMES:
+        spec = _parse_specifier(op, value)
+
+    return (var_name, op, value, left_is_str, " ".join(expr), spec), None
 
 def evaluate(marker, *, env, strict = True, _fail = fail):
     """Evaluate the marker against a given env.
 
     Args:
-        marker: {type}`str` The string marker to evaluate.
+        marker: {type}`str` The string marker to evaluate or the value
+            returned by {obj}`parse`.
         env: {type}`dict[str, str]` The environment to evaluate the marker against.
         strict: {type}`bool` A setting to not fail on missing values in the env.
         _fail: Used for tests
@@ -280,28 +319,27 @@ def evaluate(marker, *, env, strict = True, _fail = fail):
         `False`, then the output type is `str` which will represent the remaining
         expression that has not been evaluated.
     """
-    tokens, err = _tokenize(marker)
-    if not err:
-        err = _syntax_error(marker, tokens, env)
-    if err:
-        return _fail(err)
+    if type(marker) == type(""):
+        parsed, err = _parse(marker)
+        if err:
+            return _fail(err)
+    else:
+        parsed = marker
 
-    # The tokens are known to be a valid expression at this point, so we can
-    # evaluate them in a single pass. Starlark does not have recursion, hence
-    # there is a stack with a frame for each open parenthesis. Because `not`
-    # binds tighter than `and`, which binds tighter than `or`, a frame is:
+    # The parsed marker is known to be a valid expression, so we can evaluate
+    # it in a single pass. Starlark does not have recursion, hence there is a
+    # stack with a frame for each open parenthesis. Because `not` binds
+    # tighter than `and`, which binds tighter than `or`, a frame is:
     # * The value of the `or` operands that we have seen so far.
     # * The value of the `and` operands that we have seen since the last `or`.
     # * The number of `not` to apply to the next operand.
     frame = [None, None, 0]
     stack = [frame]
-    skip = 0
-    for i, token in enumerate(tokens):
-        if skip:
-            skip -= 1
+    for token in parsed:
+        if token == _AND:
             continue
-        elif token == _AND:
-            continue
+        elif type(token) == type(()):
+            value = _evaluate_expr(token, env, strict)
         elif token == _OR:
             frame[0] = _frame_value(frame)
             frame[1] = None
@@ -313,14 +351,11 @@ def evaluate(marker, *, env, strict = True, _fail = fail):
             frame = [None, None, 0]
             stack.append(frame)
             continue
-        elif token == ")":
+        else:
             value = _frame_value(stack.pop())
             if type(value) == type(""):
                 value = "({})".format(value)
             frame = stack[-1]
-        else:
-            value = marker_expr(token, tokens[i + 1], tokens[i + 2], env = env, strict = strict)
-            skip = 2
 
         for _ in range(frame[2]):
             value = _not_fn(value)
@@ -408,61 +443,58 @@ def _not_fn(x):
     else:
         return not x
 
-def marker_expr(left, op, right, *, env, strict = True):
+def _evaluate_expr(expr, env, strict):
     """Evaluate a marker expression
 
     Args:
-        left: {type}`str` the env identifier or a value quoted in `"`.
-        op: {type}`str` the operation to carry out.
-        right: {type}`str` the env identifier or a value quoted in `"`.
-        strict: {type}`bool` if false, only evaluates the values that are present
-            in the environment, otherwise returns the original expression.
-            If true, then it fails if the variable is not in the environment.
+        expr: The expression that is returned by `_parse_expr`.
         env: {type}`dict[str, str]` the `env` to substitute `env` identifiers in
             the `<left> <op> <right>` expression. Note, if `env` has a key
             "_aliases", then we will do normalization so that we can ensure
             that e.g. `aarch64` evaluation in the `platform_machine` works the
             same way irrespective if the marker uses `arm64` or `aarch64` value
             in the expression.
+        strict: {type}`bool` if false, only evaluates the values that are present
+            in the environment, otherwise returns the original expression.
+            If true, then it fails if the variable is not in the environment.
 
     Returns:
         {type}`bool` if the expression evaluation result or {type}`str` if the expression
         could not be evaluated.
     """
-    left_is_str = left.startswith('"')
-    var_name = right if left_is_str else left
-    var_name = _VAR_NAME_ALIASES.get(var_name, var_name)
+    var_name, op, value, value_is_left, expr_str, spec = expr
     if var_name not in env:
         if not strict:
-            return "{} {} {}".format(left, op, right)
+            return expr_str
 
-        fail("The variable '{}' is not in the environment, cannot evaluate: {} {} {}".format(
+        fail("The variable '{}' is not in the environment, cannot evaluate: {}".format(
             var_name,
-            left,
-            op,
-            right,
+            expr_str,
         ))
 
-    value = left if left_is_str else right
-    value = value[1:-1]
-    if _ENV_ALIASES in env:
+    env_value = env[var_name]
+    normalize = env.get(_ENV_ALIASES, {}).get(var_name)
+    if normalize:
         # Normalize the literal value using per-variable normalization
         # functions. This handles platform aliases (e.g. arm64 -> aarch64)
         # and PEP 685 extra name normalization (e.g. db-backend -> db_backend).
-        value = env.get(_ENV_ALIASES, {}).get(var_name, lambda x: x)(value)
-
-    if left_is_str:
-        left, right = value, env[var_name]
-    else:
-        left, right = env[var_name], value
+        value = normalize(value)
 
     if var_name in _VERSION_VAR_NAMES:
-        return _version_expr(left, op, right)
-    elif var_name in _NON_VERSION_VAR_NAMES:
-        return _env_expr(left, op, right)
-    else:
+        if value_is_left:
+            # The value of the variable is the specifier.
+            return _version_expr(value, op, env_value, _parse_specifier(op, env_value))
+        elif normalize:
+            spec = _parse_specifier(op, value)
+
+        return _version_expr(env_value, op, value, spec)
+    elif var_name not in _NON_VERSION_VAR_NAMES:
         # Do not fail here, just evaluate the expression to False.
         return False
+    elif value_is_left:
+        return _env_expr(value, op, env_value)
+    else:
+        return _env_expr(env_value, op, value)
 
 def _env_expr(left, op, right):
     """Evaluate a string comparison expression"""
@@ -518,13 +550,22 @@ def _parse_specifier(op, value):
 
     return spec
 
-def _version_expr(left, op, right):
-    """Evaluate a version comparison expression"""
+def _version_expr(left, op, right, spec):
+    """Evaluate a version comparison expression
+
+    Args:
+        left: {type}`str` The version to check.
+        op: {type}`str` The operator.
+        right: {type}`str` The version of the specifier.
+        spec: The result of `_parse_specifier(op, right)`.
+
+    Returns:
+        {type}`bool`
+    """
     if op == "===" and not [c for c in " \t\n;)".elems() if c in right.strip()]:
         # https://packaging.python.org/en/latest/specifications/version-specifiers/#arbitrary-equality
         return left.strip().lower() == right.strip().lower()
 
-    spec = _parse_specifier(op, right)
     if spec == None:
         # Per spec, if it is not a valid version specifier, then fallback to
         # the string comparison.

@@ -15,7 +15,7 @@
 
 load("@rules_testing//lib:test_suite.bzl", "test_suite")
 load("//python/private/pypi:pep508_env.bzl", pep508_env = "env")  # buildifier: disable=bzl-visibility
-load("//python/private/pypi:pep508_evaluate.bzl", "evaluate", "tokenize")  # buildifier: disable=bzl-visibility
+load("//python/private/pypi:pep508_evaluate.bzl", "evaluate", "parse", "tokenize")  # buildifier: disable=bzl-visibility
 
 _tests = []
 
@@ -24,6 +24,13 @@ def _check_evaluate(env, expr, expected, values, strict = True):
         expression = expr,
         values = values,
     ).that_bool(evaluate(expr, env = values, strict = strict)).equals(expected)
+
+    # Parsing the marker first must not change the result.
+    env.expect.where(
+        expression = expr,
+        values = values,
+        parsed = True,
+    ).that_bool(evaluate(parse(expr), env = values, strict = strict)).equals(expected)
 
 def _tokenize_tests(env):
     for input, want in {
@@ -99,8 +106,10 @@ def _evaluate_invalid_tests(env):
         "os_name == posix",
         "'posix' == 'posix'",
         "unknown_variable == 'posix'",
+        # The variables that are not in the spec are invalid even if they are in the env.
+        "in_env == 'posix'",
     ]:
-        got = evaluate(input, env = {"os_name": "posix"}, _fail = lambda _: "invalid")
+        got = evaluate(input, env = {"in_env": "posix", "os_name": "posix"}, _fail = lambda _: "invalid")
         env.expect.where(expression = input).that_str(str(got)).equals("invalid")
 
 _tests.append(_evaluate_invalid_tests)
@@ -378,6 +387,30 @@ def _evaluate_with_aliases(env):
             ))
 
 _tests.append(_evaluate_with_aliases)
+
+def _evaluate_parsed_tests(env):
+    marker = parse("python_version >= '3.10' and (sys_platform == 'linux' or extra == 'foo')")
+    for values, want in [
+        ({"python_version": "3.9", "sys_platform": "linux"}, False),
+        ({"python_version": "3.10", "sys_platform": "linux"}, "()"),
+        ({"python_version": "3.11", "sys_platform": "win32"}, "(extra == \"foo\")"),
+        ({"extra": "foo", "python_version": "3.11", "sys_platform": "win32"}, True),
+        ({"extra": "foo", "sys_platform": "win32"}, "python_version >= \"3.10\""),
+    ]:
+        got = evaluate(marker, env = values, strict = False)
+        env.expect.where(values = values).that_bool(got).equals(want)
+
+    # The specifier is parsed again if the env normalizes the value.
+    marker = parse("python_version >= 'three'")
+    got = evaluate(marker, env = {
+        "python_version": "3.11",
+        "_aliases": {"python_version": lambda x: {"three": "3.0"}.get(x, x)},
+    })
+    env.expect.that_bool(got).equals(True)
+    got = evaluate(marker, env = {"python_version": "3.11"})
+    env.expect.that_bool(got).equals(False)
+
+_tests.append(_evaluate_parsed_tests)
 
 def _expr_case(expr, want, env):
     return struct(expr = expr.strip(), want = want, env = env)

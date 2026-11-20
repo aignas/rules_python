@@ -2,7 +2,7 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//python/private:version.bzl", "version")  # buildifier: disable=bzl-visibility
-load("//python/private/pypi:pep508_evaluate.bzl", "evaluate")  # buildifier: disable=bzl-visibility
+load("//python/private/pypi:pep508_evaluate.bzl", "evaluate", "parse")  # buildifier: disable=bzl-visibility
 
 _ENV = {
     "extra": "foo",
@@ -27,13 +27,17 @@ _LONG_MARKER = (
     " or sys_platform == 'darwin' or sys_platform == 'win32'"
 )
 
+_PARSED_LONG_MARKER = parse(_LONG_MARKER)
+
 # A subset of the workloads from `workloads.py`.
 WORKLOADS = {
     # keep sorted
     "evaluate_long_marker": lambda: evaluate(_LONG_MARKER, env = _ENV),
+    "evaluate_long_marker_parsed": lambda: evaluate(_PARSED_LONG_MARKER, env = _ENV),
     "evaluate_python_version": lambda: evaluate("python_version >= '3.8'", env = _ENV),
     "evaluate_sys_platform": lambda: evaluate("sys_platform == 'win32'", env = _ENV),
     "noop": lambda: None,
+    "parse_long_marker": lambda: parse(_LONG_MARKER),
     "version_parse_pre_release": lambda: version.parse("3.13.0rc1"),
     "version_parse_release": lambda: version.parse("3.11.4"),
 }

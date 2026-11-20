@@ -81,25 +81,28 @@ bazel build //tests/perf:bazel_benchmark_analysis \
 
 | Workload | Steps | Time, µs |
 |---|---:|---:|
-| `evaluate: long marker` | 2055 | 113.1 |
-| `evaluate: os_name == 'posix' and sys_platform == 'linux'` | 239 | 12.5 |
-| `evaluate: python_version < '3.11' and extra == 'dev' (non-strict)` | 230 | 12.4 |
-| `evaluate: python_version >= '3.8'` | 292 | 21.7 |
-| `evaluate: sys_platform == 'win32'` | 124 | 7.0 |
-| `tokenize: long marker` | 483 | 24.3 |
-| `tokenize: python_version>='3.8' and os_name=='posix'` | 232 | 9.0 |
-| `tokenize: python_version >= '3.8'` | 45 | 2.4 |
-| `version.is_compatible(3.11.4, 3.8)` | 66 | 2.3 |
+| `evaluate: long marker` | 1922 | 120.6 |
+| `evaluate: long marker (parsed)` | 737 | 49.7 |
+| `evaluate: os_name == 'posix' and sys_platform == 'linux'` | 216 | 13.1 |
+| `evaluate: python_version < '3.11' and extra == 'dev' (non-strict)` | 269 | 20.9 |
+| `evaluate: python_version >= '3.8'` | 282 | 23.3 |
+| `evaluate: python_version >= '3.8' (parsed)` | 137 | 9.9 |
+| `evaluate: sys_platform == 'win32'` | 113 | 7.4 |
+| `parse: long marker` | 1187 | 66.8 |
+| `tokenize: long marker` | 483 | 24.4 |
+| `tokenize: python_version>='3.8' and os_name=='posix'` | 232 | 9.2 |
+| `tokenize: python_version >= '3.8'` | 45 | 2.3 |
+| `version.is_compatible(3.11.4, 3.8)` | 66 | 2.4 |
 | `version.is_eq(3.11.4, 3.11.*)` | 11 | 0.7 |
 | `version.is_ge(3.11.4, 3.8)` | 53 | 1.7 |
 | `version.is_lt(3.11.4, 3.8)` | 47 | 1.9 |
 | `version.key(3.11.4)` | 25 | 0.8 |
 | `version.normalize('2023.07.19')` | 24 | 1.8 |
-| `version.parse('#1 SMP Debian')` | 631 | 55.9 |
-| `version.parse('1!2.0.0rc1.post3.dev4+ubuntu.7')` | 1512 | 149.5 |
-| `version.parse('3.11.*')` | 54 | 5.4 |
-| `version.parse('3.11.4')` | 55 | 5.2 |
-| `version.parse('3.13.0rc1')` | 1016 | 99.6 |
+| `version.parse('#1 SMP Debian')` | 631 | 54.8 |
+| `version.parse('1!2.0.0rc1.post3.dev4+ubuntu.7')` | 1512 | 148.2 |
+| `version.parse('3.11.*')` | 54 | 5.3 |
+| `version.parse('3.11.4')` | 55 | 5.5 |
+| `version.parse('3.13.0rc1')` | 1016 | 99.3 |
 
 ### Bazel
 
@@ -111,8 +114,10 @@ fewer steps are 4 to 20 times faster.
 | Workload | Before, µs | After, µs |
 |---|---:|---:|
 | `evaluate_long_marker` | 2088.9 | 357.9 |
+| `evaluate_long_marker_parsed` | | 121.7 |
 | `evaluate_python_version` | 426.8 | 54.4 |
 | `evaluate_sys_platform` | 37.3 | 22.1 |
+| `parse_long_marker` | | 227.0 |
 | `version_parse_pre_release` | 235.3 | 245.0 |
 | `version_parse_release` | 207.5 | 10.3 |
 
@@ -130,3 +135,5 @@ The notable changes of the results, the numbers are the steps.
 | | `evaluate: long marker` | 4660 | 2514 |
 | Evaluate the markers in a single pass | `evaluate: long marker` | 2514 | 2055 |
 | | `evaluate: os_name == 'posix' and sys_platform == 'linux'` | 287 | 239 |
+| Parse the markers once and evaluate them many times | `evaluate: long marker (parsed)` | 2055 | 737 |
+| | `evaluate: python_version >= '3.8' (parsed)` | 292 | 137 |

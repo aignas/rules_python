@@ -6,7 +6,7 @@ The cases in `packaging_cases.bzl` are generated, see
 
 load("@rules_testing//lib:test_suite.bzl", "test_suite")
 load("//python/private:normalize_name.bzl", "normalize_name")  # buildifier: disable=bzl-visibility
-load("//python/private/pypi:pep508_evaluate.bzl", "evaluate")  # buildifier: disable=bzl-visibility
+load("//python/private/pypi:pep508_evaluate.bzl", "evaluate", "parse")  # buildifier: disable=bzl-visibility
 load(
     ":packaging_cases.bzl",
     "EVALUATE_CASES",
@@ -65,6 +65,10 @@ def _test_packaging_marker_table(env):
             if got != want:
                 failures.append("{}: got {}, want {}".format(marker, got, want))
 
+            got = evaluate(parse(marker), env = marker_env)
+            if got != want:
+                failures.append("parsed {}: got {}, want {}".format(marker, got, want))
+
     env.expect.that_collection(failures).contains_exactly([])
 
 _tests.append(_test_packaging_marker_table)
@@ -76,6 +80,10 @@ def _test_packaging_logic(env):
         got = evaluate(marker, env = marker_env)
         if got != want:
             failures.append("{}: got {}, want {}".format(marker, got, want))
+
+        got = evaluate(parse(marker), env = marker_env)
+        if got != want:
+            failures.append("parsed {}: got {}, want {}".format(marker, got, want))
 
     env.expect.that_collection(failures).contains_exactly([])
 

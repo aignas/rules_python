@@ -44,15 +44,21 @@ def workloads(root=None):
     version = shim.load("//python/private:version.bzl")["version"]
     pep508 = shim.load("//python/private/pypi:pep508_evaluate.bzl")
     evaluate = pep508["evaluate"]
+    parse = pep508["parse"]
     tokenize = pep508["tokenize"]
 
     v_3_11_4 = version.parse("3.11.4")
     v_3_8 = version.parse("3.8")
     v_3_11_prefix = version.parse("3.11.*")
+    parsed_long_marker = parse(_LONG_MARKER)
+    parsed_python_version = parse("python_version >= '3.8'")
 
     return {
         # keep sorted
         "evaluate: long marker": lambda: evaluate(_LONG_MARKER, env=_ENV),
+        "evaluate: long marker (parsed)": lambda: evaluate(
+            parsed_long_marker, env=_ENV
+        ),
         "evaluate: os_name == 'posix' and sys_platform == 'linux'": lambda: evaluate(
             "os_name == 'posix' and sys_platform == 'linux'", env=_ENV
         ),
@@ -66,9 +72,13 @@ def workloads(root=None):
         "evaluate: python_version >= '3.8'": lambda: evaluate(
             "python_version >= '3.8'", env=_ENV
         ),
+        "evaluate: python_version >= '3.8' (parsed)": lambda: evaluate(
+            parsed_python_version, env=_ENV
+        ),
         "evaluate: sys_platform == 'win32'": lambda: evaluate(
             "sys_platform == 'win32'", env=_ENV
         ),
+        "parse: long marker": lambda: parse(_LONG_MARKER),
         "tokenize: long marker": lambda: tokenize(_LONG_MARKER),
         "tokenize: python_version>='3.8' and os_name=='posix'": lambda: tokenize(
             "python_version>='3.8' and os_name=='posix'"
