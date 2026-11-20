@@ -266,7 +266,7 @@ def _expr_syntax_error(expr, env):
 
     return None
 
-def evaluate(marker, *, env, strict = True, _fail = fail, **kwargs):
+def evaluate(marker, *, env, strict = True, _fail = fail):
     """Evaluate the marker against a given env.
 
     Args:
@@ -274,7 +274,6 @@ def evaluate(marker, *, env, strict = True, _fail = fail, **kwargs):
         env: {type}`dict[str, str]` The environment to evaluate the marker against.
         strict: {type}`bool` A setting to not fail on missing values in the env.
         _fail: Used for tests
-        **kwargs: Extra kwargs to be passed to the expression evaluator.
 
     Returns:
         The {type}`bool | str` If the marker is compatible with the given env. If strict is
@@ -287,17 +286,59 @@ def evaluate(marker, *, env, strict = True, _fail = fail, **kwargs):
     if err:
         return _fail(err)
 
-    ast = _new_expr(marker = marker, **kwargs)
-    for _ in range(len(tokens) * 2):
-        if not tokens:
-            break
+    # The tokens are known to be a valid expression at this point, so we can
+    # evaluate them in a single pass. Starlark does not have recursion, hence
+    # there is a stack with a frame for each open parenthesis. Because `not`
+    # binds tighter than `and`, which binds tighter than `or`, a frame is:
+    # * The value of the `or` operands that we have seen so far.
+    # * The value of the `and` operands that we have seen since the last `or`.
+    # * The number of `not` to apply to the next operand.
+    frame = [None, None, 0]
+    stack = [frame]
+    skip = 0
+    for i, token in enumerate(tokens):
+        if skip:
+            skip -= 1
+            continue
+        elif token == _AND:
+            continue
+        elif token == _OR:
+            frame[0] = _frame_value(frame)
+            frame[1] = None
+            continue
+        elif token == _NOT:
+            frame[2] += 1
+            continue
+        elif token == "(":
+            frame = [None, None, 0]
+            stack.append(frame)
+            continue
+        elif token == ")":
+            value = _frame_value(stack.pop())
+            if type(value) == type(""):
+                value = "({})".format(value)
+            frame = stack[-1]
+        else:
+            value = marker_expr(token, tokens[i + 1], tokens[i + 2], env = env, strict = strict)
+            skip = 2
 
-        tokens = ast.parse(env = env, tokens = tokens, strict = strict)
+        for _ in range(frame[2]):
+            value = _not_fn(value)
+        frame[2] = 0
+        frame[1] = value if frame[1] == None else _and_fn(frame[1], value)
 
-    if not tokens:
-        return ast.value()
+    return _frame_value(frame)
 
-    fail("Could not evaluate: {}".format(marker))
+def _frame_value(frame):
+    """Return the value of what has been evaluated in the frame so far."""
+    or_value, and_value, _ = frame
+    if and_value == None:
+        # No marker and `()` evaluate to True.
+        return True
+    elif or_value == None:
+        return and_value
+    else:
+        return _or_fn(or_value, and_value)
 
 _STRING_REPLACEMENTS = {
     "!=": "neq",
@@ -366,69 +407,6 @@ def _not_fn(x):
         return "not {}".format(x)
     else:
         return not x
-
-def _new_expr(
-        *,
-        marker,
-        and_fn = _and_fn,
-        or_fn = _or_fn,
-        not_fn = _not_fn):
-    # buildifier: disable=uninitialized
-    self = struct(
-        marker = marker,
-        tree = [],
-        parse = lambda **kwargs: _parse(self, **kwargs),
-        value = lambda: _value(self),
-        # This is a way for us to have a handle to the currently constructed
-        # expression tree branch.
-        current = lambda: self._current[-1] if self._current else None,
-        _current = [],
-        _and = and_fn,
-        _or = or_fn,
-        _not = not_fn,
-    )
-    return self
-
-def _parse(self, *, env, tokens, strict = False):
-    """The parse function takes the consumed tokens and returns the remaining."""
-    token, remaining = tokens[0], tokens[1:]
-
-    if token == "(":
-        expr = _open_parenthesis(self)
-    elif token == ")":
-        expr = _close_parenthesis(self)
-    elif token == _AND:
-        expr = _and_expr(self)
-    elif token == _OR:
-        expr = _or_expr(self)
-    elif token == _NOT:
-        expr = _not_expr(self)
-    else:
-        expr = marker_expr(env = env, strict = strict, *tokens[:3])
-        remaining = tokens[3:]
-
-    _append(self, expr)
-    return remaining
-
-def _value(self):
-    """Evaluate the expression tree"""
-    if not self.tree:
-        # Basic case where no marker should evaluate to True
-        return True
-
-    for _ in range(len(self.tree)):
-        if len(self.tree) == 1:
-            return self.tree[0]
-
-        # Resolve all of the `or` expressions as it is safe to do now since all
-        # `and` and `not` expressions have been taken care of by now.
-        if getattr(self.tree[-2], "op", None) == _OR:
-            current = self.tree.pop()
-            self.tree[-1] = self.tree[-1].value(current)
-        else:
-            break
-
-    fail("BUG: invalid state: {}".format(self.tree))
 
 def marker_expr(left, op, right, *, env, strict = True):
     """Evaluate a marker expression
@@ -558,131 +536,3 @@ def _version_expr(left, op, right):
         return False
 
     return _VERSION_OPERATORS[op](candidate, spec)
-
-# Code to allowing to combine expressions with logical operators
-
-def _append(self, value):
-    if value == None:
-        return
-
-    current = self.current() or self
-    op = getattr(value, "op", None)
-
-    if op == _NOT:
-        current.tree.append(value)
-    elif op in [_AND, _OR]:
-        value.append(current.tree[-1])
-        current.tree[-1] = value
-    elif not current.tree:
-        current.tree.append(value)
-    elif hasattr(current.tree[-1], "append"):
-        current.tree[-1].append(value)
-    elif hasattr(current.tree, "_append"):
-        current.tree._append(value)
-    else:
-        fail("Cannot evaluate '{}' in '{}', current: {}".format(value, self.marker, current))
-
-def _open_parenthesis(self):
-    """Add an extra node into the tree to perform evaluate inside parenthesis."""
-    self._current.append(_new_expr(
-        marker = self.marker,
-        and_fn = self._and,
-        or_fn = self._or,
-        not_fn = self._not,
-    ))
-
-def _close_parenthesis(self):
-    """Backtrack and evaluate the expression within parenthesis."""
-    value = self._current.pop().value()
-    if type(value) == type(""):
-        return "({})".format(value)
-    else:
-        return value
-
-def _not_expr(self):
-    """Add an extra node into the tree to perform an 'not' operation."""
-
-    def _append(value):
-        """Append a value to the not expression node.
-
-        This codifies `not` precedence over `and` and performs backtracking to
-        evaluate any `not` statements and forward the value to the first `and`
-        statement if needed.
-        """
-
-        current = self.current() or self
-        current.tree[-1] = self._not(value)
-
-        for _ in range(len(current.tree)):
-            if not len(current.tree) > 1:
-                break
-
-            op = getattr(current.tree[-2], "op", None)
-            if op == None:
-                pass
-            elif op == _NOT:
-                value = current.tree.pop()
-                current.tree[-1] = self._not(value)
-                continue
-            elif op == _AND:
-                value = current.tree.pop()
-                current.tree[-1].append(value)
-            elif op != _OR:
-                fail("BUG: '{} not' compound is unsupported".format(current.tree[-1]))
-
-            break
-
-    return struct(
-        op = _NOT,
-        append = _append,
-    )
-
-def _and_expr(self):
-    """Add an extra node into the tree to perform an 'and' operation"""
-    maybe_value = [None]
-
-    def _append(value):
-        """Append a value to the and expression node.
-
-        Here we backtrack, but we only evaluate the current `and` statement -
-        all of the `not` statements will be by now evaluated and `or`
-        statements need to be evaluated later.
-        """
-        if maybe_value[0] == None:
-            maybe_value[0] = value
-            return
-
-        current = self.current() or self
-        current.tree[-1] = self._and(maybe_value[0], value)
-
-    return struct(
-        op = _AND,
-        append = _append,
-        # private fields that help debugging
-        _maybe_value = maybe_value,
-    )
-
-def _or_expr(self):
-    """Add an extra node into the tree to perform an 'or' operation"""
-    maybe_value = [None]
-
-    def _append(value):
-        """Append a value to the or expression node.
-
-        Here we just append the extra values to the tree and the `or`
-        statements will be evaluated in the _value() function.
-        """
-        if maybe_value[0] == None:
-            maybe_value[0] = value
-            return
-
-        current = self.current() or self
-        current.tree.append(value)
-
-    return struct(
-        op = _OR,
-        value = lambda x: self._or(maybe_value[0], x),
-        append = _append,
-        # private fields that help debugging
-        _maybe_value = maybe_value,
-    )
