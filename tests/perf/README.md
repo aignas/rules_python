@@ -47,8 +47,35 @@ the extra work is necessary, increase the budget in `steps_test.py`. If it
 fails because the code got faster, then lower the budget. In both cases update
 the results below.
 
-To profile the code in Bazel itself, use `--starlark_cpu_profile`, see
-https://bazel.build/rules/performance#performance-profiling.
+### Measuring with Bazel
+
+The steps are a proxy, so there is also a benchmark that measures a few of the
+workloads with Bazel itself:
+
+```shell
+bazel run //tests/perf:bazel_benchmark
+```
+
+It builds `//tests/perf:bazel_benchmark_analysis`, which executes the workload
+that is selected with `--//tests/perf:workload` for
+`--//tests/perf:iterations` times during the analysis. Starlark does not have
+a clock, so the time of a single iteration is the difference of the wall time
+of 2 builds divided by the difference of the iterations. This takes a few
+minutes and the results depend on the machine, hence it is not a test.
+
+Use `--bazel` if you need to pass the startup options, e.g. `--bazel="bazel
+--host_jvm_args=-Xmx2g"`, otherwise the Bazel server restarts between the
+builds.
+
+The same target can be used to profile the code with `--starlark_cpu_profile`,
+see https://bazel.build/rules/performance#performance-profiling:
+
+```shell
+bazel build //tests/perf:bazel_benchmark_analysis \
+    --//tests/perf:workload=evaluate_long_marker \
+    --//tests/perf:iterations=10000 \
+    --starlark_cpu_profile=/tmp/profile.gz
+```
 
 ## Results
 
@@ -73,6 +100,21 @@ https://bazel.build/rules/performance#performance-profiling.
 | `version.parse('3.11.*')` | 54 | 8.0 |
 | `version.parse('3.11.4')` | 55 | 7.9 |
 | `version.parse('3.13.0rc1')` | 1016 | 159.3 |
+
+### Bazel
+
+The time is of Bazel 9.1.1 on a laptop before and after the optimizations that
+are listed in the history below, only the ratios are meaningful. They
+confirm that the steps are a good proxy: the workloads that take 4 to 16 times
+fewer steps are 4 to 20 times faster.
+
+| Workload | Before, µs | After, µs |
+|---|---:|---:|
+| `evaluate_long_marker` | 2088.9 | 497.1 |
+| `evaluate_python_version` | 426.8 | 64.1 |
+| `evaluate_sys_platform` | 37.3 | 26.4 |
+| `version_parse_pre_release` | 235.3 | 245.0 |
+| `version_parse_release` | 207.5 | 10.3 |
 
 ## History
 

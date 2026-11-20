@@ -1,6 +1,8 @@
+load("@bazel_skylib//rules:common_settings.bzl", "int_flag", "string_flag")
 load("//python:py_binary.bzl", "py_binary")
 load("//python:py_library.bzl", "py_library")
 load("//python:py_test.bzl", "py_test")
+load(":bazel_benchmark.bzl", "WORKLOADS", "bazel_benchmark")
 
 py_library(
     name = "workloads",
@@ -29,4 +31,30 @@ py_test(
     name = "steps_test",
     srcs = ["steps_test.py"],
     deps = [":workloads"],
+)
+
+# Measure the Starlark code with Bazel itself:
+#
+#     bazel run //tests/perf:bazel_benchmark
+py_binary(
+    name = "bazel_benchmark",
+    srcs = ["bazel_benchmark.py"],
+    args = ["--workloads=" + ",".join([w for w in WORKLOADS if w != "noop"])],
+)
+
+# The flags and the target that are used by the `bazel_benchmark`.
+int_flag(
+    name = "iterations",
+    build_setting_default = 0,
+)
+
+string_flag(
+    name = "workload",
+    build_setting_default = "",
+    values = [""] + WORKLOADS.keys(),
+)
+
+bazel_benchmark(
+    name = "bazel_benchmark_analysis",
+    tags = ["manual"],
 )
