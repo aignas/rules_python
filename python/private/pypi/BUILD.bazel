@@ -204,8 +204,8 @@ bzl_library(
         "//python/private:normalize_name",
         "//python/private:repo_utils",
         "//python/private:text_util",
-        "//python/private:version",
         "//python/private:version_label",
+        "@pypackaging.bzl//:pypackaging",
     ],
 )
 
@@ -283,7 +283,6 @@ bzl_library(
     name = "pep508_deps",
     srcs = ["pep508_deps.bzl"],
     deps = [
-        ":pep508_env",
         ":pep508_evaluate",
         ":pep508_requirement",
         "//python/private:normalize_name",
@@ -293,25 +292,19 @@ bzl_library(
 bzl_library(
     name = "pep508_env",
     srcs = ["pep508_env.bzl"],
-    deps = [
-        "//python/private:normalize_name",
-        "//python/private:version",
-    ],
+    deps = ["@pypackaging.bzl//:pypackaging"],
 )
 
 bzl_library(
     name = "pep508_evaluate",
     srcs = ["pep508_evaluate.bzl"],
-    deps = [
-        "//python/private:enum",
-        "//python/private:version",
-    ],
+    deps = ["@pypackaging.bzl//:pypackaging"],
 )
 
 bzl_library(
     name = "pep508_requirement",
     srcs = ["pep508_requirement.bzl"],
-    deps = ["//python/private:normalize_name"],
+    deps = ["@pypackaging.bzl//:pypackaging"],
 )
 
 bzl_library(
@@ -344,8 +337,8 @@ bzl_library(
         "//python/private:normalize_name",
         "//python/private:repo_utils",
         "//python/private:text_util",
-        "//python/private:version",
         "@bazel_skylib//lib:sets",
+        "@pypackaging.bzl//:pypackaging",
         "@toml.bzl//:toml",
     ],
 )
@@ -386,7 +379,7 @@ bzl_library(
 bzl_library(
     name = "python_tag",
     srcs = ["python_tag.bzl"],
-    deps = ["//python/private:version"],
+    deps = ["@pypackaging.bzl//:pypackaging"],
 )
 
 bzl_library(
@@ -414,7 +407,7 @@ bzl_library(
     deps = [
         ":parse_whl_name",
         ":python_tag",
-        "//python/private:version",
+        "@pypackaging.bzl//:pypackaging",
     ],
 )
 

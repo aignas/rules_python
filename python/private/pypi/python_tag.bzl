@@ -1,6 +1,6 @@
 "A simple utility function to get the python_tag from the implementation name"
 
-load("//python/private:version.bzl", "version")
+load("@pypackaging.bzl", "pypackaging")
 
 # Taken from
 # https://packaging.python.org/en/latest/specifications/platform-compatibility-tags/#python-tag
@@ -27,7 +27,7 @@ def python_tag(implementation_name, python_version = ""):
             python_version is given.
     """
     if python_version:
-        v = version.parse(python_version, strict = True)
+        v = pypackaging.version.parse(python_version)
         suffix = "{}{}".format(
             v.release[0],
             v.release[1] if len(v.release) > 1 else "",

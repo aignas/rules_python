@@ -1,6 +1,6 @@
 "Select a single wheel that fits the parameters of a target platform."
 
-load("//python/private:version.bzl", "version")
+load("@pypackaging.bzl", "pypackaging")
 load(":parse_whl_name.bzl", "parse_whl_name")
 load(":python_tag.bzl", "PY_TAG_GENERIC", "python_tag")
 
@@ -152,16 +152,17 @@ def _python_tag_priority(*, tag, implementation, py_version):
     else:
         return None
 
-    # Add a 0 at the end in case it is a single digit
-    ver_str = "{}.{}".format(ver_str[0], ver_str[1:] or "0")
+    if not ver_str.isdigit():
+        return None
 
-    ver = version.parse(ver_str)
-    if not version.is_compatible(py_version, ver):
+    # Add a 0 at the end in case it is a single digit
+    major, minor = int(ver_str[0]), int(ver_str[1:] or "0")
+    if major != py_version.release[0] or minor > py_version.release[1]:
         return None
 
     return (
         tag.startswith(implementation),
-        version.key(ver),
+        (major, minor),
     )
 
 def _candidates_by_priority(
@@ -178,7 +179,7 @@ def _candidates_by_priority(
         A dictionary where keys are priority tuples which allows us to sort and pick the
         last item.
     """
-    py_version = version.parse(python_version, strict = True)
+    py_version = pypackaging.version.parse(python_version)
     implementation = python_tag(implementation_name)
 
     ret = {}
@@ -206,7 +207,7 @@ def _candidates_by_priority(
                     logger.debug(lambda: "The python_tag in '{}' does not match implementation or version: {} {}".format(
                         whl.filename,
                         implementation,
-                        py_version.string,
+                        python_version,
                     ))
                     continue
 
