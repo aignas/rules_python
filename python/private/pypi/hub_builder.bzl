@@ -121,6 +121,7 @@ def _build(self):
         exposed_packages = [],
         whl_libraries = {},
         target_platform_envs = [],
+        platforms = {},
     )
     if self._logger.failed():
         return ret
@@ -154,6 +155,17 @@ def _build(self):
         # requirements.
         # list[dict[str, str]]
         target_platform_envs = self._target_platform_envs.values(),
+        # The marker environments of the target platforms for each Python
+        # version, the keys are the same as in the `whl_config_setting`
+        # values of the `whl_map`.
+        # dict[str python_version, dict[str target_platform, dict[str, str]]]
+        platforms = {
+            _major_minor_version(python_version): {
+                whl_config_setting(target_platforms = [name]).target_platforms[0]: platform.env
+                for name, platform in platforms.items()
+            }
+            for python_version, platforms in self._platforms.items()
+        },
     )
 
 def _pip_parse(self, module_ctx, pip_attr, default_envsubst = [], python_version = None):
