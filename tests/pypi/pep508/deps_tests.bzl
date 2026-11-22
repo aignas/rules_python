@@ -376,6 +376,67 @@ def test_deps_with_extras_excludes_and_includes(env):
 
 _tests.append(test_deps_with_extras_excludes_and_includes)
 
+def test_missing_deps(env):
+    """The deps that are not included are returned if the target platforms need them.
+
+    Args:
+        env: the test env.
+    """
+    requires_dist = [
+        "bar",
+        "not-locked",
+        "tomli>=2; python_version < \"3.11\"",
+        "tomli-w[all]; python_version < \"3.11\" and extra == \"write\"",
+        "pywin32; sys_platform == \"win32\"",
+        "colorama; sys_platform == \"win32\" and extra == \"color\"",
+        "foo[write]; extra == \"all\"",
+    ]
+    linux = lambda v: {"python_version": v, "sys_platform": "linux"}
+
+    got = deps("foo", requires_dist = requires_dist, include = ["bar"])
+    env.expect.that_dict(got.missing).contains_exactly({})
+
+    got = deps("foo", requires_dist = requires_dist, envs = [linux("3.10")])
+    env.expect.that_collection(got.deps).contains_at_least(["bar", "not_locked"])
+    env.expect.that_dict(got.missing).contains_exactly({})
+
+    got = deps("foo", requires_dist = requires_dist, include = ["bar"], envs = [linux("3.12")])
+    env.expect.that_dict(got.missing).contains_exactly({"not-locked": ["not-locked"]})
+
+    got = deps("foo", requires_dist = requires_dist, include = ["bar"], envs = [linux("3.12"), linux("3.10")])
+    env.expect.that_dict(got.missing).contains_exactly({
+        "not-locked": ["not-locked"],
+        "tomli": ["tomli; python_version < \"3.11\""],
+    })
+
+    # The extras that are included via the self references are checked.
+    got = deps(
+        "foo",
+        requires_dist = requires_dist,
+        include = ["bar"],
+        extras = ["all", "color"],
+        envs = [linux("3.12"), linux("3.10")],
+    )
+    env.expect.that_dict(got.missing).contains_exactly({
+        "not-locked": ["not-locked"],
+        "tomli": ["tomli; python_version < \"3.11\""],
+        "tomli-w": ["tomli-w[all]; python_version < \"3.11\" and extra == \"write\""],
+    })
+
+    got = deps(
+        "foo",
+        requires_dist = requires_dist,
+        include = ["bar", "not_locked"],
+        extras = ["color"],
+        envs = [{"python_version": "3.12", "sys_platform": "win32"}],
+    )
+    env.expect.that_dict(got.missing).contains_exactly({
+        "colorama": ["colorama; sys_platform == \"win32\" and extra == \"color\""],
+        "pywin32": ["pywin32; sys_platform == \"win32\""],
+    })
+
+_tests.append(test_missing_deps)
+
 def deps_test_suite(name):  # buildifier: disable=function-docstring
     test_suite(
         name = name,
