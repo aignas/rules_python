@@ -28,6 +28,7 @@ def whl_library_deps_targets(
         provides_extra = [],
         extras = [],
         include = [],
+        target_platform_envs = [],
         group_deps = [],
         group_name = None,
         dep_template,
@@ -72,6 +73,12 @@ def whl_library_deps_targets(
             `[<extra>]` targets are also created for the requested extras of
             this package, see `extras` for the ones that the package does not
             provide.
+        target_platform_envs: {type}`list[dict[str, str]]` The marker
+            environments of the target platforms of the hub. They are used
+            to warn about the dependencies that are left out because they
+            are not in `include`, but are needed on any of the target
+            platforms. No warnings are printed about such dependencies if it
+            is empty.
         group_name: {type}`str | None` name of the dependency group (if any).
         dep_template: {type}`str | None` The dep_template to use.
         tags: {type}`list[str]` The tags set on the targets.
@@ -220,6 +227,44 @@ def whl_library_deps_targets(
 
         return ":" + extra_label(extra)
 
+    # The dependencies of each target. The dependencies that are not in the
+    # hub are left out, which is only correct if they are not needed on any of
+    # the target platforms, so warn about the rest of them. The warnings about
+    # the dependencies of the extras that are not requested in the hub are
+    # only printed when another package depends on the extra, otherwise every
+    # package with extras that are not used would print them.
+    package_deps = {}
+    missing = {}
+    missing_by_extra = {}
+    for target, extra, want_extras in pkg_targets if requires_dist and hasattr(rules, "py_library") else []:
+        package_deps[target] = deps(
+            name = self_name,
+            requires_dist = requires_dist,
+            include = include,
+            excludes = members if is_member(extra) else [],
+            extras = want_extras,
+            keep_extras = True,
+            envs = target_platform_envs,
+        )
+        if not extra or extra in hub_extras:
+            for dep, reqs in package_deps[target].missing.items():
+                missing.setdefault(dep, {}).update({r: None for r in reqs})
+        else:
+            missing_by_extra[extra] = package_deps[target].missing
+
+    for dep, reqs in sorted(missing.items()):
+        getattr(rules, "warn", _warn)(_missing_dep_warning(distribution, dep, reqs))
+
+    extra_warnings = {}
+    for extra, extra_missing in sorted(missing_by_extra.items()):
+        for dep, reqs in sorted(extra_missing.items()):
+            # The rest are already printed.
+            reqs = [r for r in reqs if r not in missing.get(dep, {})]
+            if reqs:
+                extra_warnings.setdefault(extra, []).append(
+                    _missing_dep_warning(distribution, dep, reqs),
+                )
+
     # The packages that depend on an extra of this package use this target
     # with the requested extra, because the hub does not know which extras
     # this package provides. An extra without a target is the same as the
@@ -230,6 +275,7 @@ def whl_library_deps_targets(
             targets = {extra: _extra_target(extra) for extra in extras_targets},
             default = _extra_target(""),
             distribution = distribution,
+            warnings = extra_warnings,
             native = native,
             rules = rules,
             visibility = visibility,
@@ -281,17 +327,9 @@ def whl_library_deps_targets(
             visibility = _visibility(""),
         )
 
-    for name, extra, want_extras in pkg_targets if hasattr(rules, "py_library") else []:
-        package_deps = deps(
-            name = self_name,
-            requires_dist = requires_dist,
-            include = include,
-            excludes = members if is_member(extra) else [],
-            extras = want_extras,
-            keep_extras = True,
-        )
+    for target, extra, _ in pkg_targets if hasattr(rules, "py_library") else []:
         rules.py_library(
-            name = name,
+            name = target,
             # We include as srcs to ensure that the (locations :pkg) works as expected.
             srcs = [repo_label(PY_SRCS_LABEL)],
             deps = _deps(
@@ -299,8 +337,8 @@ def whl_library_deps_targets(
                 # propagated. Just passing the target as `srcs` is not enough to propagate
                 # `pyi_srcs`, see `tests/base_rules/py_library`.
                 deps = [repo_label(PY_SRCS_LABEL)],
-                package_deps = package_deps,
-                conditions = _conditions(settings, package_deps),
+                package_deps = package_deps[target],
+                conditions = _conditions(settings, package_deps[target]),
                 label = _pkg_label,
             ),
             # Disable precompilation on this wrapper target to prevent duplicate
@@ -324,6 +362,19 @@ def whl_library_deps_targets(
             extra = extra,
             visibility = ["//visibility:private"],
         )
+
+def _missing_dep_warning(distribution, dep, reqs):
+    return (
+        "WARNING: {distribution} requires '{reqs}', but '{dep}' is not in " +
+        "the requirements of the hub, so it is left out and it may be " +
+        "missing at runtime on some of the target platforms. Add '{dep}' " +
+        "to the lock file, e.g. by locking for all of the target platforms " +
+        "and Python versions of the hub."
+    ).format(
+        distribution = distribution,
+        reqs = "', '".join(sorted(reqs)),
+        dep = dep,
+    )
 
 def _warn(msg):
     # buildifier: disable=print
