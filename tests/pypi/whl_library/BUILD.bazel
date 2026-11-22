@@ -46,3 +46,24 @@ py_test(
         "@whl_library_extras_consumer//:pkg",
     ],
 )
+
+# `bazel query` does not know the configuration, so it needs all of the targets
+# that the extras of the dependencies can resolve to. It fails with `no such
+# target` if any of them is missing, e.g. for the `pkg[unknown]` dependency of
+# the consumer, because `pkg` does not provide the `unknown` extra.
+genquery(
+    name = "whl_library_transitive_extras_query",
+    expression = "deps(@whl_library_extras_consumer//:pkg)",
+    scope = ["@whl_library_extras_consumer//:pkg"],
+    target_compatible_with = SUPPORTS_BZLMOD,
+)
+
+py_test(
+    name = "whl_library_query_test",
+    srcs = ["whl_library_query_test.py"],
+    data = [":whl_library_transitive_extras_query"],
+    env = {
+        "QUERY_OUTPUT": "$(rootpath :whl_library_transitive_extras_query)",
+    },
+    target_compatible_with = SUPPORTS_BZLMOD,
+)
