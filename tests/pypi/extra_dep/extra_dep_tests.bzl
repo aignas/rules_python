@@ -403,6 +403,7 @@ def _test_extra_select_targets(env):
             }),
             "distribution": "foo 1.0",
             "extras": ["a", "b"],
+            "warnings": {},
             "visibility": None,
         },
     ])  # buildifier: @unsorted-dict-items
@@ -427,6 +428,7 @@ def _test_extra_select_targets_no_extras(env):
             "deps": [":[]"],
             "distribution": "",
             "extras": [],
+            "warnings": {},
             "visibility": ["//visibility:public"],
         },
     ])  # buildifier: @unsorted-dict-items

@@ -2,3 +2,9 @@ Name: pkg
 Version: 1.0
 Requires-Dist: optional_dep; extra == "optional"
 Provides-Extra: optional
+Requires-Dist: not_locked; python_version < "3.11"
+Requires-Dist: not_locked_optional; sys_platform == "linux" and extra == "optional"
+Requires-Dist: not_locked_windows; sys_platform == "win32"
+Requires-Dist: not_locked_windows_optional; sys_platform == "win32" and extra == "optional"
+Provides-Extra: unused
+Requires-Dist: not_locked_unused; extra == "unused"

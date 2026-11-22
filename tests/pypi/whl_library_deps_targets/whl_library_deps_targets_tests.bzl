@@ -556,6 +556,7 @@ def _targets(**kwargs):
         extra_select = [],
         filegroup = [],
         py_library = [],
+        warn = [],
     )
 
     whl_library_deps_targets(
@@ -573,6 +574,7 @@ def _targets(**kwargs):
             extra_dep = lambda **kwargs: calls.extra_dep.append(kwargs),
             extra_select = lambda **kwargs: calls.extra_select.append(kwargs),
             py_library = lambda **kwargs: calls.py_library.append(kwargs),
+            warn = lambda msg: calls.warn.append(msg),
         ),
         **kwargs
     )
@@ -584,6 +586,7 @@ def _targets(**kwargs):
         extra_deps = calls.extra_dep,
         extra_selects = calls.extra_select,
         config_settings = [c["name"] for c in calls.config_setting],
+        warnings = calls.warn,
     )
 
 def _test_deps_with_extras(env):
@@ -655,6 +658,7 @@ def _test_deps_with_extras(env):
             "deps": [":[]"],
             "distribution": "foo",
             "extras": [],
+            "warnings": {},
             "visibility": ["//visibility:public"],
         },
     ])  # buildifier: @unsorted-dict-items
@@ -717,6 +721,7 @@ def _test_extra_that_is_not_requested_in_the_hub(env):
             }),
             "distribution": "coverage 7.6.1",
             "extras": ["toml"],
+            "warnings": {},
             "visibility": ["//visibility:public"],
         },
     ])  # buildifier: @unsorted-dict-items
@@ -765,6 +770,120 @@ def _test_deps_of_the_extra_that_are_not_in_the_hub(env):
     ]).contains_exactly([("_extras", ["x"])])
 
 _tests.append(_test_deps_of_the_extra_that_are_not_in_the_hub)
+
+def _envs(*python_versions, sys_platform = "linux"):
+    return [
+        {
+            "os_name": "nt" if sys_platform == "win32" else "posix",
+            "python_full_version": v,
+            "python_version": v.rpartition(".")[0],
+            "sys_platform": sys_platform,
+        }
+        for v in python_versions
+    ]
+
+_MISSING_DEP_WARNING = (
+    "WARNING: {} requires '{}', but '{}' is not in the requirements of the " +
+    "hub, so it is left out and it may be missing at runtime on some of the " +
+    "target platforms. Add '{}' to the lock file, e.g. by locking for all " +
+    "of the target platforms and Python versions of the hub."
+)
+
+def _test_warn_about_missing_deps(env):
+    # The lock file is only for Python 3.12, but the hub is also used with
+    # Python 3.10, where `exceptiongroup` is needed.
+    kwargs = dict(
+        metadata_name = "foo",
+        requires_dist = [
+            "bar",
+            "exceptiongroup>=1.0; python_version < \"3.11\"",
+            "pywin32; sys_platform == \"win32\"",
+            "not-locked",
+        ],
+        include = {"bar": [], "foo": []},
+        tags = ["pypi_name=foo", "pypi_version=1.0"],
+    )
+    got = _targets(target_platform_envs = _envs("3.10.20", "3.12.13"), **kwargs)
+    env.expect.that_dict(got.deps).contains_exactly({
+        "pkg": ["srcs", "@pypi//bar:pkg"],
+    })
+    env.expect.that_collection(got.warnings).contains_exactly([
+        _MISSING_DEP_WARNING.format(
+            "foo 1.0",
+            "exceptiongroup; python_version < \"3.11\"",
+            "exceptiongroup",
+            "exceptiongroup",
+        ),
+        _MISSING_DEP_WARNING.format("foo 1.0", "not-locked", "not-locked", "not-locked"),
+    ])
+    env.expect.that_collection([c["warnings"] for c in got.extra_selects]).contains_exactly([{}])
+
+    # Only the dependencies without markers are needed on Python 3.12.
+    got = _targets(target_platform_envs = _envs("3.12.13"), **kwargs)
+    env.expect.that_collection(got.warnings).contains_exactly([
+        _MISSING_DEP_WARNING.format("foo 1.0", "not-locked", "not-locked", "not-locked"),
+    ])
+
+    # The target platforms are not known, e.g. in the WORKSPACE mode.
+    got = _targets(**kwargs)
+    env.expect.that_collection(got.warnings).contains_exactly([])
+
+_tests.append(_test_warn_about_missing_deps)
+
+def _test_warn_about_missing_deps_of_extras(env):
+    tomli = "tomli; python_full_version <= \"3.11.0a6\" and extra == \"toml\""
+    warning = _MISSING_DEP_WARNING.format("coverage 7.6.1", tomli, "tomli", "tomli")
+    kwargs = dict(
+        metadata_name = "coverage",
+        requires_dist = _COVERAGE_REQUIRES_DIST + [
+            "not-locked",
+            "also-not-locked; extra == \"unused\"",
+        ],
+        provides_extra = ["toml", "unused"],
+        tags = ["pypi_name=coverage", "pypi_version=7.6.1"],
+        target_platform_envs = _envs("3.10.20", "3.12.13"),
+    )
+    not_locked = _MISSING_DEP_WARNING.format("coverage 7.6.1", "not-locked", "not-locked", "not-locked")
+
+    # The extra is not requested in the hub, so the warnings about its
+    # dependencies are only printed when another package depends on the
+    # extra. The dependencies without the extra are not repeated there.
+    got = _targets(include = {"coverage": [], "pytest_cov": []}, **kwargs)
+    env.expect.that_collection(got.warnings).contains_exactly([not_locked])
+    env.expect.that_collection([c["warnings"] for c in got.extra_selects]).contains_exactly([{
+        "toml": [warning],
+        "unused": [_MISSING_DEP_WARNING.format(
+            "coverage 7.6.1",
+            "also-not-locked; extra == \"unused\"",
+            "also-not-locked",
+            "also-not-locked",
+        )],
+    }])
+
+    # The extra is requested in the hub, so it is used.
+    got = _targets(include = {"coverage": ["toml"], "pytest_cov": []}, **kwargs)
+    env.expect.that_collection(got.warnings).contains_exactly([not_locked, warning])
+    env.expect.that_collection([c["warnings"].keys() for c in got.extra_selects]).contains_exactly([["unused"]])
+
+    # The extra is requested without the hub and the `pkg` target includes it.
+    got = _targets(
+        include = {"coverage": None, "pytest_cov": None},
+        extras = ["toml"],
+        dep_template = "@pip_{name}//:{target}",
+        **kwargs
+    )
+    env.expect.that_collection(got.warnings).contains_exactly([not_locked, warning])
+    env.expect.that_collection([c["warnings"].keys() for c in got.extra_selects]).contains_exactly([["unused"]])
+
+    # The dependency of the extra is not needed on any of the target platforms.
+    got = _targets(
+        include = {"coverage": ["toml"], "pytest_cov": []},
+        **(kwargs | {"target_platform_envs": _envs("3.12.13")})
+    )
+    env.expect.that_collection(got.warnings).contains_exactly([not_locked])
+    env.expect.that_collection([c["warnings"].keys() for c in got.extra_selects]).contains_exactly([["unused"]])
+
+_tests.append(_test_warn_about_missing_deps_of_extras)
 
 def _test_dep_with_extra_that_is_not_provided(env):
     include = {"bar": [], "foo": []}

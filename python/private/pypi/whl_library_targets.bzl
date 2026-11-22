@@ -30,6 +30,7 @@ def whl_library_targets(
         extras = [],
         entry_points = {},
         include = [],
+        target_platform_envs = [],
         group_deps = [],
         group_name = None,
         dep_template = None,
@@ -61,6 +62,9 @@ def whl_library_targets(
             {obj}`whl_library_deps_targets`.
         entry_points: {type}`list[dict]` A list of parsed entry point definitions.
         include: {type}`list[str]` The list of packages to include.
+        target_platform_envs: {type}`list[dict[str, str]]` The marker
+            environments of the target platforms of the hub, see
+            {obj}`whl_library_deps_targets`.
         group_name: {type}`str | None` name of the dependency group (if any).
         dep_template: {type}`str | None` The dep_template to use.
         data_exclude: {type}`list[str]` The globs for data attribute exclusion.
@@ -103,6 +107,7 @@ def whl_library_targets(
             provides_extra = provides_extra,
             extras = extras,
             include = include,  # only needed if requires_dist is present
+            target_platform_envs = target_platform_envs,
             repo = None,  # set aliases in the same repo
             aliases = {},
             **kwargs

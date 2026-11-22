@@ -30,6 +30,7 @@ _RENDER = {
     "requires_dist": render.list,
     "srcs_exclude": render.list,
     "tags": render.list,
+    "target_platform_envs": str,
 }
 
 # NOTE @aignas 2024-10-25: We have to keep this so that files in
@@ -98,8 +99,9 @@ def generate_whl_library_build_bazel(
     if config_load:
         # The config is also needed without any deps, because it has the
         # extras that are requested from this package.
-        loads.append("""load("{}", "{}")""".format(config_load, "packages"))
+        loads.append("""load("{}", "packages", "target_platform_envs")""".format(config_load))
         kwargs["include"] = "packages"
+        kwargs["target_platform_envs"] = "target_platform_envs"
     if requires_dist:
         kwargs["requires_dist"] = requires_dist
 
