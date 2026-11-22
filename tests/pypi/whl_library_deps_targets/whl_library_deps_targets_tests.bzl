@@ -1072,6 +1072,56 @@ def _test_different_extras_of_the_same_dep(env):
 
 _tests.append(_test_different_extras_of_the_same_dep)
 
+def _test_deps_with_extras_legacy(env):
+    # Without a hub, e.g. with a vendored `requirements.bzl`, the extras of
+    # the dependencies are resolved by the whl repositories in the same way
+    # and the config only has the names of the packages.
+    include = {"bar": None, "foo": None, "qux": None}
+    got = _targets(
+        metadata_name = "foo",
+        requires_dist = ["bar[socks]", "bar[nope]; sys_platform == \"linux\"", "qux"],
+        include = include,
+        dep_template = "@pip_{name}//:{target}",
+    )
+    env.expect.that_dict(got.deps).contains_exactly({
+        "pkg": ["srcs", ":_bar[socks]", "@pip_qux//:pkg"] + select({
+            ":is_include_bar[nope]_true": [":_bar[nope]"],
+            "//conditions:default": [],
+        }),
+    })
+    env.expect.that_collection([
+        (c["name"], c["deps"], c["extra"])
+        for c in got.extra_deps
+    ]).contains_exactly([
+        ("_bar[nope]", ["@pip_bar//:_extras"], "nope"),
+        ("_bar[socks]", ["@pip_bar//:_extras"], "socks"),
+    ])
+
+    # The repository of the dependency always has the target to select the
+    # extra, also for the extras that it does not provide and when it has no
+    # dependencies.
+    for requires_dist in [[], ["qux; extra == \"socks\""]]:
+        got = _targets(
+            metadata_name = "bar",
+            requires_dist = requires_dist,
+            provides_extra = ["socks"],
+            include = include,
+            dep_template = "@pip_{name}//:{target}",
+        )
+        env.expect.that_collection([
+            (c["name"], c["deps"], c["extras"])
+            for c in got.extra_selects
+        ]).contains_exactly([(
+            "_extras",
+            select({
+                ":_extras_socks": [":[socks]"],
+                "//conditions:default": [":[]"],
+            }),
+            ["socks"],
+        )])
+
+_tests.append(_test_deps_with_extras_legacy)
+
 def _test_extras_select_in_group_legacy(env):
     # Without a hub the members of the group are aliases to the group library
     # in the same repository.
