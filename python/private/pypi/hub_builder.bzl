@@ -78,6 +78,10 @@ def hub_builder(
         # setting originated from.
         # dict[str whl_name, dict[str config_setting, str repo_name]]
         _whl_map = {},  # modified by _add_whl_library
+        # The marker environments of the target platforms that have
+        # requirements. Dict acting as a set of the values.
+        # dict[str json, dict[str, str] env]
+        _target_platform_envs = {},  # modified by _create_whl_repos
 
         # Internal
 
@@ -116,6 +120,7 @@ def _build(self):
         extra_aliases = {},
         exposed_packages = [],
         whl_libraries = {},
+        target_platform_envs = [],
     )
     if self._logger.failed():
         return ret
@@ -145,6 +150,10 @@ def _build(self):
         # Mapping of whl_library repo names and their kwargs.
         # dict[str repo_name, dict[str, object] kwargs]
         whl_libraries = self._whl_libraries,
+        # The marker environments of the target platforms that have
+        # requirements.
+        # list[dict[str, str]]
+        target_platform_envs = self._target_platform_envs.values(),
     )
 
 def _pip_parse(self, module_ctx, pip_attr, default_envsubst = [], python_version = None):
@@ -609,6 +618,20 @@ def _create_whl_repos(
     )
 
     for whl in requirements_by_platform:
+        for src in whl.srcs:
+            for p in src.target_platforms:
+                if p not in platforms:
+                    continue
+
+                # The functions for normalizing the values are added back
+                # when evaluating the markers.
+                env = {
+                    k: v
+                    for k, v in platforms[p].env.items()
+                    if not k.startswith("_")
+                }
+                self._target_platform_envs[json.encode(env)] = env
+
         whl_library_args = common_args | _whl_library_args(
             self,
             whl = whl,

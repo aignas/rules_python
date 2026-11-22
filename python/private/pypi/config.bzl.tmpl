@@ -5,3 +5,8 @@ with your usecase. This may change in between rules_python versions without any 
 """
 
 packages = %%PACKAGES%%
+
+# The marker environments of the target platforms that have requirements. They
+# are used to warn about the dependencies that are not in `packages`, but are
+# needed on any of the target platforms.
+target_platform_envs = %%TARGET_PLATFORM_ENVS%%

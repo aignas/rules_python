@@ -352,6 +352,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
     # dict[hub, dict[whl, dict[version, str pip]]]
     # Where hub, whl, and pip are the repo names
     hub_whl_map = {}
+    hub_target_platform_envs = {}
     hub_group_map = {}
     exposed_packages = {}
     extra_aliases = {}
@@ -370,6 +371,7 @@ You cannot use both the additive_build_content and additive_build_content_file a
         extra_aliases[hub.name] = out.extra_aliases
         hub_group_map[hub.name] = out.group_map
         hub_whl_map[hub.name] = out.whl_map
+        hub_target_platform_envs[hub.name] = out.target_platform_envs
         hubs[hub.name] = struct(
             # str: module that created the hub.
             module_name = hub.module_name,
@@ -410,6 +412,9 @@ You cannot use both the additive_build_content and additive_build_content_file a
         facts = simpleapi_cache.get_facts(),
         hub_group_map = hub_group_map,
         hub_whl_map = hub_whl_map,
+        # dict[str, list[dict[str, str]]]: the marker environments of the
+        # target platforms that have requirements in each hub.
+        hub_target_platform_envs = hub_target_platform_envs,
         unified_hub_requirements_bzl = config.unified_hub_requirements_bzl,
         whl_libraries = whl_libraries,
         whl_mods = whl_mods,
@@ -583,6 +588,7 @@ def _pip_impl(module_ctx):
             packages = mods.exposed_packages.get(hub_name, []),
             platform_config_settings = mods.platform_config_settings.get(hub_name, {}),
             groups = mods.hub_group_map.get(hub_name),
+            target_platform_envs = json.encode(mods.hub_target_platform_envs.get(hub_name, [])),
             # The hubs configured with `pip.configure` hide the other packages.
             hide_unexposed_packages = hub_name in mods.configured_hubs,
             public_packages = mods.configured_hubs.get(hub_name, []),
