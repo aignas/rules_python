@@ -129,6 +129,10 @@ def _extra_select_impl(ctx):
             extra,
         ))
 
+    for warning in ctx.attr.warnings.get(extra, []):
+        # buildifier: disable=print
+        print(warning)
+
     return _forward(ctx)
 
 extra_select = rule(
@@ -154,6 +158,14 @@ the target are forwarded.
         "extras": attr.string_list(
             doc = "The normalized extras that have a target, a warning is printed if any other extra is requested.",
         ),
+        "warnings": attr.string_list_dict(
+            doc = """\
+The warnings to print when the extra in the key is requested, e.g. about the
+dependencies of the extra that are not in the hub. They are printed here and
+not when the targets are created, because only the extras that are used
+matter.
+""",
+        ),
         "_allowlist_function_transition": attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
@@ -169,6 +181,7 @@ def extra_select_targets(
         targets,
         default,
         distribution = "",
+        warnings = {},
         native = native,
         rules = None,
         visibility = None):
@@ -183,6 +196,8 @@ def extra_select_targets(
             unknown extras.
         distribution: {type}`str` the name and the version of the package
             used in the warning about the unknown extras.
+        warnings: {type}`dict[str, list[str]]` the warnings to print when
+            the extra in the key is requested.
         native: the native struct for overriding in tests.
         rules: a struct with the `extra_select` rule for overriding in tests.
         visibility: {type}`list[str]` the visibility of the target.
@@ -203,5 +218,6 @@ def extra_select_targets(
         deps = select(deps | {"//conditions:default": [default]}) if deps else [default],
         distribution = distribution,
         extras = sorted(targets),
+        warnings = warnings,
         visibility = visibility,
     )

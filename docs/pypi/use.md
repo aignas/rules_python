@@ -122,10 +122,25 @@ so they do not need to be in the lock file, e.g. when the requirements are
 compiled with the extras stripped. This does not change `@pypi//bar`, which
 only includes the extras requested in the lock file. The dependencies of the
 extra that are not in the lock file are left out like any other dependency
-that is not in the lock file. If `bar` does not provide the `socks` extra,
+that is not in the lock file, see below for the warning that is printed if
+they are needed. If `bar` does not provide the `socks` extra,
 then only `bar` is used and a warning is printed when `@pypi//foo` is
 analyzed, e.g. `WARNING: bar 1.0 does not provide the extra 'socks'`, which is
 how `pip` handles the unknown extras.
+
+The dependencies from the wheel `METADATA` that are not in the lock file are
+left out, which is correct if they are not needed on any of the target
+platforms of the hub, e.g. `pywin32; sys_platform == "win32"` in a hub that is
+only for Linux. If the marker of such a dependency can be true on any of the
+target platforms that have requirements, then a warning that names the missing
+package is printed, because importing it may fail at runtime. For example, if
+the lock file is compiled for Python 3.12 only and the hub is also used with
+Python 3.10, where `coverage[toml]` needs `tomli`, then the warning asks to add
+`tomli` to the lock file. The fix is to lock for all of the target platforms
+and Python versions of the hub. The warnings about the dependencies of an
+extra are only printed if the extra is used, i.e. it is requested in the lock
+file or another package depends on it. The warnings are not printed when using
+`pip_parse` in `WORKSPACE`.
 
 If the lock file requests an extra that the package does not provide, e.g.
 `foo[nope]`, then `@pypi//foo:[nope]` is the same as `@pypi//foo:[]`, because
