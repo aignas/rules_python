@@ -28,7 +28,8 @@ def deps(
         extras = [],
         excludes = [],
         include = [],
-        keep_extras = False):
+        keep_extras = False,
+        envs = []):
     """Parse the RequiresDist from wheel METADATA
 
     Args:
@@ -42,12 +43,19 @@ def deps(
         extras: {type}`list[str]` the requested extras to generate targets for.
         keep_extras: {type}`bool` keep the extras of the dependencies, if
             `True`, the dependencies with extras are returned as `foo[bar]`.
+        envs: {type}`list[dict[str, str]]` the marker environments of the
+            target platforms. If specified, the dependencies that are left
+            out because they are not in `include` are returned as `missing`
+            if they are needed on any of the target platforms.
 
     Returns:
         A struct with attributes:
         * deps: {type}`list[str]` dependencies to include unconditionally.
         * deps_select: {type}`dict[str, list[str]]` dependencies to include on particular
               subset of target platforms.
+        * missing: {type}`dict[str, list[str]]` the names of the
+              dependencies that are not in `include`, but are needed on at
+              least one of the `envs`, and the requirements that need them.
 
         The dependencies are normalized names, e.g. `foo`, or normalized names
         with a single extra, e.g. `foo[bar]`, if the dependency is requested
@@ -58,6 +66,7 @@ def deps(
         return struct(
             deps = [],
             deps_select = {},
+            missing = {},
         )
 
     reqs = sorted(
@@ -72,6 +81,7 @@ def deps(
     excludes = {group_member(x): None for x in excludes}
 
     reqs_by_dep = {}
+    missing = {}
 
     for req in reqs:
         # drop self edges
@@ -79,6 +89,8 @@ def deps(
             continue
 
         if include and req.name_ not in include:
+            if envs and _is_needed(req, extras = want_extras, envs = envs):
+                missing.setdefault(req.name, []).append(_format(req))
             continue
 
         for dep in ["{}[{}]".format(req.name_, e) for e in req.extras if keep_extras] or [req.name_]:
@@ -100,7 +112,36 @@ def deps(
             d: markers
             for d, markers in sorted(deps_select.items())
         },
+        missing = missing,
     )
+
+def _format(req):
+    return "{}{}{}".format(
+        req.name,
+        "[{}]".format(",".join(req.extras)) if req.extras else "",
+        "; {}".format(req.marker) if req.marker else "",
+    )
+
+def _is_needed(req, *, extras, envs):
+    """Tell if the requirement is needed on any of the target platforms."""
+    if not req.marker:
+        return True
+
+    for extra in extras:
+        # Most of the requirements are for the other extras, so do not go
+        # through the target platforms for them.
+        env = create_env() | {"extra": extra}
+        m = evaluate(req.marker, env = env, strict = False)
+        if m == False:
+            continue
+        elif m == True:
+            return True
+
+        for target_env in envs:
+            if evaluate(req.marker, env = env | target_env, strict = False) != False:
+                return True
+
+    return False
 
 def _add(deps, deps_select, dep, markers = None):
     if not markers:
