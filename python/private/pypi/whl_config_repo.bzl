@@ -15,6 +15,9 @@ def _whl_config_repo_impl(rctx):
         rctx.attr._config_template,
         substitutions = {
             "%%PACKAGES%%": render.dict(rctx.attr.whl_map or {}, value_repr = lambda x: "None"),
+            # The requirements are only for the host platform, the
+            # environment of which is not known when the wheels are extracted.
+            "%%TARGET_PLATFORM_ENVS%%": "[]",
         },
     )
 

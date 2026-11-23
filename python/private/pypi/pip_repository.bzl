@@ -293,6 +293,8 @@ def _pip_repository_impl(rctx):
                     pkg: sorted(selected_extras.get(pkg, []))
                     for pkg in bzl_packages
                 }, value_repr = render.list),
+                # The target platforms are not known in WORKSPACE.
+                "%%TARGET_PLATFORM_ENVS%%": "[]",
             },
         )
         config_repo_template = repr(rctx.attr.name)

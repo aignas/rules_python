@@ -113,6 +113,7 @@ def hub_builder(
                 whl_map = subjects.dict,
                 whl_libraries = subjects.dict,
                 extra_aliases = subjects.dict,
+                target_platform_envs = subjects.collection,
             ),
         ),
         pip_parse = builder.pip_parse,
@@ -1287,6 +1288,27 @@ simple==0.0.3 \
         },
     })
     pypi.extra_aliases().contains_exactly({})
+
+    # Only the target platforms that have requirements.
+    pypi.target_platform_envs().contains_exactly([
+        {
+            "implementation_name": "cpython",
+            "implementation_version": "3.15.19",
+            "os_name": "posix",
+            "platform_machine": platform_machine,
+            "platform_python_implementation": "CPython",
+            "platform_release": "",
+            "platform_system": platform_system,
+            "platform_version": "0",
+            "python_full_version": "3.15.19",
+            "python_version": "3.15",
+            "sys_platform": sys_platform,
+        }
+        for platform_machine, platform_system, sys_platform in [
+            ("x86_64", "Linux", "linux"),
+            ("aarch64", "Darwin", "darwin"),
+        ]
+    ])
 
 _tests.append(_test_download_only_multiple)
 

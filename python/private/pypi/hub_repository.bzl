@@ -61,6 +61,10 @@ def _impl(rctx):
             # to create the targets of the extras that the package does not
             # provide.
             "%%PACKAGES%%": render.dict(available_extras(whl_map), value_repr = render.list),
+            "%%TARGET_PLATFORM_ENVS%%": render.list(
+                json.decode(rctx.attr.target_platform_envs or "[]"),
+                value_repr = render.dict,
+            ),
         },
     )
     rctx.template("requirements.bzl", rctx.attr._requirements_bzl_template, substitutions = {
@@ -117,6 +121,14 @@ the platforms.
         "repo_name": attr.string(
             mandatory = True,
             doc = "The apparent name of the repo. This is needed because in bzlmod, the name attribute becomes the canonical name.",
+        ),
+        "target_platform_envs": attr.string(
+            doc = """\
+The JSON encoded list of the marker environments of the target platforms that
+have requirements in the hub. The spoke repositories use it to warn about the
+dependencies that are not in the hub, but are needed on any of the target
+platforms.
+""",
         ),
         "whl_map": attr.string_dict(
             mandatory = True,
